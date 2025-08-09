@@ -1,0 +1,21 @@
+[workspace]
+members = [
+    "crates/api"
+]
+
+# Optional: helps cargo reuse dependencies between crates
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+authors = ["Bruno Moyse <contact@brunomoyse.be>"]
+
+[workspace.dependencies]
+# Common dependencies you might want to share across crates
+anyhow = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+dotenvy = "0.15"

@@ -1,0 +1,38 @@
+mod app;
+mod error;
+mod state;
+mod gql;
+
+use sqlx::PgPool;
+use tokio::net::TcpListener;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+use crate::app::build_router;
+use crate::state::AppState;
+use crate::gql::build_schema;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::new(
+            std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
+        ))
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    dotenvy::dotenv().ok();
+
+    let pool = PgPool::connect(&std::env::var("DATABASE_URL")?).await?;
+    tracing::info!("Connected to Postgres");
+    let state = AppState::new(pool);
+
+    // Build GraphQL schema from the gql module
+    let schema = build_schema(state.clone());
+
+    let app = build_router(state, schema);
+
+    let port: u16 = std::env::var("PORT").unwrap_or_else(|_| "8080".into()).parse()?;
+    let listener = TcpListener::bind(("0.0.0.0", port)).await?;
+    axum::serve(listener, app).await?;
+    Ok(())
+}

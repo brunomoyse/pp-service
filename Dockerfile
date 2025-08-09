@@ -1,0 +1,48 @@
+# ---- build stage -------------------------------------------------------------
+FROM rust:1.89-alpine3.22 AS builder
+WORKDIR /app
+
+# Build deps needed for musl builds
+RUN apk add --no-cache build-base musl-dev pkgconfig
+
+# If you ever switch to native-tls/openssl, add:
+# RUN apk add --no-cache openssl-dev
+
+# Copy manifests first to leverage Docker layer cache
+COPY Cargo.toml Cargo.lock ./
+# If you add more crates later, add their Cargo.toml too (to keep caching effective)
+COPY crates/api/Cargo.toml crates/api/Cargo.toml
+
+# Pre-fetch dependencies
+RUN cargo fetch
+
+# Now copy sources
+COPY crates ./crates
+COPY config ./config
+COPY migrations ./migrations
+
+# If you rely on env at build (e.g., sqlx offline), keep ARG/ENV
+ARG DATABASE_URL
+ENV DATABASE_URL=${DATABASE_URL}
+
+# Build the binary
+RUN cargo build --release --bin api
+
+# ---- runtime stage -----------------------------------------------------------
+FROM alpine:3.22
+WORKDIR /usr/local/bin
+
+RUN apk add --no-cache ca-certificates \
+ && adduser -S -u 10001 appuser
+
+# Copy the compiled binary
+COPY --from=builder /app/target/release/api /usr/local/bin/api
+
+# Drop privileges
+USER 10001
+
+# Expose if you like (optional)
+EXPOSE 8080
+
+ENV RUST_LOG=info
+CMD ["api"]
