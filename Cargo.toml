@@ -1,6 +1,7 @@
 [workspace]
 members = [
-    "crates/api"
+    "crates/api",
+    "crates/infra",
 ]
 
 # Optional: helps cargo reuse dependencies between crates

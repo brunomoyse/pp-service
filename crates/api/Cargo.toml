@@ -8,6 +8,8 @@ name = "api"
 path = "src/main.rs"
 
 [dependencies]
+infra = { path = "../infra" }
+
 # Web server + routing
 axum = { version = "0.8", features = ["macros", "ws"] }
 

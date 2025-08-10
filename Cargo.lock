@@ -74,6 +74,7 @@ dependencies = [
  "chrono",
  "dotenvy",
  "futures-util",
+ "infra",
  "serde",
  "sqlx",
  "thiserror 1.0.69",
@@ -1080,6 +1081,16 @@ dependencies = [
  "equivalent",
  "hashbrown",
  "serde",
+]
+
+[[package]]
+name = "infra"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "sqlx",
+ "uuid",
 ]
 
 [[package]]

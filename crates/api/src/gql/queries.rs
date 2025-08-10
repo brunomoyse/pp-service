@@ -2,7 +2,7 @@ use async_graphql::{Context, Object, Result};
 use chrono::{DateTime, Utc};
 
 use crate::state::AppState;
-use super::types::{Tournament, Club};
+use infra::{repos::{ClubRepo, TournamentRepo, TournamentFilter}, pagination::LimitOffset};
 
 pub struct QueryRoot;
 
@@ -18,21 +18,38 @@ impl QueryRoot {
         Utc::now()
     }
 
-    /// Example: list tournaments (stubbed). Shows how to access DB if needed.
-    async fn tournaments(&self, ctx: &Context<'_>) -> Result<Vec<Tournament>> {
-        let _state = ctx.data::<AppState>()?;
-
-        // Minimal stub data. Replace with sqlx query later.
-        Ok(vec![
-            Tournament { id: "t1".into(), title: "Friday Night".into(), club_id: "c1".into() },
-            Tournament { id: "t2".into(), title: "Sunday Deepstack".into(), club_id: "c1".into() },
-        ])
+    async fn clubs(&self, ctx: &async_graphql::Context<'_>) -> async_graphql::Result<Vec<crate::gql::types::Club>> {
+        let state = ctx.data::<AppState>()?;
+        let repo = ClubRepo::new(state.db.clone());
+        let rows = repo.list_all().await?;
+        Ok(rows.into_iter().map(|r| crate::gql::types::Club {
+            id: r.id.into(),
+            name: r.name,
+            city: r.city,
+        }).collect())
     }
 
-    /// Example: list clubs (stubbed).
-    async fn clubs(&self, _ctx: &Context<'_>) -> Result<Vec<Club>> {
-        Ok(vec![
-            Club { id: "c1".into(), name: "Brussels Poker Club".into(), city: Some("Bruxelles".into()) },
-        ])
+    async fn tournaments(
+        &self,
+        ctx: &async_graphql::Context<'_>,
+        club_id: Option<uuid::Uuid>,
+        from: Option<chrono::DateTime<chrono::Utc>>,
+        to: Option<chrono::DateTime<chrono::Utc>>,
+        limit: Option<i64>,
+        offset: Option<i64>,
+    ) -> async_graphql::Result<Vec<crate::gql::types::Tournament>> {
+        let state = ctx.data::<AppState>()?;
+        let repo = TournamentRepo::new(state.db.clone());
+        let filter = TournamentFilter { club_id, from, to };
+        let page = Some(LimitOffset {
+            limit: limit.unwrap_or(50).clamp(1, 200),
+            offset: offset.unwrap_or(0).max(0),
+        });
+        let rows = repo.list(filter, page).await?;
+        Ok(rows.into_iter().map(|r| crate::gql::types::Tournament {
+            id: r.id.into(),
+            title: r.name,
+            club_id: r.club_id.into(),
+        }).collect())
     }
 }
