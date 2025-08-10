@@ -18,7 +18,7 @@ impl QueryRoot {
         Utc::now()
     }
 
-    async fn clubs(&self, ctx: &async_graphql::Context<'_>) -> async_graphql::Result<Vec<crate::gql::types::Club>> {
+    async fn clubs(&self, ctx: &Context<'_>) -> Result<Vec<crate::gql::types::Club>> {
         let state = ctx.data::<AppState>()?;
         let repo = ClubRepo::new(state.db.clone());
         let rows = repo.list_all().await?;
