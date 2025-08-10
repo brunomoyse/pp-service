@@ -1,6 +1,6 @@
 # PocketPair API
 
-PocketPair is an app designed to let players easily track tournament schedules, results, and updates, while helping poker clubs organize and manage game data efficiently.
+PocketPair is an app designed to let poker players easily track tournament schedules, results, and updates, while helping poker clubs organize and manage game data efficiently.
 This repository is the API side: a Rust + Axum + Async-GraphQL backend service with a PostgreSQL database.  
 
 ## Tech Stack
