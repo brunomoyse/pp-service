@@ -11,6 +11,7 @@ pub enum AppError {
     #[error("database error")]
     Db(#[from] sqlx::Error),
 
+    #[allow(dead_code)]
     #[error("bad request: {0}")]
     BadRequest(String),
 

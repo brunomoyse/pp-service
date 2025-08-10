@@ -1,0 +1,71 @@
+services:
+  migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile.migrator
+    environment:
+      DATABASE_URL: postgres://${PG_USER}:${PG_PASSWORD}@postgres:5432/${PG_DB}
+    volumes:
+      - ./migrations:/migrations:ro
+    command: [ "migrate", "run", "--source", "/migrations" ]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - pocketpair-net
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+      args:
+        DATABASE_URL: postgres://${PG_USER}:${PG_PASSWORD}@postgres:5432/${PG_DB}
+    environment:
+      DATABASE_URL: postgres://${PG_USER}:${PG_PASSWORD}@postgres:5432/${PG_DB}
+      RUST_LOG: ${RUST_LOG:-info}
+      PORT: 8080
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - pocketpair-net
+
+  # @TODO: TO REPLACE WITH MANAGED POSTGRES SERVICE
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${PG_DB:-pocketpair}
+      POSTGRES_USER: ${PG_USER:-pocketpair}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-pocketpair}
+    ports:
+      - "6432:5432"
+    # Bind mount so data sits in ./db_data on my host
+    volumes:
+      - ./db_data:/var/lib/postgresql/data
+    #volumes:
+    #  - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - pocketpair-net
+
+networks:
+  pocketpair-net:
+    driver: bridge
+
+#volumes:
+#  pg_data:

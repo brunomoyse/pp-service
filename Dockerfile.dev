@@ -1,0 +1,33 @@
+# ---- dev base ---------------------------------------------------------------
+# Using Debian/bookworm over Alpine for smoother local dev & wider native deps.
+FROM rust:1.89-bookworm AS dev
+WORKDIR /app
+
+# Useful tools for dev
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config libssl-dev ca-certificates curl git \
+  && rm -rf /var/lib/apt/lists/*
+
+# Optional dev helpers (hot reload + migrations)
+RUN cargo install cargo-watch --locked && \
+    cargo install sqlx-cli --no-default-features --features rustls,postgres
+
+# Pre-warm dependency cache by copying manifests only
+# (so `docker build` doesn’t recompile deps on every code change)
+COPY Cargo.toml Cargo.lock ./
+COPY crates/api/Cargo.toml crates/api/Cargo.toml
+RUN mkdir -p crates/api/src && \
+    echo "fn main(){}" > crates/api/src/main.rs && \
+    cargo build --bin api && \
+    rm -rf crates/api/src
+
+# The real sources will be bind-mounted at runtime, so we don’t COPY them here.
+
+ENV RUST_LOG=info \
+    PORT=8080
+
+EXPOSE 8080
+
+# Run with hot-reload: rebuild & restart on file changes
+# Adjust the command to your package/bin name if needed.
+CMD ["cargo", "watch", "-x", "run -p api"]

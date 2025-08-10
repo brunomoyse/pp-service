@@ -2,11 +2,10 @@ use std::time::Duration;
 
 use axum::{
     extract::State,
-    response::Html,
     routing::get,
     Router,
 };
-use async_graphql::{http::GraphiQLSource, ObjectType, Schema, SubscriptionType};
+use async_graphql::{ObjectType, Schema, SubscriptionType};
 use async_graphql_axum::{GraphQL, GraphQLSubscription};
 use axum::routing::{post_service};
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};

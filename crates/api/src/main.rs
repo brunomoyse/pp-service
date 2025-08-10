@@ -32,7 +32,10 @@ async fn main() -> anyhow::Result<()> {
     let app = build_router(state, schema);
 
     let port: u16 = std::env::var("PORT").unwrap_or_else(|_| "8080".into()).parse()?;
-    let listener = TcpListener::bind(("0.0.0.0", port)).await?;
+    let addr = format!("0.0.0.0:{port}");
+    let listener = TcpListener::bind(&addr).await?;
+    tracing::info!("Listening on {}", addr);
+
     axum::serve(listener, app).await?;
     Ok(())
 }
