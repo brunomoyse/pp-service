@@ -27,3 +27,28 @@ pub struct TournamentRow {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct UserRow {
+    pub id: Uuid,
+    pub email: String,
+    pub username: Option<String>,
+    pub first_name: String,
+    pub last_name: Option<String>,
+    pub phone: Option<String>,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct TournamentRegistrationRow {
+    pub id: Uuid,
+    pub tournament_id: Uuid,
+    pub user_id: Uuid,
+    pub registration_time: DateTime<Utc>,
+    pub status: String,
+    pub notes: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}

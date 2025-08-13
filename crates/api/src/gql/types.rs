@@ -1,6 +1,7 @@
-use async_graphql::{Context, Error, ComplexObject, Result, SimpleObject, ID};
+use async_graphql::{Context, Error, ComplexObject, Result, SimpleObject, InputObject, ID};
 use async_graphql::dataloader::DataLoader;
 use uuid::Uuid;
+use chrono::{DateTime, Utc};
 
 use crate::gql::loaders::ClubLoader;
 
@@ -17,6 +18,39 @@ pub struct Club {
     pub id: ID,
     pub name: String,
     pub city: Option<String>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct User {
+    pub id: ID,
+    pub email: String,
+    pub username: Option<String>,
+    pub first_name: String,
+    pub last_name: Option<String>,
+    pub phone: Option<String>,
+    pub is_active: bool,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct TournamentRegistration {
+    pub id: ID,
+    pub tournament_id: ID,
+    pub user_id: ID,
+    pub registration_time: DateTime<Utc>,
+    pub status: String,
+    pub notes: Option<String>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct TournamentPlayer {
+    pub registration: TournamentRegistration,
+    pub user: User,
+}
+
+#[derive(InputObject)]
+pub struct RegisterForTournamentInput {
+    pub tournament_id: ID,
+    pub notes: Option<String>,
 }
 
 #[ComplexObject]
