@@ -22,7 +22,7 @@ impl UserRepo {
         let page = page.unwrap_or_default();
         
         let mut query = sqlx::QueryBuilder::new(
-            "SELECT id, email, username, first_name, last_name, phone, is_active, created_at, updated_at FROM users WHERE 1=1"
+            "SELECT id, email, username, first_name, last_name, phone, is_active, role, created_at, updated_at FROM users WHERE 1=1"
         );
 
         if let Some(search) = &filter.search {
@@ -58,7 +58,7 @@ impl UserRepo {
 
     pub async fn get_by_id(&self, id: Uuid) -> Result<Option<UserRow>> {
         let row = sqlx::query_as::<_, UserRow>(
-            "SELECT id, email, username, first_name, last_name, phone, is_active, created_at, updated_at FROM users WHERE id = $1"
+            "SELECT id, email, username, first_name, last_name, phone, is_active, role, created_at, updated_at FROM users WHERE id = $1"
         )
         .bind(id)
         .fetch_optional(&self.db)

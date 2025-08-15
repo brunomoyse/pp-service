@@ -37,6 +37,7 @@ pub struct UserRow {
     pub last_name: Option<String>,
     pub phone: Option<String>,
     pub is_active: bool,
+    pub role: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
