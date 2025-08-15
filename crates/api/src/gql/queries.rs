@@ -77,6 +77,7 @@ impl QueryRoot {
             last_name: r.last_name,
             phone: r.phone,
             is_active: r.is_active,
+            role: r.role.unwrap_or_else(|| "user".to_string()),
         }).collect())
     }
 
@@ -111,6 +112,7 @@ impl QueryRoot {
                     last_name: user_row.last_name,
                     phone: user_row.phone,
                     is_active: user_row.is_active,
+                    role: user_row.role.unwrap_or_else(|| "user".to_string()),
                 };
                 
                 players.push(crate::gql::types::TournamentPlayer {
