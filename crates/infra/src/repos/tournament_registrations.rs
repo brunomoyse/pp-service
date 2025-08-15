@@ -82,4 +82,21 @@ impl TournamentRegistrationRepo {
 
         Ok(rows)
     }
+
+    pub async fn get_user_current_registrations(&self, user_id: Uuid) -> Result<Vec<TournamentRegistrationRow>> {
+        let rows = sqlx::query_as::<_, TournamentRegistrationRow>(
+            r#"
+            SELECT tr.id, tr.tournament_id, tr.user_id, tr.registration_time, tr.status, tr.notes, tr.created_at, tr.updated_at
+            FROM tournament_registrations tr
+            JOIN tournaments t ON tr.tournament_id = t.id
+            WHERE tr.user_id = $1 AND (t.end_time IS NULL OR t.end_time > NOW())
+            ORDER BY tr.created_at DESC
+            "#
+        )
+        .bind(user_id)
+        .fetch_all(&self.db)
+        .await?;
+
+        Ok(rows)
+    }
 }
