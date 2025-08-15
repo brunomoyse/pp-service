@@ -107,7 +107,7 @@ async fn find_user_by_email(state: &AppState, email: &str) -> Result<Option<User
             last_name: row.last_name,
             phone: row.phone,
             is_active: row.is_active,
-            role: row.role,
+            role: crate::gql::types::Role::from(row.role),
         })),
         None => Ok(None),
     }
@@ -154,6 +154,6 @@ async fn get_user_by_id(state: &AppState, user_id: Uuid) -> Result<User, AppErro
         last_name: row.last_name,
         phone: row.phone,
         is_active: row.is_active,
-        role: row.role,
+        role: crate::gql::types::Role::from(row.role),
     })
 }

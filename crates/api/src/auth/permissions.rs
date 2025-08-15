@@ -2,10 +2,10 @@ use async_graphql::{Context, Error, Result};
 use uuid::Uuid;
 use crate::auth::Claims;
 use crate::state::AppState;
-use crate::gql::types::User;
+use crate::gql::types::{User, Role};
 
 /// Check if the authenticated user has the required role
-pub async fn require_role(ctx: &Context<'_>, required_role: &str) -> Result<User> {
+pub async fn require_role(ctx: &Context<'_>, required_role: Role) -> Result<User> {
     let claims = ctx.data::<Claims>()
         .map_err(|_| Error::new("Authentication required"))?;
     
@@ -17,7 +17,7 @@ pub async fn require_role(ctx: &Context<'_>, required_role: &str) -> Result<User
     
     if !has_required_role(&user.role, required_role) {
         return Err(Error::new(format!(
-            "Insufficient permissions. Required role: {}",
+            "Insufficient permissions. Required role: {:?}",
             required_role
         )));
     }
@@ -28,7 +28,7 @@ pub async fn require_role(ctx: &Context<'_>, required_role: &str) -> Result<User
 /// Check if the authenticated user has admin permissions when a condition is met
 pub async fn require_admin_if(ctx: &Context<'_>, condition: bool, _field_name: &str) -> Result<Option<User>> {
     if condition {
-        let admin_user = require_role(ctx, "admin").await?;
+        let admin_user = require_role(ctx, Role::Manager).await?;
         Ok(Some(admin_user))
     } else {
         // Still need to get the authenticated user for normal operations
@@ -61,15 +61,13 @@ async fn get_user_by_id_with_role(state: &AppState, user_id: Uuid) -> Result<Use
         last_name: row.last_name,
         phone: row.phone,
         is_active: row.is_active,
-        role: row.role,
+        role: crate::gql::types::Role::from(row.role),
     })
 }
 
-fn has_required_role(user_role: &str, required_role: &str) -> bool {
+fn has_required_role(user_role: &Role, required_role: Role) -> bool {
     match required_role {
-        "admin" => user_role == "admin" || user_role == "moderator",
-        "moderator" => user_role == "admin" || user_role == "moderator", 
-        "user" => true, // Everyone has user permissions
-        _ => false,
+        Role::Manager => *user_role == Role::Manager,
+        Role::Player => true, // Everyone has player permissions
     }
 }
