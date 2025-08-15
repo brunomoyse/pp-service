@@ -53,3 +53,41 @@ pub struct TournamentRegistrationRow {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct TournamentResultRow {
+    pub id: Uuid,
+    pub tournament_id: Uuid,
+    pub user_id: Uuid,
+    pub final_position: i32,
+    pub prize_cents: i32,
+    pub notes: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct PayoutTemplateRow {
+    pub id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub min_players: i32,
+    pub max_players: Option<i32>,
+    pub payout_structure: serde_json::Value, // JSONB field
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct PlayerDealRow {
+    pub id: Uuid,
+    pub tournament_id: Uuid,
+    pub deal_type: String,
+    pub affected_positions: Vec<i32>,
+    pub custom_payouts: Option<serde_json::Value>, // JSONB field
+    pub total_amount_cents: i32,
+    pub notes: Option<String>,
+    pub created_by: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
