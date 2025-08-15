@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use axum::{
     extract::State,
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use async_graphql::{ObjectType, Schema, SubscriptionType};
@@ -11,6 +11,7 @@ use axum::routing::{post_service};
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 
 use crate::error::AppError;
+use crate::routes::{auth, oauth_server, unified_auth};
 use crate::state::AppState;
 
 /// Build the Axum router with health endpoint and GraphQL
@@ -27,6 +28,17 @@ where
     Router::new()
         // Simple liveness check; also proves DB connectivity.
         .route("/health", get(health))
+        // Unified authentication choice
+        .route("/auth/choose", get(unified_auth::auth_choice))
+        // External OAuth authentication routes
+        .route("/auth/{provider}/authorize", get(auth::authorize))
+        .route("/auth/{provider}/callback", get(auth::callback))
+        // Custom OAuth server routes
+        .route("/oauth/authorize", get(oauth_server::authorize))
+        .route("/oauth/login", post(oauth_server::login))
+        .route("/oauth/token", post(oauth_server::token))
+        .route("/oauth/register", get(oauth_server::register_form))
+        .route("/oauth/register", post(oauth_server::register))
         // graphql post & subscription
         .route(
             "/graphql",

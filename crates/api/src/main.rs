@@ -1,5 +1,7 @@
 mod app;
+mod auth;
 mod error;
+mod routes;
 mod state;
 mod gql;
 
@@ -24,7 +26,7 @@ async fn main() -> anyhow::Result<()> {
 
     let pool = PgPool::connect(&std::env::var("DATABASE_URL")?).await?;
     tracing::info!("Connected to Postgres");
-    let state = AppState::new(pool);
+    let state = AppState::new(pool)?;
 
     // Build GraphQL schema from the gql module
     let schema = build_schema(state.clone());
