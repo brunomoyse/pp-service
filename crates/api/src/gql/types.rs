@@ -47,6 +47,13 @@ pub struct TournamentPlayer {
     pub user: User,
 }
 
+#[derive(SimpleObject, Clone)]
+pub struct PlayerRegistrationEvent {
+    pub tournament_id: ID,
+    pub player: TournamentPlayer,
+    pub event_type: String,
+}
+
 #[derive(InputObject)]
 pub struct RegisterForTournamentInput {
     pub tournament_id: ID,
