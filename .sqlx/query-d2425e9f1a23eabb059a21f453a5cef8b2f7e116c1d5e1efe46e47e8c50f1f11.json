@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT club_id, club_name\n            FROM get_manager_clubs($1)\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "club_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "club_name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "d2425e9f1a23eabb059a21f453a5cef8b2f7e116c1d5e1efe46e47e8c50f1f11"
+}

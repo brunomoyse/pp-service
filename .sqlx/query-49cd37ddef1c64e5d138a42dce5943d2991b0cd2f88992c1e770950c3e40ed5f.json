@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO oauth_authorization_codes (code, client_id, user_id, redirect_uri, scopes, challenge, challenge_method, expires_at)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n            RETURNING id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Uuid",
+        "Text",
+        "TextArray",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "49cd37ddef1c64e5d138a42dce5943d2991b0cd2f88992c1e770950c3e40ed5f"
+}

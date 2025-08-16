@@ -1,5 +1,4 @@
 .env
 .idea
-.sqlx
 /target
 db_data
