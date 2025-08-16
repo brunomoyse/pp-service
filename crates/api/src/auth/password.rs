@@ -17,14 +17,18 @@ impl PasswordService {
 
     pub fn validate_password_strength(password: &str) -> Result<(), AppError> {
         if password.len() < 8 {
-            return Err(AppError::BadRequest("Password must be at least 8 characters long".to_string()));
+            return Err(AppError::BadRequest(
+                "Password must be at least 8 characters long".to_string(),
+            ));
         }
 
         let has_letter = password.chars().any(|c| c.is_alphabetic());
         let has_digit = password.chars().any(|c| c.is_numeric());
 
         if !has_letter || !has_digit {
-            return Err(AppError::BadRequest("Password must contain at least one letter and one number".to_string()));
+            return Err(AppError::BadRequest(
+                "Password must contain at least one letter and one number".to_string(),
+            ));
         }
 
         Ok(())

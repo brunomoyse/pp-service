@@ -6,7 +6,7 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::auth::{OAuthProvider, custom_oauth::CustomOAuthService};
+use crate::auth::{custom_oauth::CustomOAuthService, OAuthProvider};
 use crate::error::AppError;
 use crate::gql::types::User;
 use crate::state::AppState;
@@ -40,7 +40,10 @@ pub async fn authorize(
 
     let (auth_url, csrf_token) = state.oauth_service().get_authorize_url(provider)?;
 
-    Ok(Json(AuthorizeResponse { auth_url, csrf_token }))
+    Ok(Json(AuthorizeResponse {
+        auth_url,
+        csrf_token,
+    }))
 }
 
 pub async fn callback(

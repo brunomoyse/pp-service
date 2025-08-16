@@ -1,11 +1,11 @@
 use anyhow::Result;
+use base64::{engine::general_purpose, Engine as _};
 use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
     ClientSecret, CsrfToken, RedirectUrl, Scope, TokenResponse, TokenUrl,
 };
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
-use base64::{Engine as _, engine::general_purpose};
 
 use crate::auth::AuthConfig;
 use crate::error::AppError;
@@ -36,7 +36,6 @@ pub struct GoogleUserInfo {
     pub picture: String,
 }
 
-
 #[derive(Debug, Clone)]
 pub struct OAuthUserInfo {
     pub provider_id: String,
@@ -59,7 +58,6 @@ impl From<GoogleUserInfo> for OAuthUserInfo {
         }
     }
 }
-
 
 #[derive(Clone)]
 pub struct OAuthService {
@@ -104,11 +102,14 @@ impl OAuthService {
             OAuthProvider::Custom => {
                 // For custom OAuth, the code should contain user info directly
                 // This is a simplified approach - in practice you'd exchange the code for user info
-                Err(AppError::Internal("Custom OAuth code exchange should be handled by custom OAuth service".to_string()))
+                Err(AppError::Internal(
+                    "Custom OAuth code exchange should be handled by custom OAuth service"
+                        .to_string(),
+                ))
             }
             _ => {
                 let client = self.create_oauth_client(provider.clone())?;
-                
+
                 let token = client
                     .exchange_code(AuthorizationCode::new(code))
                     .request_async(async_http_client)
@@ -116,7 +117,7 @@ impl OAuthService {
                     .map_err(|e| AppError::Internal(format!("Token exchange failed: {}", e)))?;
 
                 let access_token = token.access_token().secret();
-                
+
                 match provider {
                     OAuthProvider::Google => {
                         let user_info = self.get_google_user_info(access_token).await?;
@@ -129,23 +130,27 @@ impl OAuthService {
     }
 
     fn create_oauth_client(&self, provider: OAuthProvider) -> Result<BasicClient, AppError> {
-        let redirect_url = format!("{}/auth/{}/callback", self.config.redirect_base_url, provider.as_str());
+        let redirect_url = format!(
+            "{}/auth/{}/callback",
+            self.config.redirect_base_url,
+            provider.as_str()
+        );
 
         let client = match provider {
-            OAuthProvider::Google => {
-                BasicClient::new(
-                    ClientId::new(self.config.google_client_id.clone()),
-                    Some(ClientSecret::new(self.config.google_client_secret.clone())),
-                    AuthUrl::new("https://accounts.google.com/o/oauth2/v2/auth".to_string())
-                        .map_err(|e| AppError::Internal(format!("Invalid auth URL: {}", e)))?,
-                    Some(
-                        TokenUrl::new("https://www.googleapis.com/oauth2/v4/token".to_string())
-                            .map_err(|e| AppError::Internal(format!("Invalid token URL: {}", e)))?,
-                    ),
-                )
-            }
+            OAuthProvider::Google => BasicClient::new(
+                ClientId::new(self.config.google_client_id.clone()),
+                Some(ClientSecret::new(self.config.google_client_secret.clone())),
+                AuthUrl::new("https://accounts.google.com/o/oauth2/v2/auth".to_string())
+                    .map_err(|e| AppError::Internal(format!("Invalid auth URL: {}", e)))?,
+                Some(
+                    TokenUrl::new("https://www.googleapis.com/oauth2/v4/token".to_string())
+                        .map_err(|e| AppError::Internal(format!("Invalid token URL: {}", e)))?,
+                ),
+            ),
             OAuthProvider::Custom => {
-                return Err(AppError::Internal("Custom OAuth should not use external OAuth client".to_string()));
+                return Err(AppError::Internal(
+                    "Custom OAuth should not use external OAuth client".to_string(),
+                ));
             }
         };
 
@@ -186,5 +191,4 @@ impl OAuthService {
             .await
             .map_err(|e| AppError::Internal(format!("Failed to parse user info: {}", e)))
     }
-
 }

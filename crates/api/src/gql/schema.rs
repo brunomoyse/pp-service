@@ -1,9 +1,9 @@
-use async_graphql::Schema;
 use async_graphql::dataloader::DataLoader;
+use async_graphql::Schema;
 
-use crate::state::AppState;
-use super::{QueryRoot, MutationRoot, SubscriptionRoot};
 use super::loaders::ClubLoader;
+use super::{MutationRoot, QueryRoot, SubscriptionRoot};
+use crate::state::AppState;
 
 /// Build the GraphQL schema and inject shared state (AppState) into the context.
 pub fn build_schema(state: AppState) -> Schema<QueryRoot, MutationRoot, SubscriptionRoot> {

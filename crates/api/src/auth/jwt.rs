@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use jsonwebtoken::{encode, decode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -54,7 +54,7 @@ impl JwtService {
     pub fn verify_token(&self, token: &str) -> Result<Claims, AppError> {
         let token_data = decode::<Claims>(token, &self.decoding_key, &Validation::default())
             .map_err(|e| AppError::Internal(format!("Invalid token: {}", e)))?;
-        
+
         Ok(token_data.claims)
     }
 }

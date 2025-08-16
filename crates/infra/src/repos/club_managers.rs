@@ -50,13 +50,9 @@ impl ClubManagerRepo {
 
     /// Check if a user is an active manager of a specific club
     pub async fn is_club_manager(&self, user_id: Uuid, club_id: Uuid) -> Result<bool> {
-        let result = sqlx::query_scalar!(
-            "SELECT is_club_manager($1, $2)",
-            user_id,
-            club_id
-        )
-        .fetch_one(&self.db)
-        .await?;
+        let result = sqlx::query_scalar!("SELECT is_club_manager($1, $2)", user_id, club_id)
+            .fetch_one(&self.db)
+            .await?;
 
         Ok(result.unwrap_or(false))
     }
@@ -120,7 +116,11 @@ impl ClubManagerRepo {
     }
 
     /// Get club manager assignment by user and club
-    pub async fn get_by_user_and_club(&self, user_id: Uuid, club_id: Uuid) -> Result<Option<ClubManagerRow>> {
+    pub async fn get_by_user_and_club(
+        &self,
+        user_id: Uuid,
+        club_id: Uuid,
+    ) -> Result<Option<ClubManagerRow>> {
         let row = sqlx::query_as!(
             ClubManagerRow,
             r#"
@@ -173,7 +173,11 @@ impl ClubManagerRepo {
     }
 
     /// Update notes for a club manager assignment
-    pub async fn update_notes(&self, id: Uuid, notes: Option<String>) -> Result<Option<ClubManagerRow>> {
+    pub async fn update_notes(
+        &self,
+        id: Uuid,
+        notes: Option<String>,
+    ) -> Result<Option<ClubManagerRow>> {
         let row = sqlx::query_as!(
             ClubManagerRow,
             r#"

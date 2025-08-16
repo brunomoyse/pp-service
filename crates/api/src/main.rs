@@ -3,8 +3,8 @@ use tokio::net::TcpListener;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use api::app::build_router;
-use api::state::AppState;
 use api::gql::build_schema;
+use api::state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -26,7 +26,9 @@ async fn main() -> anyhow::Result<()> {
 
     let app = build_router(state, schema);
 
-    let port: u16 = std::env::var("PORT").unwrap_or_else(|_| "8080".into()).parse()?;
+    let port: u16 = std::env::var("PORT")
+        .unwrap_or_else(|_| "8080".into())
+        .parse()?;
     let addr = format!("0.0.0.0:{port}");
     let listener = TcpListener::bind(&addr).await?;
     tracing::info!("Listening on {}", addr);

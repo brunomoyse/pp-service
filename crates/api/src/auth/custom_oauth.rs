@@ -93,7 +93,11 @@ impl CustomOAuthService {
         // Get authorization code from database
         let auth_code = match Self::get_authorization_code(state, &code).await? {
             Some(auth_code) => auth_code,
-            None => return Err(AppError::BadRequest("Invalid or expired authorization code".to_string())),
+            None => {
+                return Err(AppError::BadRequest(
+                    "Invalid or expired authorization code".to_string(),
+                ))
+            }
         };
 
         // Get user info from the database
@@ -106,7 +110,11 @@ impl CustomOAuthService {
 
         let user_row = match user_row {
             Some(row) => row,
-            None => return Err(AppError::Internal("User not found for authorization code".to_string())),
+            None => {
+                return Err(AppError::Internal(
+                    "User not found for authorization code".to_string(),
+                ))
+            }
         };
 
         // Delete used authorization code
@@ -122,7 +130,10 @@ impl CustomOAuthService {
             avatar_url: None,
         })
     }
-    pub async fn get_client_by_id(state: &AppState, client_id: &str) -> Result<Option<OAuthClient>, AppError> {
+    pub async fn get_client_by_id(
+        state: &AppState,
+        client_id: &str,
+    ) -> Result<Option<OAuthClient>, AppError> {
         let row = sqlx::query!(
             "SELECT id, client_id, client_secret, name, redirect_uris, scopes, is_active FROM oauth_clients WHERE client_id = $1 AND is_active = true",
             client_id
@@ -223,9 +234,12 @@ impl CustomOAuthService {
     }
 
     pub async fn delete_authorization_code(state: &AppState, code: &str) -> Result<(), AppError> {
-        sqlx::query!("DELETE FROM oauth_authorization_codes WHERE code = $1", code)
-            .execute(&state.db)
-            .await?;
+        sqlx::query!(
+            "DELETE FROM oauth_authorization_codes WHERE code = $1",
+            code
+        )
+        .execute(&state.db)
+        .await?;
         Ok(())
     }
 
@@ -293,7 +307,6 @@ impl CustomOAuthService {
         Ok((access_token_obj, refresh_token_obj))
     }
 
-
     pub async fn validate_redirect_uri(
         client: &OAuthClient,
         redirect_uri: &str,
@@ -310,7 +323,9 @@ impl CustomOAuthService {
     }
 
     pub fn validate_scopes(requested_scopes: &[String], client_scopes: &[String]) -> bool {
-        requested_scopes.iter().all(|scope| client_scopes.contains(scope))
+        requested_scopes
+            .iter()
+            .all(|scope| client_scopes.contains(scope))
     }
 
     fn generate_code() -> String {

@@ -1,19 +1,38 @@
 use async_graphql::{Context, InputObject, Object, Result, ID};
 
-use crate::auth::{Claims, OAuthProvider, password::PasswordService, custom_oauth::CustomOAuthService, permissions::require_admin_if};
-use crate::state::AppState;
-use super::types::{Tournament, TournamentState, TournamentRegistration, RegisterForTournamentInput, TournamentPlayer, User, PlayerRegistrationEvent, AuthPayload, OAuthUrlResponse, OAuthCallbackInput, OAuthClient, CreateOAuthClientInput, CreateOAuthClientResponse, UserRegistrationInput, UserLoginInput, EnterTournamentResultsInput, EnterTournamentResultsResponse, TournamentResult, PlayerDeal, DealType, Role, PlayerPositionInput, PlayerDealInput, CreateTournamentTableInput, TournamentTable, AssignPlayerToSeatInput, SeatAssignment, MovePlayerInput, UpdateStackSizeInput, UpdateTournamentStatusInput, UpdateTournamentStateInput, BalanceTablesInput, SeatingChangeEvent, SeatingEventType};
 use super::subscriptions::{publish_registration_event, publish_seating_event};
-use infra::repos::{TournamentRegistrationRepo, CreateTournamentRegistration, UserRepo, TournamentResultRepo, CreateTournamentResult, PayoutTemplateRepo, PlayerDealRepo, CreatePlayerDeal, TournamentRepo, TournamentTableRepo, CreateTournamentTable, TableSeatAssignmentRepo, CreateSeatAssignment, UpdateSeatAssignment, TournamentLiveStatus, UpdateTournamentState};
+use super::types::{
+    AssignPlayerToSeatInput, AuthPayload, BalanceTablesInput, CreateOAuthClientInput,
+    CreateOAuthClientResponse, CreateTournamentTableInput, DealType, EnterTournamentResultsInput,
+    EnterTournamentResultsResponse, MovePlayerInput, OAuthCallbackInput, OAuthClient,
+    OAuthUrlResponse, PlayerDeal, PlayerDealInput, PlayerPositionInput, PlayerRegistrationEvent,
+    RegisterForTournamentInput, Role, SeatAssignment, SeatingChangeEvent, SeatingEventType,
+    Tournament, TournamentPlayer, TournamentRegistration, TournamentResult, TournamentState,
+    TournamentTable, UpdateStackSizeInput, UpdateTournamentStateInput, UpdateTournamentStatusInput,
+    User, UserLoginInput, UserRegistrationInput,
+};
+use crate::auth::{
+    custom_oauth::CustomOAuthService, password::PasswordService, permissions::require_admin_if,
+    Claims, OAuthProvider,
+};
+use crate::state::AppState;
 use infra::models::TournamentRow;
-use uuid::Uuid;
+use infra::repos::{
+    CreatePlayerDeal, CreateSeatAssignment, CreateTournamentRegistration, CreateTournamentResult,
+    CreateTournamentTable, PayoutTemplateRepo, PlayerDealRepo, TableSeatAssignmentRepo,
+    TournamentLiveStatus, TournamentRegistrationRepo, TournamentRepo, TournamentResultRepo,
+    TournamentTableRepo, UpdateSeatAssignment, UpdateTournamentState, UserRepo,
+};
 use rand::{distributions::Alphanumeric, Rng};
 use serde_json;
+use uuid::Uuid;
 
 // Helper function to get club_id from tournament_id for events
 async fn get_club_id_for_tournament(db: &infra::db::Db, tournament_id: Uuid) -> Result<Uuid> {
     let tournament_repo = TournamentRepo::new(db.clone());
-    let tournament = tournament_repo.get(tournament_id).await?
+    let tournament = tournament_repo
+        .get(tournament_id)
+        .await?
         .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
     Ok(tournament.club_id)
 }
@@ -29,41 +48,65 @@ pub struct CreateTournamentInput {
 #[Object]
 impl MutationRoot {
     /// Initialize tournament clock
-    async fn create_tournament_clock(&self, ctx: &Context<'_>, tournament_id: ID) -> Result<crate::gql::types::TournamentClock> {
+    async fn create_tournament_clock(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: ID,
+    ) -> Result<crate::gql::types::TournamentClock> {
         let mutation = crate::gql::tournament_clock::TournamentClockMutation;
         mutation.create_tournament_clock(ctx, tournament_id).await
     }
 
     /// Start tournament clock
-    async fn start_tournament_clock(&self, ctx: &Context<'_>, tournament_id: ID) -> Result<crate::gql::types::TournamentClock> {
+    async fn start_tournament_clock(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: ID,
+    ) -> Result<crate::gql::types::TournamentClock> {
         let mutation = crate::gql::tournament_clock::TournamentClockMutation;
         mutation.start_tournament_clock(ctx, tournament_id).await
     }
 
     /// Pause tournament clock
-    async fn pause_tournament_clock(&self, ctx: &Context<'_>, tournament_id: ID) -> Result<crate::gql::types::TournamentClock> {
+    async fn pause_tournament_clock(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: ID,
+    ) -> Result<crate::gql::types::TournamentClock> {
         let mutation = crate::gql::tournament_clock::TournamentClockMutation;
         mutation.pause_tournament_clock(ctx, tournament_id).await
     }
 
     /// Resume tournament clock
-    async fn resume_tournament_clock(&self, ctx: &Context<'_>, tournament_id: ID) -> Result<crate::gql::types::TournamentClock> {
+    async fn resume_tournament_clock(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: ID,
+    ) -> Result<crate::gql::types::TournamentClock> {
         let mutation = crate::gql::tournament_clock::TournamentClockMutation;
         mutation.resume_tournament_clock(ctx, tournament_id).await
     }
 
     /// Manually advance to next level
-    async fn advance_tournament_level(&self, ctx: &Context<'_>, tournament_id: ID) -> Result<crate::gql::types::TournamentClock> {
+    async fn advance_tournament_level(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: ID,
+    ) -> Result<crate::gql::types::TournamentClock> {
         let mutation = crate::gql::tournament_clock::TournamentClockMutation;
         mutation.advance_tournament_level(ctx, tournament_id).await
     }
 
     /// Manually revert to previous level
-    async fn revert_tournament_level(&self, ctx: &Context<'_>, tournament_id: ID) -> Result<crate::gql::types::TournamentClock> {
+    async fn revert_tournament_level(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: ID,
+    ) -> Result<crate::gql::types::TournamentClock> {
         let mutation = crate::gql::tournament_clock::TournamentClockMutation;
         mutation.revert_tournament_level(ctx, tournament_id).await
     }
-    
+
     /// Minimal example mutation creating a tournament (stub).
     /// Replace with an INSERT via sqlx later.
     async fn create_tournament(
@@ -102,15 +145,19 @@ impl MutationRoot {
 
         // Check permissions: require admin role if registering another user
         let is_admin_registration = input.user_id.is_some();
-        let authenticated_user = require_admin_if(ctx, is_admin_registration, "user_id").await?
-            .ok_or_else(|| async_graphql::Error::new("You must be logged in to perform this action"))?;
-        
+        let authenticated_user = require_admin_if(ctx, is_admin_registration, "user_id")
+            .await?
+            .ok_or_else(|| {
+                async_graphql::Error::new("You must be logged in to perform this action")
+            })?;
+
         // Determine which user to register
         let user_id = match input.user_id {
             Some(target_user_id) => {
                 // Admin is registering another user
-                Uuid::parse_str(target_user_id.as_str())
-                    .map_err(|e| async_graphql::Error::new(format!("Invalid target user ID: {}", e)))?
+                Uuid::parse_str(target_user_id.as_str()).map_err(|e| {
+                    async_graphql::Error::new(format!("Invalid target user ID: {}", e))
+                })?
             }
             None => {
                 // User registering themselves
@@ -118,7 +165,7 @@ impl MutationRoot {
                     .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?
             }
         };
-        
+
         let tournament_id = Uuid::parse_str(input.tournament_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid tournament_id: {}", e)))?;
 
@@ -170,23 +217,24 @@ impl MutationRoot {
     }
 
     /// Get OAuth authorization URL
-    async fn get_oauth_url(
-        &self,
-        ctx: &Context<'_>,
-        provider: String,
-    ) -> Result<OAuthUrlResponse> {
+    async fn get_oauth_url(&self, ctx: &Context<'_>, provider: String) -> Result<OAuthUrlResponse> {
         let state = ctx.data::<AppState>()?;
-        
+
         let provider = match provider.as_str() {
             "google" => OAuthProvider::Google,
             "custom" => OAuthProvider::Custom,
             _ => return Err(async_graphql::Error::new("Invalid OAuth provider")),
         };
 
-        let (auth_url, csrf_token) = state.oauth_service().get_authorize_url(provider)
+        let (auth_url, csrf_token) = state
+            .oauth_service()
+            .get_authorize_url(provider)
             .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
-        Ok(OAuthUrlResponse { auth_url, csrf_token })
+        Ok(OAuthUrlResponse {
+            auth_url,
+            csrf_token,
+        })
     }
 
     /// Complete OAuth authentication flow
@@ -196,7 +244,7 @@ impl MutationRoot {
         input: OAuthCallbackInput,
     ) -> Result<AuthPayload> {
         let state = ctx.data::<AppState>()?;
-        
+
         let provider = match input.provider.as_str() {
             "google" => OAuthProvider::Google,
             "custom" => OAuthProvider::Custom,
@@ -209,13 +257,11 @@ impl MutationRoot {
                     .await
                     .map_err(|e| async_graphql::Error::new(e.to_string()))?
             }
-            _ => {
-                state
-                    .oauth_service()
-                    .exchange_code_for_user_info(provider, input.code)
-                    .await
-                    .map_err(|e| async_graphql::Error::new(e.to_string()))?
-            }
+            _ => state
+                .oauth_service()
+                .exchange_code_for_user_info(provider, input.code)
+                .await
+                .map_err(|e| async_graphql::Error::new(e.to_string()))?,
         };
 
         // Check if user exists, if not create them
@@ -240,8 +286,9 @@ impl MutationRoot {
     /// Validate token and get current user
     async fn me(&self, ctx: &Context<'_>) -> Result<User> {
         // Extract claims from request extensions (set by middleware)
-        let claims = ctx.data::<Claims>()
-            .map_err(|_| async_graphql::Error::new("You must be logged in to perform this action"))?;
+        let claims = ctx.data::<Claims>().map_err(|_| {
+            async_graphql::Error::new("You must be logged in to perform this action")
+        })?;
 
         let state = ctx.data::<AppState>()?;
         let user_id = Uuid::parse_str(&claims.sub)
@@ -257,13 +304,13 @@ impl MutationRoot {
         input: CreateOAuthClientInput,
     ) -> Result<CreateOAuthClientResponse> {
         let state = ctx.data::<AppState>()?;
-        
+
         // Generate client credentials
         let client_id = generate_client_id();
         let client_secret = generate_client_secret();
-        
+
         let scopes = input.scopes.unwrap_or_else(|| vec!["read".to_string()]);
-        
+
         let row = sqlx::query!(
             r#"
             INSERT INTO oauth_clients (client_id, client_secret, name, redirect_uris, scopes)
@@ -296,13 +343,9 @@ impl MutationRoot {
     }
 
     /// Register user with password (for custom OAuth)
-    async fn register_user(
-        &self,
-        ctx: &Context<'_>,
-        input: UserRegistrationInput,
-    ) -> Result<User> {
+    async fn register_user(&self, ctx: &Context<'_>, input: UserRegistrationInput) -> Result<User> {
         let state = ctx.data::<AppState>()?;
-        
+
         // Validate password strength
         PasswordService::validate_password_strength(&input.password)
             .map_err(|e| async_graphql::Error::new(e.to_string()))?;
@@ -312,16 +355,15 @@ impl MutationRoot {
             .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
         // Check if user already exists
-        let existing_user = sqlx::query!(
-            "SELECT id FROM users WHERE email = $1",
-            input.email
-        )
-        .fetch_optional(&state.db)
-        .await
-        .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+        let existing_user = sqlx::query!("SELECT id FROM users WHERE email = $1", input.email)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
         if existing_user.is_some() {
-            return Err(async_graphql::Error::new("User with this email already exists"));
+            return Err(async_graphql::Error::new(
+                "User with this email already exists",
+            ));
         }
 
         // Create user
@@ -354,11 +396,7 @@ impl MutationRoot {
     }
 
     /// Login user with password (returns JWT token)
-    async fn login_user(
-        &self,
-        ctx: &Context<'_>,
-        input: UserLoginInput,
-    ) -> Result<AuthPayload> {
+    async fn login_user(&self, ctx: &Context<'_>, input: UserLoginInput) -> Result<AuthPayload> {
         let state = ctx.data::<AppState>()?;
 
         // Find user by email
@@ -377,8 +415,8 @@ impl MutationRoot {
 
         // Verify password
         if let Some(ref password_hash) = user_row.password_hash {
-            if !PasswordService::verify_password(&input.password, &password_hash)
-                .map_err(|e| async_graphql::Error::new(e.to_string()))? 
+            if !PasswordService::verify_password(&input.password, password_hash)
+                .map_err(|e| async_graphql::Error::new(e.to_string()))?
             {
                 return Err(async_graphql::Error::new("Invalid credentials"));
             }
@@ -413,53 +451,57 @@ impl MutationRoot {
         input: EnterTournamentResultsInput,
     ) -> Result<EnterTournamentResultsResponse> {
         use crate::auth::permissions::require_role;
-        
+
         // Require manager role
         let manager = require_role(ctx, Role::Manager).await?;
-        
+
         let state = ctx.data::<AppState>()?;
         let result_repo = TournamentResultRepo::new(state.db.clone());
         let tournament_repo = TournamentRepo::new(state.db.clone());
         let payout_repo = PayoutTemplateRepo::new(state.db.clone());
         let deal_repo = PlayerDealRepo::new(state.db.clone());
-        
+
         let tournament_id = Uuid::parse_str(input.tournament_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
-        
+
         // Verify tournament exists
-        let tournament = tournament_repo.get(tournament_id).await?
+        let tournament = tournament_repo
+            .get(tournament_id)
+            .await?
             .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
-        
+
         // Calculate payouts
-        let total_prize_pool = calculate_prize_pool(&tournament, input.player_positions.len() as i32)?;
+        let total_prize_pool =
+            calculate_prize_pool(&tournament, input.player_positions.len() as i32)?;
         let payouts = calculate_payouts(
             &payout_repo,
             input.payout_template_id.as_ref(),
             &input.player_positions,
             total_prize_pool,
             input.deal.as_ref(),
-        ).await?;
-        
+        )
+        .await?;
+
         // Create player deal if specified
         let deal = if let Some(deal_input) = input.deal {
             let manager_id = Uuid::parse_str(manager.id.as_str())
                 .map_err(|e| async_graphql::Error::new(format!("Invalid manager ID: {}", e)))?;
-            
+
             let custom_payouts = if let Some(custom) = &deal_input.custom_payouts {
                 let mut payouts_map = serde_json::Map::new();
                 for payout in custom {
                     payouts_map.insert(
                         payout.user_id.to_string(),
-                        serde_json::Value::Number(serde_json::Number::from(payout.amount_cents))
+                        serde_json::Value::Number(serde_json::Number::from(payout.amount_cents)),
                     );
                 }
                 Some(serde_json::Value::Object(payouts_map))
             } else {
                 None
             };
-            
+
             let total_deal_amount = calculate_deal_total(&deal_input, &payouts)?;
-            
+
             let deal_data = CreatePlayerDeal {
                 tournament_id,
                 deal_type: match deal_input.deal_type {
@@ -473,18 +515,18 @@ impl MutationRoot {
                 notes: deal_input.notes.clone(),
                 created_by: manager_id,
             };
-            
+
             Some(deal_repo.create(deal_data).await?)
         } else {
             None
         };
-        
+
         // Create tournament results
         let mut results = Vec::new();
         for (position_input, payout_amount) in input.player_positions.iter().zip(payouts.iter()) {
             let user_id = Uuid::parse_str(position_input.user_id.as_str())
                 .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
-            
+
             let result_data = CreateTournamentResult {
                 tournament_id,
                 user_id,
@@ -492,7 +534,7 @@ impl MutationRoot {
                 prize_cents: *payout_amount,
                 notes: None,
             };
-            
+
             let result_row = result_repo.create(result_data).await?;
             results.push(TournamentResult {
                 id: result_row.id.into(),
@@ -505,17 +547,20 @@ impl MutationRoot {
                 created_at: result_row.created_at,
             });
         }
-        
+
         // Convert deal to GraphQL type
         let gql_deal = if let Some(deal_row) = deal {
             let custom_payouts = if let Some(payouts_json) = &deal_row.custom_payouts {
-                let payouts_obj = payouts_json.as_object()
+                let payouts_obj = payouts_json
+                    .as_object()
                     .ok_or_else(|| async_graphql::Error::new("Invalid custom payouts format"))?;
-                
+
                 let mut custom_payouts_vec = Vec::new();
                 for (user_id, amount) in payouts_obj {
-                    let amount_cents = amount.as_i64()
-                        .ok_or_else(|| async_graphql::Error::new("Invalid payout amount"))? as i32;
+                    let amount_cents = amount
+                        .as_i64()
+                        .ok_or_else(|| async_graphql::Error::new("Invalid payout amount"))?
+                        as i32;
                     custom_payouts_vec.push(super::types::CustomPayout {
                         user_id: user_id.clone().into(),
                         amount_cents,
@@ -525,14 +570,14 @@ impl MutationRoot {
             } else {
                 None
             };
-            
+
             let deal_type = match deal_row.deal_type.as_str() {
                 "even_split" => DealType::EvenSplit,
                 "icm" => DealType::Icm,
                 "custom" => DealType::Custom,
                 _ => DealType::EvenSplit,
             };
-            
+
             Some(PlayerDeal {
                 id: deal_row.id.into(),
                 tournament_id: deal_row.tournament_id.into(),
@@ -546,7 +591,7 @@ impl MutationRoot {
         } else {
             None
         };
-        
+
         Ok(EnterTournamentResultsResponse {
             success: true,
             results,
@@ -561,28 +606,28 @@ impl MutationRoot {
         input: CreateTournamentTableInput,
     ) -> Result<TournamentTable> {
         use crate::auth::permissions::require_club_manager;
-        
+
         let state = ctx.data::<AppState>()?;
         let tournament_id = Uuid::parse_str(input.tournament_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
-        
+
         // Get club ID for the tournament to verify permissions
         let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
-        
+
         // Require manager role for this specific club
         let _manager = require_club_manager(ctx, club_id).await?;
-        
+
         let table_repo = TournamentTableRepo::new(state.db.clone());
-        
+
         let create_data = CreateTournamentTable {
             tournament_id,
             table_number: input.table_number,
             max_seats: input.max_seats.unwrap_or(9),
             table_name: input.table_name,
         };
-        
+
         let table_row = table_repo.create(create_data).await?;
-        
+
         // Publish seating change event
         let event = SeatingChangeEvent {
             event_type: SeatingEventType::TableCreated,
@@ -594,7 +639,7 @@ impl MutationRoot {
             timestamp: chrono::Utc::now(),
         };
         publish_seating_event(event);
-        
+
         Ok(TournamentTable {
             id: table_row.id.into(),
             tournament_id: table_row.tournament_id.into(),
@@ -613,17 +658,17 @@ impl MutationRoot {
         input: AssignPlayerToSeatInput,
     ) -> Result<SeatAssignment> {
         use crate::auth::permissions::require_club_manager;
-        
+
         let state = ctx.data::<AppState>()?;
         let tournament_id = Uuid::parse_str(input.tournament_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
-        
+
         // Get club ID for the tournament to verify permissions
         let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
-        
+
         // Require manager role for this specific club
         let manager = require_club_manager(ctx, club_id).await?;
-        
+
         let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
         let table_id = Uuid::parse_str(input.table_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid table ID: {}", e)))?;
@@ -631,13 +676,15 @@ impl MutationRoot {
             .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
         let manager_id = Uuid::parse_str(manager.id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid manager ID: {}", e)))?;
-        
+
         // Check if seat is available
-        let is_available = assignment_repo.is_seat_available(table_id, input.seat_number).await?;
+        let is_available = assignment_repo
+            .is_seat_available(table_id, input.seat_number)
+            .await?;
         if !is_available {
             return Err(async_graphql::Error::new("Seat is already occupied"));
         }
-        
+
         let create_data = CreateSeatAssignment {
             tournament_id,
             table_id,
@@ -647,13 +694,13 @@ impl MutationRoot {
             assigned_by: Some(manager_id),
             notes: input.notes,
         };
-        
+
         let assignment_row = assignment_repo.create(create_data).await?;
-        
+
         // Get player info for the event
         let user_repo = UserRepo::new(state.db.clone());
         let player = user_repo.get_by_id(user_id).await?;
-        
+
         // Publish seating change event
         let event = SeatingChangeEvent {
             event_type: SeatingEventType::PlayerAssigned,
@@ -669,8 +716,8 @@ impl MutationRoot {
                 is_current: assignment_row.is_current,
                 assigned_at: assignment_row.assigned_at,
                 unassigned_at: None, // Field not yet implemented in database
-                assigned_by: None, // Field not yet implemented in database
-                notes: None, // Field not yet implemented in database
+                assigned_by: None,   // Field not yet implemented in database
+                notes: None,         // Field not yet implemented in database
             }),
             affected_player: player.map(|p| User {
                 id: p.id.into(),
@@ -686,7 +733,7 @@ impl MutationRoot {
             timestamp: chrono::Utc::now(),
         };
         publish_seating_event(event);
-        
+
         Ok(SeatAssignment {
             id: assignment_row.id.into(),
             tournament_id: assignment_row.tournament_id.into(),
@@ -697,8 +744,8 @@ impl MutationRoot {
             is_current: assignment_row.is_current,
             assigned_at: assignment_row.assigned_at,
             unassigned_at: None, // Field not yet implemented in database
-            assigned_by: None, // Field not yet implemented in database
-            notes: None, // Field not yet implemented in database
+            assigned_by: None,   // Field not yet implemented in database
+            notes: None,         // Field not yet implemented in database
         })
     }
 
@@ -709,17 +756,17 @@ impl MutationRoot {
         input: MovePlayerInput,
     ) -> Result<SeatAssignment> {
         use crate::auth::permissions::require_club_manager;
-        
+
         let state = ctx.data::<AppState>()?;
         let tournament_id = Uuid::parse_str(input.tournament_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
-        
+
         // Get club ID for the tournament to verify permissions
         let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
-        
+
         // Require manager role for this specific club
         let manager = require_club_manager(ctx, club_id).await?;
-        
+
         let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
         let user_id = Uuid::parse_str(input.user_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
@@ -727,26 +774,30 @@ impl MutationRoot {
             .map_err(|e| async_graphql::Error::new(format!("Invalid table ID: {}", e)))?;
         let manager_id = Uuid::parse_str(manager.id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid manager ID: {}", e)))?;
-        
+
         // Check if new seat is available
-        let is_available = assignment_repo.is_seat_available(new_table_id, input.new_seat_number).await?;
+        let is_available = assignment_repo
+            .is_seat_available(new_table_id, input.new_seat_number)
+            .await?;
         if !is_available {
             return Err(async_graphql::Error::new("Target seat is already occupied"));
         }
-        
-        let assignment_row = assignment_repo.move_player(
-            tournament_id,
-            user_id,
-            new_table_id,
-            input.new_seat_number,
-            Some(manager_id),
-            input.notes,
-        ).await?;
-        
+
+        let assignment_row = assignment_repo
+            .move_player(
+                tournament_id,
+                user_id,
+                new_table_id,
+                input.new_seat_number,
+                Some(manager_id),
+                input.notes,
+            )
+            .await?;
+
         // Get player info for the event
         let user_repo = UserRepo::new(state.db.clone());
         let player = user_repo.get_by_id(user_id).await?;
-        
+
         // Publish seating change event
         let club_id = get_club_id_for_tournament(&state.db, assignment_row.tournament_id).await?;
         let event = SeatingChangeEvent {
@@ -763,8 +814,8 @@ impl MutationRoot {
                 is_current: assignment_row.is_current,
                 assigned_at: assignment_row.assigned_at,
                 unassigned_at: None, // Field not yet implemented in database
-                assigned_by: None, // Field not yet implemented in database
-                notes: None, // Field not yet implemented in database
+                assigned_by: None,   // Field not yet implemented in database
+                notes: None,         // Field not yet implemented in database
             }),
             affected_player: player.map(|p| User {
                 id: p.id.into(),
@@ -780,7 +831,7 @@ impl MutationRoot {
             timestamp: chrono::Utc::now(),
         };
         publish_seating_event(event);
-        
+
         Ok(SeatAssignment {
             id: assignment_row.id.into(),
             tournament_id: assignment_row.tournament_id.into(),
@@ -791,8 +842,8 @@ impl MutationRoot {
             is_current: assignment_row.is_current,
             assigned_at: assignment_row.assigned_at,
             unassigned_at: None, // Field not yet implemented in database
-            assigned_by: None, // Field not yet implemented in database
-            notes: None, // Field not yet implemented in database
+            assigned_by: None,   // Field not yet implemented in database
+            notes: None,         // Field not yet implemented in database
         })
     }
 
@@ -803,34 +854,38 @@ impl MutationRoot {
         input: UpdateStackSizeInput,
     ) -> Result<SeatAssignment> {
         use crate::auth::permissions::require_role;
-        
+
         // Require manager role
         let _manager = require_role(ctx, Role::Manager).await?;
-        
+
         let state = ctx.data::<AppState>()?;
         let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
-        
+
         let tournament_id = Uuid::parse_str(input.tournament_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
         let user_id = Uuid::parse_str(input.user_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
-        
+
         // Get current assignment for user
-        let current_assignment = assignment_repo.get_current_for_user(tournament_id, user_id).await?
+        let current_assignment = assignment_repo
+            .get_current_for_user(tournament_id, user_id)
+            .await?
             .ok_or_else(|| async_graphql::Error::new("Player not currently assigned to a seat"))?;
-        
+
         let update_data = UpdateSeatAssignment {
             stack_size: Some(input.new_stack_size),
             notes: None,
         };
-        
-        let assignment_row = assignment_repo.update(current_assignment.id, update_data).await?
+
+        let assignment_row = assignment_repo
+            .update(current_assignment.id, update_data)
+            .await?
             .ok_or_else(|| async_graphql::Error::new("Failed to update seat assignment"))?;
-        
+
         // Get player info for the event
         let user_repo = UserRepo::new(state.db.clone());
         let player = user_repo.get_by_id(user_id).await?;
-        
+
         // Publish seating change event
         let club_id = get_club_id_for_tournament(&state.db, assignment_row.tournament_id).await?;
         let event = SeatingChangeEvent {
@@ -847,8 +902,8 @@ impl MutationRoot {
                 is_current: assignment_row.is_current,
                 assigned_at: assignment_row.assigned_at,
                 unassigned_at: None, // Field not yet implemented in database
-                assigned_by: None, // Field not yet implemented in database
-                notes: None, // Field not yet implemented in database
+                assigned_by: None,   // Field not yet implemented in database
+                notes: None,         // Field not yet implemented in database
             }),
             affected_player: player.map(|p| User {
                 id: p.id.into(),
@@ -864,7 +919,7 @@ impl MutationRoot {
             timestamp: chrono::Utc::now(),
         };
         publish_seating_event(event);
-        
+
         Ok(SeatAssignment {
             id: assignment_row.id.into(),
             tournament_id: assignment_row.tournament_id.into(),
@@ -875,8 +930,8 @@ impl MutationRoot {
             is_current: assignment_row.is_current,
             assigned_at: assignment_row.assigned_at,
             unassigned_at: None, // Field not yet implemented in database
-            assigned_by: None, // Field not yet implemented in database
-            notes: None, // Field not yet implemented in database
+            assigned_by: None,   // Field not yet implemented in database
+            notes: None,         // Field not yet implemented in database
         })
     }
 
@@ -887,29 +942,35 @@ impl MutationRoot {
         input: UpdateTournamentStatusInput,
     ) -> Result<Tournament> {
         use crate::auth::permissions::require_role;
-        
+
         // Require manager role
         let _manager = require_role(ctx, Role::Manager).await?;
-        
+
         let state = ctx.data::<AppState>()?;
         let tournament_repo = TournamentRepo::new(state.db.clone());
-        
+
         let tournament_id = Uuid::parse_str(input.tournament_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
-        
+
         let live_status = match input.live_status {
             crate::gql::types::TournamentLiveStatus::NotStarted => TournamentLiveStatus::NotStarted,
-            crate::gql::types::TournamentLiveStatus::RegistrationOpen => TournamentLiveStatus::RegistrationOpen,
-            crate::gql::types::TournamentLiveStatus::LateRegistration => TournamentLiveStatus::LateRegistration,
+            crate::gql::types::TournamentLiveStatus::RegistrationOpen => {
+                TournamentLiveStatus::RegistrationOpen
+            }
+            crate::gql::types::TournamentLiveStatus::LateRegistration => {
+                TournamentLiveStatus::LateRegistration
+            }
             crate::gql::types::TournamentLiveStatus::InProgress => TournamentLiveStatus::InProgress,
             crate::gql::types::TournamentLiveStatus::Break => TournamentLiveStatus::Break,
             crate::gql::types::TournamentLiveStatus::FinalTable => TournamentLiveStatus::FinalTable,
             crate::gql::types::TournamentLiveStatus::Finished => TournamentLiveStatus::Finished,
         };
-        
-        let tournament_row = tournament_repo.update_live_status(tournament_id, live_status).await?
+
+        let tournament_row = tournament_repo
+            .update_live_status(tournament_id, live_status)
+            .await?
             .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
-        
+
         // Publish seating change event
         let event = SeatingChangeEvent {
             event_type: SeatingEventType::TournamentStatusChanged,
@@ -921,7 +982,7 @@ impl MutationRoot {
             timestamp: chrono::Utc::now(),
         };
         publish_seating_event(event);
-        
+
         Ok(Tournament {
             id: tournament_row.id.into(),
             title: tournament_row.name.clone(),
@@ -945,16 +1006,16 @@ impl MutationRoot {
         input: UpdateTournamentStateInput,
     ) -> Result<TournamentState> {
         use crate::auth::permissions::require_role;
-        
+
         // Require manager role
         let _manager = require_role(ctx, Role::Manager).await?;
-        
+
         let state = ctx.data::<AppState>()?;
         let tournament_repo = TournamentRepo::new(state.db.clone());
-        
+
         let tournament_id = Uuid::parse_str(input.tournament_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
-        
+
         let update_data = UpdateTournamentState {
             current_level: input.current_level,
             players_remaining: input.players_remaining,
@@ -965,9 +1026,11 @@ impl MutationRoot {
             level_started_at: input.level_started_at,
             level_duration_minutes: input.level_duration_minutes,
         };
-        
-        let state_row = tournament_repo.upsert_state(tournament_id, update_data).await?;
-        
+
+        let state_row = tournament_repo
+            .upsert_state(tournament_id, update_data)
+            .await?;
+
         Ok(TournamentState {
             id: state_row.id.into(),
             tournament_id: state_row.tournament_id.into(),
@@ -991,49 +1054,58 @@ impl MutationRoot {
         input: BalanceTablesInput,
     ) -> Result<Vec<SeatAssignment>> {
         use crate::auth::permissions::require_role;
-        
+
         // Require manager role
         let manager = require_role(ctx, Role::Manager).await?;
-        
+
         let state = ctx.data::<AppState>()?;
         let table_repo = TournamentTableRepo::new(state.db.clone());
         let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
-        
+
         let tournament_id = Uuid::parse_str(input.tournament_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
         let manager_id = Uuid::parse_str(manager.id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid manager ID: {}", e)))?;
-        
+
         // Get all active tables
         let tables = table_repo.get_active_by_tournament(tournament_id).await?;
         if tables.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         // Get all current assignments
-        let assignments = assignment_repo.get_current_for_tournament(tournament_id).await?;
-        
+        let assignments = assignment_repo
+            .get_current_for_tournament(tournament_id)
+            .await?;
+
         // Group players by table
-        let mut table_players: std::collections::HashMap<uuid::Uuid, Vec<_>> = std::collections::HashMap::new();
+        let mut table_players: std::collections::HashMap<uuid::Uuid, Vec<_>> =
+            std::collections::HashMap::new();
         for assignment in assignments {
-            table_players.entry(assignment.table_id).or_default().push(assignment);
+            table_players
+                .entry(assignment.table_id)
+                .or_default()
+                .push(assignment);
         }
-        
+
         // Calculate target players per table
         let total_players = table_players.values().map(|v| v.len()).sum::<usize>();
-        let target_per_table = input.target_players_per_table.unwrap_or(
-            ((total_players as f64) / (tables.len() as f64)).ceil() as i32
-        );
-        
+        let target_per_table = input
+            .target_players_per_table
+            .unwrap_or(((total_players as f64) / (tables.len() as f64)).ceil() as i32);
+
         // Simple balancing: move excess players from over-populated tables to under-populated ones
         let mut moves = Vec::new();
-        
+
         // Find tables that need players and tables that have excess
-        let mut need_players: Vec<_> = tables.iter().filter(|table| {
-            let current_count = table_players.get(&table.id).map(|v| v.len()).unwrap_or(0);
-            current_count < target_per_table as usize
-        }).collect();
-        
+        let mut need_players: Vec<_> = tables
+            .iter()
+            .filter(|table| {
+                let current_count = table_players.get(&table.id).map(|v| v.len()).unwrap_or(0);
+                current_count < target_per_table as usize
+            })
+            .collect();
+
         let mut excess_players: Vec<_> = Vec::new();
         for table in &tables {
             let empty_vec = Vec::new();
@@ -1046,26 +1118,33 @@ impl MutationRoot {
                 excess_players.extend(sorted_players.into_iter().take(excess_count));
             }
         }
-        
+
         // Move excess players to tables that need them
         for player in excess_players {
             if let Some(target_table) = need_players.first() {
-                let current_count = table_players.get(&target_table.id).map(|v| v.len()).unwrap_or(0);
+                let current_count = table_players
+                    .get(&target_table.id)
+                    .map(|v| v.len())
+                    .unwrap_or(0);
                 if current_count < target_per_table as usize {
                     // Find an available seat
                     for seat_num in 1..=target_table.max_seats {
-                        let is_available = assignment_repo.is_seat_available(target_table.id, seat_num).await?;
+                        let is_available = assignment_repo
+                            .is_seat_available(target_table.id, seat_num)
+                            .await?;
                         if is_available {
                             // Move the player
-                            let new_assignment = assignment_repo.move_player(
-                                tournament_id,
-                                player.user_id,
-                                target_table.id,
-                                seat_num,
-                                Some(manager_id),
-                                Some("Balanced by system".to_string()),
-                            ).await?;
-                            
+                            let new_assignment = assignment_repo
+                                .move_player(
+                                    tournament_id,
+                                    player.user_id,
+                                    target_table.id,
+                                    seat_num,
+                                    Some(manager_id),
+                                    Some("Balanced by system".to_string()),
+                                )
+                                .await?;
+
                             let assignment_for_response = SeatAssignment {
                                 id: new_assignment.id.into(),
                                 tournament_id: new_assignment.tournament_id.into(),
@@ -1076,17 +1155,22 @@ impl MutationRoot {
                                 is_current: new_assignment.is_current,
                                 assigned_at: new_assignment.assigned_at,
                                 unassigned_at: None, // Field not yet implemented in database
-                                assigned_by: None, // Field not yet implemented in database
-                                notes: None, // Field not yet implemented in database
+                                assigned_by: None,   // Field not yet implemented in database
+                                notes: None,         // Field not yet implemented in database
                             };
-                            
+
                             moves.push(assignment_for_response);
-                            
+
                             // Update our tracking
-                            table_players.entry(target_table.id).or_default().push(new_assignment);
-                            
+                            table_players
+                                .entry(target_table.id)
+                                .or_default()
+                                .push(new_assignment);
+
                             // Check if this table is now full
-                            if table_players.get(&target_table.id).unwrap().len() >= target_per_table as usize {
+                            if table_players.get(&target_table.id).unwrap().len()
+                                >= target_per_table as usize
+                            {
                                 need_players.remove(0);
                             }
                             break;
@@ -1095,7 +1179,7 @@ impl MutationRoot {
                 }
             }
         }
-        
+
         // Publish table balancing event if moves were made
         if !moves.is_empty() {
             let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
@@ -1110,7 +1194,7 @@ impl MutationRoot {
             };
             publish_seating_event(event);
         }
-        
+
         Ok(moves)
     }
 
@@ -1123,37 +1207,43 @@ impl MutationRoot {
         notes: Option<String>,
     ) -> Result<bool> {
         use crate::auth::permissions::require_role;
-        
+
         // Require manager role
         let manager = require_role(ctx, Role::Manager).await?;
-        
+
         let state = ctx.data::<AppState>()?;
         let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
-        
+
         let tournament_uuid = Uuid::parse_str(tournament_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
         let user_uuid = Uuid::parse_str(user_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
         let manager_id = Uuid::parse_str(manager.id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid manager ID: {}", e)))?;
-        
+
         // Get current assignment for user
-        let current_assignment = assignment_repo.get_current_for_user(tournament_uuid, user_uuid).await?;
-        
+        let current_assignment = assignment_repo
+            .get_current_for_user(tournament_uuid, user_uuid)
+            .await?;
+
         if let Some(assignment) = current_assignment {
             // Update the assignment with elimination notes and unassign
             let update_data = UpdateSeatAssignment {
                 stack_size: Some(0), // Set stack to 0 to indicate elimination
-                notes: notes.clone().or_else(|| Some("Player eliminated".to_string())),
+                notes: notes
+                    .clone()
+                    .or_else(|| Some("Player eliminated".to_string())),
             };
-            
+
             assignment_repo.update(assignment.id, update_data).await?;
-            assignment_repo.unassign(assignment.id, Some(manager_id)).await?;
-            
+            assignment_repo
+                .unassign(assignment.id, Some(manager_id))
+                .await?;
+
             // Get player info for the event
             let user_repo = UserRepo::new(state.db.clone());
             let player = user_repo.get_by_id(user_uuid).await?;
-            
+
             // Publish seating change event
             let club_id = get_club_id_for_tournament(&state.db, tournament_uuid).await?;
             let event = SeatingChangeEvent {
@@ -1187,20 +1277,25 @@ impl MutationRoot {
                 timestamp: chrono::Utc::now(),
             };
             publish_seating_event(event);
-            
+
             Ok(true)
         } else {
-            Err(async_graphql::Error::new("Player not currently assigned to a seat"))
+            Err(async_graphql::Error::new(
+                "Player not currently assigned to a seat",
+            ))
         }
     }
 }
 
 fn generate_client_id() -> String {
-    format!("client_{}", rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(16)
-        .map(char::from)
-        .collect::<String>())
+    format!(
+        "client_{}",
+        rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(16)
+            .map(char::from)
+            .collect::<String>()
+    )
 }
 
 fn generate_client_secret() -> String {
@@ -1298,35 +1393,47 @@ async fn calculate_payouts(
     deal: Option<&PlayerDealInput>,
 ) -> Result<Vec<i32>> {
     let mut payouts = vec![0; positions.len()];
-    
+
     // If there's a deal that affects certain positions, handle it
     if let Some(deal_input) = deal {
         match deal_input.deal_type {
             DealType::EvenSplit => {
                 // Calculate total amount for affected positions using template
                 let affected_total = if let Some(template_id) = template_id {
-                    calculate_template_total(payout_repo, template_id, &deal_input.affected_positions, total_prize_pool).await?
+                    calculate_template_total(
+                        payout_repo,
+                        template_id,
+                        &deal_input.affected_positions,
+                        total_prize_pool,
+                    )
+                    .await?
                 } else {
                     // Default: affected positions get equal share of remaining pool
                     total_prize_pool
                 };
-                
+
                 let per_player = affected_total / deal_input.affected_positions.len() as i32;
-                
+
                 for position in positions {
-                    if deal_input.affected_positions.contains(&position.final_position) {
+                    if deal_input
+                        .affected_positions
+                        .contains(&position.final_position)
+                    {
                         let index = (position.final_position - 1) as usize;
                         if index < payouts.len() {
                             payouts[index] = per_player;
                         }
                     }
                 }
-            },
+            }
             DealType::Custom => {
                 // Use custom payouts if provided
                 if let Some(custom_payouts) = &deal_input.custom_payouts {
                     for position in positions {
-                        if deal_input.affected_positions.contains(&position.final_position) {
+                        if deal_input
+                            .affected_positions
+                            .contains(&position.final_position)
+                        {
                             // Find custom payout for this user
                             for custom in custom_payouts {
                                 if custom.user_id == position.user_id {
@@ -1339,42 +1446,57 @@ async fn calculate_payouts(
                         }
                     }
                 }
-            },
+            }
             DealType::Icm => {
                 // ICM calculation would be more complex - for now, fall back to even split
                 let affected_total = if let Some(template_id) = template_id {
-                    calculate_template_total(payout_repo, template_id, &deal_input.affected_positions, total_prize_pool).await?
+                    calculate_template_total(
+                        payout_repo,
+                        template_id,
+                        &deal_input.affected_positions,
+                        total_prize_pool,
+                    )
+                    .await?
                 } else {
                     total_prize_pool
                 };
-                
+
                 let per_player = affected_total / deal_input.affected_positions.len() as i32;
-                
+
                 for position in positions {
-                    if deal_input.affected_positions.contains(&position.final_position) {
+                    if deal_input
+                        .affected_positions
+                        .contains(&position.final_position)
+                    {
                         let index = (position.final_position - 1) as usize;
                         if index < payouts.len() {
                             payouts[index] = per_player;
                         }
                     }
                 }
-            },
+            }
         }
-        
+
         // Calculate remaining positions using template if available
         if let Some(template_id) = template_id {
             let template_id_uuid = Uuid::parse_str(template_id.as_str())
                 .map_err(|e| async_graphql::Error::new(format!("Invalid template ID: {}", e)))?;
-            
+
             if let Some(template) = payout_repo.get_by_id(template_id_uuid).await? {
                 let payout_structure = parse_payout_structure(&template.payout_structure)?;
-                
+
                 for position in positions {
-                    if !deal_input.affected_positions.contains(&position.final_position) {
-                        if let Some(percentage) = get_position_percentage(&payout_structure, position.final_position) {
+                    if !deal_input
+                        .affected_positions
+                        .contains(&position.final_position)
+                    {
+                        if let Some(percentage) =
+                            get_position_percentage(&payout_structure, position.final_position)
+                        {
                             let index = (position.final_position - 1) as usize;
                             if index < payouts.len() {
-                                payouts[index] = (total_prize_pool as f64 * percentage / 100.0) as i32;
+                                payouts[index] =
+                                    (total_prize_pool as f64 * percentage / 100.0) as i32;
                             }
                         }
                     }
@@ -1386,12 +1508,14 @@ async fn calculate_payouts(
         if let Some(template_id) = template_id {
             let template_id_uuid = Uuid::parse_str(template_id.as_str())
                 .map_err(|e| async_graphql::Error::new(format!("Invalid template ID: {}", e)))?;
-            
+
             if let Some(template) = payout_repo.get_by_id(template_id_uuid).await? {
                 let payout_structure = parse_payout_structure(&template.payout_structure)?;
-                
+
                 for position in positions {
-                    if let Some(percentage) = get_position_percentage(&payout_structure, position.final_position) {
+                    if let Some(percentage) =
+                        get_position_percentage(&payout_structure, position.final_position)
+                    {
                         let index = (position.final_position - 1) as usize;
                         if index < payouts.len() {
                             payouts[index] = (total_prize_pool as f64 * percentage / 100.0) as i32;
@@ -1401,7 +1525,7 @@ async fn calculate_payouts(
             }
         }
     }
-    
+
     Ok(payouts)
 }
 
@@ -1413,17 +1537,17 @@ async fn calculate_template_total(
 ) -> Result<i32> {
     let template_id_uuid = Uuid::parse_str(template_id.as_str())
         .map_err(|e| async_graphql::Error::new(format!("Invalid template ID: {}", e)))?;
-    
+
     if let Some(template) = payout_repo.get_by_id(template_id_uuid).await? {
         let payout_structure = parse_payout_structure(&template.payout_structure)?;
         let mut total_percentage = 0.0;
-        
+
         for position in affected_positions {
             if let Some(percentage) = get_position_percentage(&payout_structure, *position) {
                 total_percentage += percentage;
             }
         }
-        
+
         Ok((total_prize_pool as f64 * total_percentage / 100.0) as i32)
     } else {
         Ok(total_prize_pool)
@@ -1438,7 +1562,7 @@ fn calculate_deal_total(deal_input: &PlayerDealInput, payouts: &[i32]) -> Result
             } else {
                 Ok(0)
             }
-        },
+        }
         _ => {
             // For even split and ICM, calculate from affected positions
             let mut total = 0;
@@ -1454,31 +1578,36 @@ fn calculate_deal_total(deal_input: &PlayerDealInput, payouts: &[i32]) -> Result
 }
 
 fn parse_payout_structure(structure: &serde_json::Value) -> Result<Vec<(i32, f64)>> {
-    let array = structure.as_array()
+    let array = structure
+        .as_array()
         .ok_or_else(|| async_graphql::Error::new("Invalid payout structure format"))?;
-    
+
     let mut payouts = Vec::new();
     for item in array {
-        let obj = item.as_object()
+        let obj = item
+            .as_object()
             .ok_or_else(|| async_graphql::Error::new("Invalid payout item format"))?;
-        
-        let position = obj.get("position")
+
+        let position = obj
+            .get("position")
             .and_then(|v| v.as_i64())
-            .ok_or_else(|| async_graphql::Error::new("Missing or invalid position"))? as i32;
-        
-        let percentage = obj.get("percentage")
+            .ok_or_else(|| async_graphql::Error::new("Missing or invalid position"))?
+            as i32;
+
+        let percentage = obj
+            .get("percentage")
             .and_then(|v| v.as_f64())
             .ok_or_else(|| async_graphql::Error::new("Missing or invalid percentage"))?;
-        
+
         payouts.push((position, percentage));
     }
-    
+
     Ok(payouts)
 }
 
 fn get_position_percentage(payout_structure: &[(i32, f64)], position: i32) -> Option<f64> {
-    payout_structure.iter()
+    payout_structure
+        .iter()
         .find(|(pos, _)| *pos == position)
         .map(|(_, percentage)| *percentage)
 }
-

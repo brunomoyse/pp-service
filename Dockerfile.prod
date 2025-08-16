@@ -41,7 +41,7 @@ COPY --from=builder /app/target/release/api /usr/local/bin/api
 # Drop privileges
 USER 10001
 
-# Expose if you like (optional)
+# Expose
 EXPOSE 8080
 
 ENV RUST_LOG=info

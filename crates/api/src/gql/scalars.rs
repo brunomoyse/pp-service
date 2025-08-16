@@ -23,7 +23,9 @@ impl ScalarType for Money {
                     Err(InputValueError::custom("Money expects integer cents (i64)"))
                 }
             }
-            _ => Err(InputValueError::custom("Money must be a number (integer cents)")),
+            _ => Err(InputValueError::custom(
+                "Money must be a number (integer cents)",
+            )),
         }
     }
 

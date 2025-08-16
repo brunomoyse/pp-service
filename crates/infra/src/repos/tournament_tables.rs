@@ -59,7 +59,10 @@ impl TournamentTableRepo {
     }
 
     /// Get all tables for a tournament
-    pub async fn get_by_tournament(&self, tournament_id: Uuid) -> SqlxResult<Vec<TournamentTableRow>> {
+    pub async fn get_by_tournament(
+        &self,
+        tournament_id: Uuid,
+    ) -> SqlxResult<Vec<TournamentTableRow>> {
         sqlx::query_as::<_, TournamentTableRow>(
             r#"
             SELECT id, tournament_id, table_number, max_seats, is_active, table_name, created_at, updated_at
@@ -74,7 +77,10 @@ impl TournamentTableRepo {
     }
 
     /// Get only active tables for a tournament
-    pub async fn get_active_by_tournament(&self, tournament_id: Uuid) -> SqlxResult<Vec<TournamentTableRow>> {
+    pub async fn get_active_by_tournament(
+        &self,
+        tournament_id: Uuid,
+    ) -> SqlxResult<Vec<TournamentTableRow>> {
         sqlx::query_as::<_, TournamentTableRow>(
             r#"
             SELECT id, tournament_id, table_number, max_seats, is_active, table_name, created_at, updated_at
@@ -89,7 +95,11 @@ impl TournamentTableRepo {
     }
 
     /// Update a tournament table
-    pub async fn update(&self, id: Uuid, data: UpdateTournamentTable) -> SqlxResult<Option<TournamentTableRow>> {
+    pub async fn update(
+        &self,
+        id: Uuid,
+        data: UpdateTournamentTable,
+    ) -> SqlxResult<Option<TournamentTableRow>> {
         sqlx::query_as::<_, TournamentTableRow>(
             r#"
             UPDATE tournament_tables
@@ -111,12 +121,10 @@ impl TournamentTableRepo {
 
     /// Delete a tournament table (and all its seat assignments)
     pub async fn delete(&self, id: Uuid) -> SqlxResult<bool> {
-        let result = sqlx::query(
-            "DELETE FROM tournament_tables WHERE id = $1"
-        )
-        .bind(id)
-        .execute(&self.pool)
-        .await?;
+        let result = sqlx::query("DELETE FROM tournament_tables WHERE id = $1")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
 
         Ok(result.rows_affected() > 0)
     }
@@ -128,7 +136,7 @@ impl TournamentTableRepo {
             UPDATE tournament_tables 
             SET is_active = false, updated_at = NOW()
             WHERE id = $1
-            "#
+            "#,
         )
         .bind(id)
         .execute(&self.pool)
@@ -159,7 +167,7 @@ impl TournamentTableRepo {
     /// Count active tables for a tournament
     pub async fn count_active_tables(&self, tournament_id: Uuid) -> SqlxResult<i64> {
         let result: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM tournament_tables WHERE tournament_id = $1 AND is_active = true"
+            "SELECT COUNT(*) FROM tournament_tables WHERE tournament_id = $1 AND is_active = true",
         )
         .bind(tournament_id)
         .fetch_one(&self.pool)

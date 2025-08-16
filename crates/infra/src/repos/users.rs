@@ -18,9 +18,13 @@ impl UserRepo {
         Self { db }
     }
 
-    pub async fn list(&self, filter: UserFilter, page: Option<LimitOffset>) -> Result<Vec<UserRow>> {
+    pub async fn list(
+        &self,
+        filter: UserFilter,
+        page: Option<LimitOffset>,
+    ) -> Result<Vec<UserRow>> {
         let page = page.unwrap_or_default();
-        
+
         let mut query = sqlx::QueryBuilder::new(
             "SELECT id, email, username, first_name, last_name, phone, is_active, role, created_at, updated_at FROM users WHERE 1=1"
         );

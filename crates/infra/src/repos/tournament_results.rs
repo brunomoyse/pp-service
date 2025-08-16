@@ -24,16 +24,16 @@ pub struct LeaderboardEntry {
     pub is_active: bool,
     pub role: Option<String>,
     pub total_tournaments: i32,
-    pub total_buy_ins: i32,        // Total amount spent (cents)
-    pub total_winnings: i32,       // Total amount won (cents) 
-    pub net_profit: i32,           // winnings - buy_ins (cents)
-    pub total_itm: i32,            // Number of tournaments where player finished in the money
-    pub itm_percentage: f64,       // (total_itm / total_tournaments) * 100
-    pub roi_percentage: f64,       // ((total_winnings - total_buy_ins) / total_buy_ins) * 100
-    pub average_finish: f64,       // Average finishing position
-    pub first_places: i32,         // Number of first place finishes
-    pub final_tables: i32,         // Number of final table finishes (typically top 8-10)
-    pub points: f64,               // Calculated leaderboard points
+    pub total_buy_ins: i32,  // Total amount spent (cents)
+    pub total_winnings: i32, // Total amount won (cents)
+    pub net_profit: i32,     // winnings - buy_ins (cents)
+    pub total_itm: i32,      // Number of tournaments where player finished in the money
+    pub itm_percentage: f64, // (total_itm / total_tournaments) * 100
+    pub roi_percentage: f64, // ((total_winnings - total_buy_ins) / total_buy_ins) * 100
+    pub average_finish: f64, // Average finishing position
+    pub first_places: i32,   // Number of first place finishes
+    pub final_tables: i32,   // Number of final table finishes (typically top 8-10)
+    pub points: f64,         // Calculated leaderboard points
 }
 
 #[derive(Debug, Clone)]
@@ -115,7 +115,11 @@ impl TournamentResultRepo {
         Ok(rows)
     }
 
-    pub async fn get_user_recent_results(&self, user_id: Uuid, limit: i64) -> Result<Vec<TournamentResultRow>> {
+    pub async fn get_user_recent_results(
+        &self,
+        user_id: Uuid,
+        limit: i64,
+    ) -> Result<Vec<TournamentResultRow>> {
         let rows = sqlx::query_as::<_, TournamentResultRow>(
             r#"
             SELECT tr.id, tr.tournament_id, tr.user_id, tr.final_position, tr.prize_cents, tr.points, tr.notes, tr.created_at, tr.updated_at
@@ -134,9 +138,13 @@ impl TournamentResultRepo {
         Ok(rows)
     }
 
-    pub async fn get_user_statistics(&self, user_id: Uuid, days_back: i32) -> Result<UserStatistics> {
+    pub async fn get_user_statistics(
+        &self,
+        user_id: Uuid,
+        days_back: i32,
+    ) -> Result<UserStatistics> {
         let cutoff_date = chrono::Utc::now() - chrono::Duration::days(days_back as i64);
-        
+
         // Get ITM count and total prize money
         let itm_row = sqlx::query(
             r#"
@@ -148,7 +156,7 @@ impl TournamentResultRepo {
             WHERE tr.user_id = $1 
                 AND tr.prize_cents > 0 
                 AND tr.created_at >= $2
-            "#
+            "#,
         )
         .bind(user_id)
         .bind(cutoff_date)
@@ -165,7 +173,7 @@ impl TournamentResultRepo {
             JOIN tournaments t ON reg.tournament_id = t.id
             WHERE reg.user_id = $1 
                 AND reg.created_at >= $2
-            "#
+            "#,
         )
         .bind(user_id)
         .bind(cutoff_date)
@@ -206,7 +214,11 @@ impl TournamentResultRepo {
         })
     }
 
-    pub async fn update(&self, id: Uuid, data: CreateTournamentResult) -> Result<TournamentResultRow> {
+    pub async fn update(
+        &self,
+        id: Uuid,
+        data: CreateTournamentResult,
+    ) -> Result<TournamentResultRow> {
         // Update tournament result without recalculating points
         // Points will be recalculated automatically when tournament status changes to 'finished'
         let row = sqlx::query_as::<_, TournamentResultRow>(
@@ -239,13 +251,30 @@ impl TournamentResultRepo {
     }
 
     /// Calculate comprehensive leaderboard with points system
-    pub async fn get_leaderboard(&self, period: LeaderboardPeriod, limit: Option<i32>, club_id: Option<Uuid>) -> Result<Vec<LeaderboardEntry>> {
+    pub async fn get_leaderboard(
+        &self,
+        period: LeaderboardPeriod,
+        limit: Option<i32>,
+        club_id: Option<Uuid>,
+    ) -> Result<Vec<LeaderboardEntry>> {
         let (date_filter, _params_count) = match period {
             LeaderboardPeriod::AllTime => ("".to_string(), 0),
-            LeaderboardPeriod::LastYear => ("AND t.start_time >= NOW() - INTERVAL '1 year'".to_string(), 0),
-            LeaderboardPeriod::Last6Months => ("AND t.start_time >= NOW() - INTERVAL '6 months'".to_string(), 0),
-            LeaderboardPeriod::Last30Days => ("AND t.start_time >= NOW() - INTERVAL '30 days'".to_string(), 0),
-            LeaderboardPeriod::Last7Days => ("AND t.start_time >= NOW() - INTERVAL '7 days'".to_string(), 0),
+            LeaderboardPeriod::LastYear => (
+                "AND t.start_time >= NOW() - INTERVAL '1 year'".to_string(),
+                0,
+            ),
+            LeaderboardPeriod::Last6Months => (
+                "AND t.start_time >= NOW() - INTERVAL '6 months'".to_string(),
+                0,
+            ),
+            LeaderboardPeriod::Last30Days => (
+                "AND t.start_time >= NOW() - INTERVAL '30 days'".to_string(),
+                0,
+            ),
+            LeaderboardPeriod::Last7Days => (
+                "AND t.start_time >= NOW() - INTERVAL '7 days'".to_string(),
+                0,
+            ),
         };
 
         let club_filter = match club_id {
@@ -323,18 +352,16 @@ impl TournamentResultRepo {
         );
 
         let mut query_builder = sqlx::query(&query);
-        
+
         // Bind club_id parameter if provided
         if let Some(club_uuid) = club_id {
             query_builder = query_builder.bind(club_uuid);
         }
-        
-        let rows = query_builder
-            .fetch_all(&self.db)
-            .await?;
+
+        let rows = query_builder.fetch_all(&self.db).await?;
 
         let mut leaderboard = Vec::new();
-        
+
         for row in rows {
             let entry = LeaderboardEntry {
                 user_id: row.try_get("user_id")?,

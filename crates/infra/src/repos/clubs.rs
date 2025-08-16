@@ -8,7 +8,9 @@ pub struct ClubRepo {
 }
 
 impl ClubRepo {
-    pub fn new(pool: Db) -> Self { Self { pool } }
+    pub fn new(pool: Db) -> Self {
+        Self { pool }
+    }
 
     pub async fn list_all(&self) -> SqlxResult<Vec<ClubRow>> {
         sqlx::query_as::<_, ClubRow>(
@@ -16,10 +18,10 @@ impl ClubRepo {
             SELECT id, name, city, country, created_at, updated_at
             FROM clubs
             ORDER BY name ASC
-            "#
+            "#,
         )
-            .fetch_all(&self.pool)
-            .await
+        .fetch_all(&self.pool)
+        .await
     }
 
     pub async fn get(&self, id: Uuid) -> SqlxResult<Option<ClubRow>> {
@@ -28,10 +30,10 @@ impl ClubRepo {
             SELECT id, name, city, country, created_at, updated_at
             FROM clubs
             WHERE id = $1
-            "#
+            "#,
         )
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
     }
 }

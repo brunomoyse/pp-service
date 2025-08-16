@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use async_graphql::{ObjectType, Schema, SubscriptionType};
+use async_graphql_axum::GraphQLSubscription;
 use axum::{
     extract::{Request, State},
     middleware,
@@ -7,8 +9,6 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use async_graphql::{ObjectType, Schema, SubscriptionType};
-use async_graphql_axum::{GraphQLSubscription};
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 
 use crate::auth::Claims;
@@ -42,10 +42,14 @@ where
         .route("/oauth/register", get(oauth_server::register_form))
         .route("/oauth/register", post(oauth_server::register))
         // GraphQL endpoint with custom handler that includes JWT claims in context
-        .route("/graphql", post({
-            let schema_clone = schema.clone();
-            move |state, req| graphql_handler(state, req, schema_clone)
-        }).get_service(gql_ws))
+        .route(
+            "/graphql",
+            post({
+                let schema_clone = schema.clone();
+                move |state, req| graphql_handler(state, req, schema_clone)
+            })
+            .get_service(gql_ws),
+        )
         // App state (PgPool, broadcasters, etc.)
         .with_state(state.clone())
         // JWT middleware for authentication
@@ -68,28 +72,27 @@ where
     M: ObjectType + Send + Sync + 'static,
     S: SubscriptionType + Send + Sync + 'static,
 {
-    
     // Extract claims from request extensions (set by JWT middleware)
     let claims = req.extensions().get::<Claims>().cloned();
-    
+
     // Extract the GraphQL request from the HTTP request
     let (_parts, body) = req.into_parts();
-    let body_bytes = axum::body::to_bytes(body, usize::MAX).await
+    let body_bytes = axum::body::to_bytes(body, usize::MAX)
+        .await
         .map_err(|e| AppError::Internal(format!("Failed to read request body: {}", e)))?;
-    
-    let gql_request: async_graphql::Request = 
-        serde_json::from_slice(&body_bytes)
-            .map_err(|e| AppError::BadRequest(format!("Invalid GraphQL request: {}", e)))?;
-    
+
+    let gql_request: async_graphql::Request = serde_json::from_slice(&body_bytes)
+        .map_err(|e| AppError::BadRequest(format!("Invalid GraphQL request: {}", e)))?;
+
     // Add the AppState and optionally claims to the GraphQL context
     let mut gql_request = gql_request.data(state);
     if let Some(claims) = claims {
         gql_request = gql_request.data(claims);
     }
-    
+
     // Execute the GraphQL request
     let gql_response = schema.execute(gql_request).await;
-    
+
     Ok(Json(gql_response).into_response())
 }
 

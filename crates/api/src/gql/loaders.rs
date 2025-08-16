@@ -38,10 +38,10 @@ impl Loader<Uuid> for ClubLoader {
                 WHERE id = ANY($1::uuid[])
                 "#,
             )
-                .bind(&ids)
-                .fetch_all(&pool)
-                .await
-                .map_err(Arc::new)?;
+            .bind(&ids)
+            .fetch_all(&pool)
+            .await
+            .map_err(Arc::new)?;
 
             Ok(rows.into_iter().map(|r| (r.id, r)).collect())
         }

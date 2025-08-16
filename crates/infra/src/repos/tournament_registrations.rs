@@ -19,7 +19,10 @@ impl TournamentRegistrationRepo {
         Self { db }
     }
 
-    pub async fn create(&self, data: CreateTournamentRegistration) -> Result<TournamentRegistrationRow> {
+    pub async fn create(
+        &self,
+        data: CreateTournamentRegistration,
+    ) -> Result<TournamentRegistrationRow> {
         let row = sqlx::query_as::<_, TournamentRegistrationRow>(
             r#"
             INSERT INTO tournament_registrations (tournament_id, user_id, notes)
@@ -51,7 +54,11 @@ impl TournamentRegistrationRepo {
         Ok(row)
     }
 
-    pub async fn get_by_tournament_and_user(&self, tournament_id: Uuid, user_id: Uuid) -> Result<Option<TournamentRegistrationRow>> {
+    pub async fn get_by_tournament_and_user(
+        &self,
+        tournament_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<Option<TournamentRegistrationRow>> {
         let row = sqlx::query_as::<_, TournamentRegistrationRow>(
             r#"
             SELECT id, tournament_id, user_id, registration_time, status, notes, created_at, updated_at
@@ -67,7 +74,10 @@ impl TournamentRegistrationRepo {
         Ok(row)
     }
 
-    pub async fn get_by_tournament(&self, tournament_id: Uuid) -> Result<Vec<TournamentRegistrationRow>> {
+    pub async fn get_by_tournament(
+        &self,
+        tournament_id: Uuid,
+    ) -> Result<Vec<TournamentRegistrationRow>> {
         let rows = sqlx::query_as::<_, TournamentRegistrationRow>(
             r#"
             SELECT id, tournament_id, user_id, registration_time, status, notes, created_at, updated_at
@@ -83,7 +93,10 @@ impl TournamentRegistrationRepo {
         Ok(rows)
     }
 
-    pub async fn get_user_current_registrations(&self, user_id: Uuid) -> Result<Vec<TournamentRegistrationRow>> {
+    pub async fn get_user_current_registrations(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<TournamentRegistrationRow>> {
         let rows = sqlx::query_as::<_, TournamentRegistrationRow>(
             r#"
             SELECT tr.id, tr.tournament_id, tr.user_id, tr.registration_time, tr.status, tr.notes, tr.created_at, tr.updated_at

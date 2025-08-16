@@ -1,8 +1,8 @@
+use crate::repos::tournaments::TournamentLiveStatus;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
-use crate::repos::tournaments::TournamentLiveStatus;
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct ClubRow {
@@ -34,14 +34,13 @@ impl TournamentRow {
     pub fn calculate_status(&self) -> crate::repos::tournaments::TournamentStatus {
         use crate::repos::tournaments::TournamentLiveStatus as LiveStatus;
         use crate::repos::tournaments::TournamentStatus;
-        
+
         match self.live_status {
-            LiveStatus::NotStarted | 
-            LiveStatus::RegistrationOpen => TournamentStatus::Upcoming,
-            LiveStatus::LateRegistration | 
-            LiveStatus::InProgress | 
-            LiveStatus::Break | 
-            LiveStatus::FinalTable => TournamentStatus::InProgress,
+            LiveStatus::NotStarted | LiveStatus::RegistrationOpen => TournamentStatus::Upcoming,
+            LiveStatus::LateRegistration
+            | LiveStatus::InProgress
+            | LiveStatus::Break
+            | LiveStatus::FinalTable => TournamentStatus::InProgress,
             LiveStatus::Finished => TournamentStatus::Completed,
         }
     }

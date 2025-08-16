@@ -1,4 +1,7 @@
-use crate::{db::Db, models::{TableSeatAssignmentRow, UserRow}};
+use crate::{
+    db::Db,
+    models::{TableSeatAssignmentRow, UserRow},
+};
 use chrono::{DateTime, Utc};
 use sqlx::Result as SqlxResult;
 use uuid::Uuid;
@@ -86,7 +89,11 @@ impl TableSeatAssignmentRepo {
     }
 
     /// Get current seat assignment for a user in a tournament
-    pub async fn get_current_for_user(&self, tournament_id: Uuid, user_id: Uuid) -> SqlxResult<Option<TableSeatAssignmentRow>> {
+    pub async fn get_current_for_user(
+        &self,
+        tournament_id: Uuid,
+        user_id: Uuid,
+    ) -> SqlxResult<Option<TableSeatAssignmentRow>> {
         sqlx::query_as::<_, TableSeatAssignmentRow>(
             r#"
             SELECT id, tournament_id, table_id, user_id, seat_number, stack_size, 
@@ -102,7 +109,10 @@ impl TableSeatAssignmentRepo {
     }
 
     /// Get all current seat assignments for a table
-    pub async fn get_current_for_table(&self, table_id: Uuid) -> SqlxResult<Vec<TableSeatAssignmentRow>> {
+    pub async fn get_current_for_table(
+        &self,
+        table_id: Uuid,
+    ) -> SqlxResult<Vec<TableSeatAssignmentRow>> {
         sqlx::query_as::<_, TableSeatAssignmentRow>(
             r#"
             SELECT id, tournament_id, table_id, user_id, seat_number, stack_size, 
@@ -118,7 +128,10 @@ impl TableSeatAssignmentRepo {
     }
 
     /// Get all current seat assignments for a tournament
-    pub async fn get_current_for_tournament(&self, tournament_id: Uuid) -> SqlxResult<Vec<TableSeatAssignmentRow>> {
+    pub async fn get_current_for_tournament(
+        &self,
+        tournament_id: Uuid,
+    ) -> SqlxResult<Vec<TableSeatAssignmentRow>> {
         sqlx::query_as::<_, TableSeatAssignmentRow>(
             r#"
             SELECT id, tournament_id, table_id, user_id, seat_number, stack_size, 
@@ -134,7 +147,10 @@ impl TableSeatAssignmentRepo {
     }
 
     /// Get current seat assignments with player information for a table
-    pub async fn get_current_with_players_for_table(&self, table_id: Uuid) -> SqlxResult<Vec<SeatAssignmentWithPlayer>> {
+    pub async fn get_current_with_players_for_table(
+        &self,
+        table_id: Uuid,
+    ) -> SqlxResult<Vec<SeatAssignmentWithPlayer>> {
         #[derive(sqlx::FromRow)]
         struct JoinedRow {
             // Assignment fields
@@ -170,14 +186,15 @@ impl TableSeatAssignmentRepo {
             JOIN users u ON tsa.user_id = u.id
             WHERE tsa.table_id = $1 AND tsa.is_current = true
             ORDER BY tsa.seat_number ASC
-            "#
+            "#,
         )
         .bind(table_id)
         .fetch_all(&self.pool)
         .await?;
 
-        let results = rows.into_iter().map(|row| {
-            SeatAssignmentWithPlayer {
+        let results = rows
+            .into_iter()
+            .map(|row| SeatAssignmentWithPlayer {
                 assignment: TableSeatAssignmentRow {
                     id: row.id,
                     tournament_id: row.tournament_id,
@@ -200,14 +217,18 @@ impl TableSeatAssignmentRepo {
                     created_at: row.user_created_at,
                     updated_at: row.user_updated_at,
                 },
-            }
-        }).collect();
+            })
+            .collect();
 
         Ok(results)
     }
 
     /// Get seat assignment history with filter
-    pub async fn get_history(&self, filter: SeatAssignmentFilter, limit: Option<i64>) -> SqlxResult<Vec<TableSeatAssignmentRow>> {
+    pub async fn get_history(
+        &self,
+        filter: SeatAssignmentFilter,
+        limit: Option<i64>,
+    ) -> SqlxResult<Vec<TableSeatAssignmentRow>> {
         let limit = limit.unwrap_or(100).min(1000); // Cap at 1000 for safety
 
         sqlx::query_as::<_, TableSeatAssignmentRow>(
@@ -237,7 +258,11 @@ impl TableSeatAssignmentRepo {
     }
 
     /// Update seat assignment (typically for stack size updates)
-    pub async fn update(&self, id: Uuid, data: UpdateSeatAssignment) -> SqlxResult<Option<TableSeatAssignmentRow>> {
+    pub async fn update(
+        &self,
+        id: Uuid,
+        data: UpdateSeatAssignment,
+    ) -> SqlxResult<Option<TableSeatAssignmentRow>> {
         sqlx::query_as::<_, TableSeatAssignmentRow>(
             r#"
             UPDATE table_seat_assignments
@@ -257,7 +282,11 @@ impl TableSeatAssignmentRepo {
     }
 
     /// Unassign a player (mark as not current)
-    pub async fn unassign(&self, id: Uuid, unassigned_by: Option<Uuid>) -> SqlxResult<Option<TableSeatAssignmentRow>> {
+    pub async fn unassign(
+        &self,
+        id: Uuid,
+        unassigned_by: Option<Uuid>,
+    ) -> SqlxResult<Option<TableSeatAssignmentRow>> {
         sqlx::query_as::<_, TableSeatAssignmentRow>(
             r#"
             UPDATE table_seat_assignments
@@ -298,7 +327,7 @@ impl TableSeatAssignmentRepo {
                 assigned_by = COALESCE($3, assigned_by),
                 updated_at = NOW()
             WHERE tournament_id = $1 AND user_id = $2 AND is_current = true
-            "#
+            "#,
         )
         .bind(tournament_id)
         .bind(user_id)
@@ -333,7 +362,7 @@ impl TableSeatAssignmentRepo {
     /// Count players at a table
     pub async fn count_players_at_table(&self, table_id: Uuid) -> SqlxResult<i64> {
         let result: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM table_seat_assignments WHERE table_id = $1 AND is_current = true"
+            "SELECT COUNT(*) FROM table_seat_assignments WHERE table_id = $1 AND is_current = true",
         )
         .bind(table_id)
         .fetch_one(&self.pool)
@@ -356,7 +385,7 @@ impl TableSeatAssignmentRepo {
               AND tr.status = 'registered'
               AND tsa.id IS NULL
             ORDER BY tr.registration_time ASC
-            "#
+            "#,
         )
         .bind(tournament_id)
         .fetch_all(&self.pool)

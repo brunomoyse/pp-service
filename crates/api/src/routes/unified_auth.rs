@@ -148,9 +148,12 @@ pub async fn auth_choice(
 
 fn build_query_string(params: &AuthChoiceQuery) -> String {
     let mut query_parts = Vec::new();
-    
+
     if let Some(ref redirect_uri) = params.redirect_uri {
-        query_parts.push(format!("redirect_uri={}", urlencoding::encode(redirect_uri)));
+        query_parts.push(format!(
+            "redirect_uri={}",
+            urlencoding::encode(redirect_uri)
+        ));
     }
     if let Some(ref scope) = params.scope {
         query_parts.push(format!("scope={}", urlencoding::encode(scope)));
@@ -158,18 +161,21 @@ fn build_query_string(params: &AuthChoiceQuery) -> String {
     if let Some(ref state) = params.state {
         query_parts.push(format!("state={}", urlencoding::encode(state)));
     }
-    
+
     query_parts.join("&")
 }
 
 fn build_oauth_query_string(params: &AuthChoiceQuery) -> String {
     let mut query_parts = vec!["response_type=code".to_string()];
-    
+
     if let Some(ref client_id) = params.client_id {
         query_parts.push(format!("client_id={}", urlencoding::encode(client_id)));
     }
     if let Some(ref redirect_uri) = params.redirect_uri {
-        query_parts.push(format!("redirect_uri={}", urlencoding::encode(redirect_uri)));
+        query_parts.push(format!(
+            "redirect_uri={}",
+            urlencoding::encode(redirect_uri)
+        ));
     }
     if let Some(ref scope) = params.scope {
         query_parts.push(format!("scope={}", urlencoding::encode(scope)));
@@ -177,6 +183,6 @@ fn build_oauth_query_string(params: &AuthChoiceQuery) -> String {
     if let Some(ref state) = params.state {
         query_parts.push(format!("state={}", urlencoding::encode(state)));
     }
-    
+
     query_parts.join("&")
 }

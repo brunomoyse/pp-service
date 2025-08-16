@@ -1,6 +1,6 @@
+use serde_json::Value as JsonValue;
 use sqlx::{PgPool, Result};
 use uuid::Uuid;
-use serde_json::Value as JsonValue;
 
 use crate::models::PayoutTemplateRow;
 
@@ -70,7 +70,10 @@ impl PayoutTemplateRepo {
         Ok(rows)
     }
 
-    pub async fn find_suitable_templates(&self, player_count: i32) -> Result<Vec<PayoutTemplateRow>> {
+    pub async fn find_suitable_templates(
+        &self,
+        player_count: i32,
+    ) -> Result<Vec<PayoutTemplateRow>> {
         let rows = sqlx::query_as::<_, PayoutTemplateRow>(
             r#"
             SELECT id, name, description, min_players, max_players, payout_structure, created_at, updated_at

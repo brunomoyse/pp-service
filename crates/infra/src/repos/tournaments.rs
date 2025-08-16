@@ -1,6 +1,11 @@
-use crate::{db::Db, models::{TournamentRow, TournamentStateRow}, pagination::LimitOffset};
+use crate::{
+    db::Db,
+    models::{TournamentRow, TournamentStateRow},
+    pagination::LimitOffset,
+};
 use chrono::{DateTime, Utc};
 use sqlx::Result as SqlxResult;
+use std::str::FromStr;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Default)]
@@ -42,17 +47,21 @@ impl TournamentLiveStatus {
             TournamentLiveStatus::Finished => "finished",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for TournamentLiveStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "not_started" => Some(TournamentLiveStatus::NotStarted),
-            "registration_open" => Some(TournamentLiveStatus::RegistrationOpen),
-            "late_registration" => Some(TournamentLiveStatus::LateRegistration),
-            "in_progress" => Some(TournamentLiveStatus::InProgress),
-            "break" => Some(TournamentLiveStatus::Break),
-            "final_table" => Some(TournamentLiveStatus::FinalTable),
-            "finished" => Some(TournamentLiveStatus::Finished),
-            _ => None,
+            "not_started" => Ok(TournamentLiveStatus::NotStarted),
+            "registration_open" => Ok(TournamentLiveStatus::RegistrationOpen),
+            "late_registration" => Ok(TournamentLiveStatus::LateRegistration),
+            "in_progress" => Ok(TournamentLiveStatus::InProgress),
+            "break" => Ok(TournamentLiveStatus::Break),
+            "final_table" => Ok(TournamentLiveStatus::FinalTable),
+            "finished" => Ok(TournamentLiveStatus::Finished),
+            _ => Err(format!("Unknown tournament live status: {}", s)),
         }
     }
 }
@@ -75,7 +84,9 @@ pub struct TournamentRepo {
 }
 
 impl TournamentRepo {
-    pub fn new(pool: Db) -> Self { Self { pool } }
+    pub fn new(pool: Db) -> Self {
+        Self { pool }
+    }
 
     pub async fn get(&self, id: Uuid) -> SqlxResult<Option<TournamentRow>> {
         sqlx::query_as::<_, TournamentRow>(
@@ -84,11 +95,11 @@ impl TournamentRepo {
                    buy_in_cents, seat_cap, live_status, created_at, updated_at
             FROM tournaments
             WHERE id = $1
-            "#
+            "#,
         )
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
     }
 
     pub async fn list(
@@ -132,7 +143,11 @@ impl TournamentRepo {
     }
 
     /// Update tournament live status
-    pub async fn update_live_status(&self, id: Uuid, live_status: TournamentLiveStatus) -> SqlxResult<Option<TournamentRow>> {
+    pub async fn update_live_status(
+        &self,
+        id: Uuid,
+        live_status: TournamentLiveStatus,
+    ) -> SqlxResult<Option<TournamentRow>> {
         sqlx::query_as::<_, TournamentRow>(
             r#"
             UPDATE tournaments
@@ -141,7 +156,7 @@ impl TournamentRepo {
             WHERE id = $1
             RETURNING id, club_id, name, description, start_time, end_time,
                      buy_in_cents, seat_cap, live_status, created_at, updated_at
-            "#
+            "#,
         )
         .bind(id)
         .bind(live_status.as_str())
@@ -159,7 +174,7 @@ impl TournamentRepo {
                    created_at, updated_at
             FROM tournament_state
             WHERE tournament_id = $1
-            "#
+            "#,
         )
         .bind(tournament_id)
         .fetch_optional(&self.pool)
@@ -167,7 +182,11 @@ impl TournamentRepo {
     }
 
     /// Create or update tournament state
-    pub async fn upsert_state(&self, tournament_id: Uuid, data: UpdateTournamentState) -> SqlxResult<TournamentStateRow> {
+    pub async fn upsert_state(
+        &self,
+        tournament_id: Uuid,
+        data: UpdateTournamentState,
+    ) -> SqlxResult<TournamentStateRow> {
         sqlx::query_as::<_, TournamentStateRow>(
             r#"
             INSERT INTO tournament_state (
@@ -191,7 +210,7 @@ impl TournamentRepo {
                      break_until, current_small_blind, current_big_blind,
                      current_ante, level_started_at, level_duration_minutes,
                      created_at, updated_at
-            "#
+            "#,
         )
         .bind(tournament_id)
         .bind(data.current_level)
@@ -207,7 +226,10 @@ impl TournamentRepo {
     }
 
     /// Get tournaments by live status
-    pub async fn get_by_live_status(&self, live_status: TournamentLiveStatus) -> SqlxResult<Vec<TournamentRow>> {
+    pub async fn get_by_live_status(
+        &self,
+        live_status: TournamentLiveStatus,
+    ) -> SqlxResult<Vec<TournamentRow>> {
         sqlx::query_as::<_, TournamentRow>(
             r#"
             SELECT id, club_id, name, description, start_time, end_time,
@@ -215,7 +237,7 @@ impl TournamentRepo {
             FROM tournaments
             WHERE live_status = $1
             ORDER BY start_time ASC
-            "#
+            "#,
         )
         .bind(live_status.as_str())
         .fetch_all(&self.pool)
@@ -231,7 +253,7 @@ impl TournamentRepo {
             FROM tournaments
             WHERE live_status IN ('in_progress', 'break', 'final_table')
             ORDER BY start_time ASC
-            "#
+            "#,
         )
         .fetch_all(&self.pool)
         .await

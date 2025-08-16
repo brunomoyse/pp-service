@@ -20,14 +20,12 @@ pub async fn jwt_middleware(
     if let Some(auth_header) = request.headers().get(AUTHORIZATION) {
         if let Ok(auth_str) = auth_header.to_str() {
             // Check if it's a Bearer token
-            if auth_str.starts_with("Bearer ") {
-                let token = &auth_str[7..]; // Remove "Bearer " prefix
-                
+            if let Some(token) = auth_str.strip_prefix("Bearer ") {
                 // Verify the token
                 match state.jwt_service().verify_token(token) {
                     Ok(claims) => {
                         // Add claims to request extensions so GraphQL can access them
-                        request.extensions_mut().insert(claims);
+                        request.extensions_mut().insert::<Claims>(claims);
                     }
                     Err(_) => {
                         // Invalid token - we don't return an error here,
@@ -38,7 +36,7 @@ pub async fn jwt_middleware(
             }
         }
     }
-    
+
     // Continue to the next middleware/handler
     Ok(next.run(request).await)
 }

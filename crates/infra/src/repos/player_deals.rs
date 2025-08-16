@@ -1,6 +1,6 @@
+use serde_json::Value as JsonValue;
 use sqlx::{PgPool, Result};
 use uuid::Uuid;
-use serde_json::Value as JsonValue;
 
 use crate::models::PlayerDealRow;
 

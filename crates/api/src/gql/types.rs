@@ -1,7 +1,7 @@
-use async_graphql::{Context, Error, ComplexObject, Result, SimpleObject, InputObject, ID, Enum};
 use async_graphql::dataloader::DataLoader;
-use uuid::Uuid;
+use async_graphql::{ComplexObject, Context, Enum, Error, InputObject, Result, SimpleObject, ID};
 use chrono::{DateTime, Utc};
+use uuid::Uuid;
 
 use crate::gql::loaders::ClubLoader;
 
@@ -134,13 +134,25 @@ impl From<TournamentLiveStatus> for String {
 impl From<infra::repos::tournaments::TournamentLiveStatus> for TournamentLiveStatus {
     fn from(status: infra::repos::tournaments::TournamentLiveStatus) -> Self {
         match status {
-            infra::repos::tournaments::TournamentLiveStatus::NotStarted => TournamentLiveStatus::NotStarted,
-            infra::repos::tournaments::TournamentLiveStatus::RegistrationOpen => TournamentLiveStatus::RegistrationOpen,
-            infra::repos::tournaments::TournamentLiveStatus::LateRegistration => TournamentLiveStatus::LateRegistration,
-            infra::repos::tournaments::TournamentLiveStatus::InProgress => TournamentLiveStatus::InProgress,
+            infra::repos::tournaments::TournamentLiveStatus::NotStarted => {
+                TournamentLiveStatus::NotStarted
+            }
+            infra::repos::tournaments::TournamentLiveStatus::RegistrationOpen => {
+                TournamentLiveStatus::RegistrationOpen
+            }
+            infra::repos::tournaments::TournamentLiveStatus::LateRegistration => {
+                TournamentLiveStatus::LateRegistration
+            }
+            infra::repos::tournaments::TournamentLiveStatus::InProgress => {
+                TournamentLiveStatus::InProgress
+            }
             infra::repos::tournaments::TournamentLiveStatus::Break => TournamentLiveStatus::Break,
-            infra::repos::tournaments::TournamentLiveStatus::FinalTable => TournamentLiveStatus::FinalTable,
-            infra::repos::tournaments::TournamentLiveStatus::Finished => TournamentLiveStatus::Finished,
+            infra::repos::tournaments::TournamentLiveStatus::FinalTable => {
+                TournamentLiveStatus::FinalTable
+            }
+            infra::repos::tournaments::TournamentLiveStatus::Finished => {
+                TournamentLiveStatus::Finished
+            }
         }
     }
 }
@@ -148,13 +160,25 @@ impl From<infra::repos::tournaments::TournamentLiveStatus> for TournamentLiveSta
 impl From<TournamentLiveStatus> for infra::repos::tournaments::TournamentLiveStatus {
     fn from(status: TournamentLiveStatus) -> Self {
         match status {
-            TournamentLiveStatus::NotStarted => infra::repos::tournaments::TournamentLiveStatus::NotStarted,
-            TournamentLiveStatus::RegistrationOpen => infra::repos::tournaments::TournamentLiveStatus::RegistrationOpen,
-            TournamentLiveStatus::LateRegistration => infra::repos::tournaments::TournamentLiveStatus::LateRegistration,
-            TournamentLiveStatus::InProgress => infra::repos::tournaments::TournamentLiveStatus::InProgress,
+            TournamentLiveStatus::NotStarted => {
+                infra::repos::tournaments::TournamentLiveStatus::NotStarted
+            }
+            TournamentLiveStatus::RegistrationOpen => {
+                infra::repos::tournaments::TournamentLiveStatus::RegistrationOpen
+            }
+            TournamentLiveStatus::LateRegistration => {
+                infra::repos::tournaments::TournamentLiveStatus::LateRegistration
+            }
+            TournamentLiveStatus::InProgress => {
+                infra::repos::tournaments::TournamentLiveStatus::InProgress
+            }
             TournamentLiveStatus::Break => infra::repos::tournaments::TournamentLiveStatus::Break,
-            TournamentLiveStatus::FinalTable => infra::repos::tournaments::TournamentLiveStatus::FinalTable,
-            TournamentLiveStatus::Finished => infra::repos::tournaments::TournamentLiveStatus::Finished,
+            TournamentLiveStatus::FinalTable => {
+                infra::repos::tournaments::TournamentLiveStatus::FinalTable
+            }
+            TournamentLiveStatus::Finished => {
+                infra::repos::tournaments::TournamentLiveStatus::Finished
+            }
         }
     }
 }
@@ -170,8 +194,8 @@ pub struct Tournament {
     pub end_time: Option<DateTime<Utc>>,
     pub buy_in_cents: i32,
     pub seat_cap: Option<i32>,
-    pub status: TournamentStatus,           // Calculated: UPCOMING, LIVE, COMPLETED
-    pub live_status: TournamentLiveStatus,  // Direct from DB: NOT_STARTED, IN_PROGRESS, FINISHED, etc.
+    pub status: TournamentStatus, // Calculated: UPCOMING, LIVE, COMPLETED
+    pub live_status: TournamentLiveStatus, // Direct from DB: NOT_STARTED, IN_PROGRESS, FINISHED, etc.
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -244,7 +268,6 @@ pub struct UserTournamentResult {
     pub result: TournamentResult,
     pub tournament: Tournament,
 }
-
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
 pub enum DealType {
@@ -639,19 +662,19 @@ impl From<LeaderboardPeriod> for infra::repos::LeaderboardPeriod {
 
 #[derive(SimpleObject, Clone)]
 pub struct LeaderboardEntry {
-    pub user: User,                // Full user object with complete info
-    pub rank: i32,                 // Position in leaderboard (1-based)
+    pub user: User, // Full user object with complete info
+    pub rank: i32,  // Position in leaderboard (1-based)
     pub total_tournaments: i32,
-    pub total_buy_ins: i32,        // Total amount spent (cents)
-    pub total_winnings: i32,       // Total amount won (cents) 
-    pub net_profit: i32,           // winnings - buy_ins (cents)
-    pub total_itm: i32,            // Number of tournaments where player finished in the money
-    pub itm_percentage: f64,       // (total_itm / total_tournaments) * 100
-    pub roi_percentage: f64,       // ((total_winnings - total_buy_ins) / total_buy_ins) * 100
-    pub average_finish: f64,       // Average finishing position
-    pub first_places: i32,         // Number of first place finishes
-    pub final_tables: i32,         // Number of final table finishes (top 9)
-    pub points: f64,               // Calculated leaderboard points
+    pub total_buy_ins: i32,  // Total amount spent (cents)
+    pub total_winnings: i32, // Total amount won (cents)
+    pub net_profit: i32,     // winnings - buy_ins (cents)
+    pub total_itm: i32,      // Number of tournaments where player finished in the money
+    pub itm_percentage: f64, // (total_itm / total_tournaments) * 100
+    pub roi_percentage: f64, // ((total_winnings - total_buy_ins) / total_buy_ins) * 100
+    pub average_finish: f64, // Average finishing position
+    pub first_places: i32,   // Number of first place finishes
+    pub final_tables: i32,   // Number of final table finishes (top 9)
+    pub points: f64,         // Calculated leaderboard points
 }
 
 #[derive(SimpleObject)]
@@ -673,7 +696,11 @@ impl Tournament {
             .await
             .map_err(|e| Error::new(e.to_string()))?
         {
-            Some(row) => Ok(Club { id: row.id.into(), name: row.name, city: row.city }),
+            Some(row) => Ok(Club {
+                id: row.id.into(),
+                name: row.name,
+                city: row.city,
+            }),
             None => Err(Error::new("Club not found")),
         }
     }

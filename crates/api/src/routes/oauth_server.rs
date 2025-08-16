@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, State, Form},
+    extract::{Form, Query, State},
     response::{Html, IntoResponse, Redirect},
     Json,
 };
@@ -50,7 +50,8 @@ pub async fn authorize(
             "unsupported_response_type",
             Some("Only 'code' response type is supported"),
             params.state.as_deref(),
-        )?.into_response());
+        )?
+        .into_response());
     }
 
     // Get and validate client
@@ -62,7 +63,8 @@ pub async fn authorize(
                 "invalid_client",
                 Some("Client not found"),
                 params.state.as_deref(),
-            )?.into_response());
+            )?
+            .into_response());
         }
     };
 
@@ -79,7 +81,8 @@ pub async fn authorize(
             "invalid_scope",
             Some("Requested scope is not valid"),
             params.state.as_deref(),
-        )?.into_response());
+        )?
+        .into_response());
     }
 
     // Return login form
@@ -152,7 +155,8 @@ pub async fn login(
                 "invalid_client",
                 Some("Client not found"),
                 form.state.as_deref(),
-            )?.into_response());
+            )?
+            .into_response());
         }
     };
 
@@ -168,13 +172,14 @@ pub async fn login(
         Some(row) => {
             // Verify password
             if let Some(ref password_hash) = row.password_hash {
-                if !PasswordService::verify_password(&form.password, &password_hash)? {
+                if !PasswordService::verify_password(&form.password, password_hash)? {
                     return Ok(redirect_with_error(
                         &form.redirect_uri,
                         "access_denied",
                         Some("Invalid credentials"),
                         form.state.as_deref(),
-                    )?.into_response());
+                    )?
+                    .into_response());
                 }
             } else {
                 return Ok(redirect_with_error(
@@ -182,7 +187,8 @@ pub async fn login(
                     "access_denied",
                     Some("User has no password set"),
                     form.state.as_deref(),
-                )?.into_response());
+                )?
+                .into_response());
             }
             row.id
         }
@@ -192,7 +198,8 @@ pub async fn login(
                 "access_denied",
                 Some("Invalid credentials"),
                 form.state.as_deref(),
-            )?.into_response());
+            )?
+            .into_response());
         }
     };
 
@@ -229,8 +236,12 @@ pub async fn token(
         "refresh_token" => handle_refresh_token_grant(state, form).await,
         _ => Ok(Json(ErrorResponse {
             error: "unsupported_grant_type".to_string(),
-            error_description: Some("Only 'authorization_code' and 'refresh_token' grant types are supported".to_string()),
-        }).into_response()),
+            error_description: Some(
+                "Only 'authorization_code' and 'refresh_token' grant types are supported"
+                    .to_string(),
+            ),
+        })
+        .into_response()),
     }
 }
 
@@ -238,8 +249,12 @@ async fn handle_authorization_code_grant(
     state: AppState,
     form: TokenRequest,
 ) -> Result<axum::response::Response, AppError> {
-    let code = form.code.ok_or_else(|| AppError::BadRequest("Missing authorization code".to_string()))?;
-    let redirect_uri = form.redirect_uri.ok_or_else(|| AppError::BadRequest("Missing redirect_uri".to_string()))?;
+    let code = form
+        .code
+        .ok_or_else(|| AppError::BadRequest("Missing authorization code".to_string()))?;
+    let redirect_uri = form
+        .redirect_uri
+        .ok_or_else(|| AppError::BadRequest("Missing redirect_uri".to_string()))?;
 
     // Get and validate client
     let client = match CustomOAuthService::get_client_by_id(&state, &form.client_id).await? {
@@ -248,7 +263,8 @@ async fn handle_authorization_code_grant(
             return Ok(Json(ErrorResponse {
                 error: "invalid_client".to_string(),
                 error_description: Some("Client not found".to_string()),
-            }).into_response());
+            })
+            .into_response());
         }
     };
 
@@ -258,7 +274,8 @@ async fn handle_authorization_code_grant(
             return Ok(Json(ErrorResponse {
                 error: "invalid_client".to_string(),
                 error_description: Some("Invalid client secret".to_string()),
-            }).into_response());
+            })
+            .into_response());
         }
     }
 
@@ -269,7 +286,8 @@ async fn handle_authorization_code_grant(
             return Ok(Json(ErrorResponse {
                 error: "invalid_grant".to_string(),
                 error_description: Some("Invalid or expired authorization code".to_string()),
-            }).into_response());
+            })
+            .into_response());
         }
     };
 
@@ -278,7 +296,8 @@ async fn handle_authorization_code_grant(
         return Ok(Json(ErrorResponse {
             error: "invalid_grant".to_string(),
             error_description: Some("Redirect URI mismatch".to_string()),
-        }).into_response());
+        })
+        .into_response());
     }
 
     // Validate client
@@ -286,7 +305,8 @@ async fn handle_authorization_code_grant(
         return Ok(Json(ErrorResponse {
             error: "invalid_grant".to_string(),
             error_description: Some("Client mismatch".to_string()),
-        }).into_response());
+        })
+        .into_response());
     }
 
     // Delete used authorization code
@@ -298,7 +318,8 @@ async fn handle_authorization_code_grant(
         auth_code.client_id,
         auth_code.user_id,
         auth_code.scopes.clone(),
-    ).await?;
+    )
+    .await?;
 
     let response = TokenResponse {
         access_token: access_token.token,
@@ -319,7 +340,8 @@ async fn handle_refresh_token_grant(
     Ok(Json(ErrorResponse {
         error: "unsupported_grant_type".to_string(),
         error_description: Some("Refresh token grant not yet implemented".to_string()),
-    }).into_response())
+    })
+    .into_response())
 }
 
 /// User Registration Endpoint
@@ -377,7 +399,7 @@ pub async fn register_form() -> Html<String> {
         </body>
         </html>
     "#;
-    
+
     Html(form.to_string())
 }
 
@@ -394,15 +416,14 @@ pub async fn register(
     let password_hash = PasswordService::hash_password(&form.password)?;
 
     // Check if user already exists
-    let existing_user = sqlx::query!(
-        "SELECT id FROM users WHERE email = $1",
-        form.email
-    )
-    .fetch_optional(&state.db)
-    .await?;
+    let existing_user = sqlx::query!("SELECT id FROM users WHERE email = $1", form.email)
+        .fetch_optional(&state.db)
+        .await?;
 
     if existing_user.is_some() {
-        return Err(AppError::BadRequest("User with this email already exists".to_string()));
+        return Err(AppError::BadRequest(
+            "User with this email already exists".to_string(),
+        ));
     }
 
     // Create user
@@ -434,14 +455,14 @@ fn redirect_with_error(
     state: Option<&str>,
 ) -> Result<Redirect, AppError> {
     let mut url = format!("{}?error={}", redirect_uri, error);
-    
+
     if let Some(desc) = description {
         url.push_str(&format!("&error_description={}", urlencoding::encode(desc)));
     }
-    
+
     if let Some(state_param) = state {
         url.push_str(&format!("&state={}", state_param));
     }
-    
+
     Ok(Redirect::to(&url))
 }

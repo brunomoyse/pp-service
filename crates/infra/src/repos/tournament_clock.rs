@@ -1,6 +1,10 @@
-use crate::{db::Db, models::{TournamentClockRow, TournamentStructureRow}};
-use chrono::{Utc, Duration};
+use crate::{
+    db::Db,
+    models::{TournamentClockRow, TournamentStructureRow},
+};
+use chrono::{Duration, Utc};
 use sqlx::Result as SqlxResult;
+use std::str::FromStr;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -14,19 +18,34 @@ impl ClockStatus {
     pub fn as_str(&self) -> &'static str {
         match self {
             ClockStatus::Stopped => "stopped",
-            ClockStatus::Running => "running", 
+            ClockStatus::Running => "running",
             ClockStatus::Paused => "paused",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for ClockStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "stopped" => Some(ClockStatus::Stopped),
-            "running" => Some(ClockStatus::Running),
-            "paused" => Some(ClockStatus::Paused),
-            _ => None,
+            "stopped" => Ok(ClockStatus::Stopped),
+            "running" => Ok(ClockStatus::Running),
+            "paused" => Ok(ClockStatus::Paused),
+            _ => Err(format!("Unknown clock status: {}", s)),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct TournamentStructureLevel {
+    pub level_number: i32,
+    pub small_blind: i32,
+    pub big_blind: i32,
+    pub ante: i32,
+    pub duration_minutes: i32,
+    pub is_break: bool,
+    pub break_duration_minutes: Option<i32>,
 }
 
 #[derive(Debug, Clone)]
@@ -65,9 +84,13 @@ impl TournamentClockRepo {
     }
 
     /// Start/resume tournament clock
-    pub async fn start_clock(&self, tournament_id: Uuid, manager_id: Option<Uuid>) -> SqlxResult<TournamentClockRow> {
+    pub async fn start_clock(
+        &self,
+        tournament_id: Uuid,
+        manager_id: Option<Uuid>,
+    ) -> SqlxResult<TournamentClockRow> {
         let now = Utc::now();
-        
+
         // Get current structure to calculate end time
         let structure = self.get_current_structure(tournament_id).await?;
         let level_duration = Duration::minutes(structure.duration_minutes as i64);
@@ -91,15 +114,26 @@ impl TournamentClockRepo {
         .await?;
 
         // Log event
-        self.log_event(tournament_id, "start", Some(clock.current_level), manager_id, serde_json::json!({})).await?;
+        self.log_event(
+            tournament_id,
+            "start",
+            Some(clock.current_level),
+            manager_id,
+            serde_json::json!({}),
+        )
+        .await?;
 
         Ok(clock)
     }
 
     /// Pause tournament clock
-    pub async fn pause_clock(&self, tournament_id: Uuid, manager_id: Option<Uuid>) -> SqlxResult<TournamentClockRow> {
+    pub async fn pause_clock(
+        &self,
+        tournament_id: Uuid,
+        manager_id: Option<Uuid>,
+    ) -> SqlxResult<TournamentClockRow> {
         let now = Utc::now();
-        
+
         let clock = sqlx::query_as::<_, TournamentClockRow>(
             "UPDATE tournament_clocks 
              SET clock_status = 'paused',
@@ -114,15 +148,26 @@ impl TournamentClockRepo {
         .await?;
 
         // Log event
-        self.log_event(tournament_id, "pause", Some(clock.current_level), manager_id, serde_json::json!({})).await?;
+        self.log_event(
+            tournament_id,
+            "pause",
+            Some(clock.current_level),
+            manager_id,
+            serde_json::json!({}),
+        )
+        .await?;
 
         Ok(clock)
     }
 
     /// Resume tournament clock from pause
-    pub async fn resume_clock(&self, tournament_id: Uuid, manager_id: Option<Uuid>) -> SqlxResult<TournamentClockRow> {
+    pub async fn resume_clock(
+        &self,
+        tournament_id: Uuid,
+        manager_id: Option<Uuid>,
+    ) -> SqlxResult<TournamentClockRow> {
         let now = Utc::now();
-        
+
         let clock = sqlx::query_as::<_, TournamentClockRow>(
             "UPDATE tournament_clocks 
              SET clock_status = 'running',
@@ -139,15 +184,27 @@ impl TournamentClockRepo {
         .await?;
 
         // Log event
-        self.log_event(tournament_id, "resume", Some(clock.current_level), manager_id, serde_json::json!({})).await?;
+        self.log_event(
+            tournament_id,
+            "resume",
+            Some(clock.current_level),
+            manager_id,
+            serde_json::json!({}),
+        )
+        .await?;
 
         Ok(clock)
     }
 
     /// Advance to next level
-    pub async fn advance_level(&self, tournament_id: Uuid, auto: bool, manager_id: Option<Uuid>) -> SqlxResult<TournamentClockRow> {
+    pub async fn advance_level(
+        &self,
+        tournament_id: Uuid,
+        auto: bool,
+        manager_id: Option<Uuid>,
+    ) -> SqlxResult<TournamentClockRow> {
         let now = Utc::now();
-        
+
         // First increment the level
         sqlx::query(
             "UPDATE tournament_clocks SET current_level = current_level + 1 WHERE tournament_id = $1"
@@ -178,24 +235,41 @@ impl TournamentClockRepo {
         .await?;
 
         // Log event
-        let event_type = if auto { "level_advance" } else { "manual_advance" };
-        self.log_event(tournament_id, event_type, Some(clock.current_level), manager_id, serde_json::json!({})).await?;
+        let event_type = if auto {
+            "level_advance"
+        } else {
+            "manual_advance"
+        };
+        self.log_event(
+            tournament_id,
+            event_type,
+            Some(clock.current_level),
+            manager_id,
+            serde_json::json!({}),
+        )
+        .await?;
 
         Ok(clock)
     }
 
     /// Revert to previous level
-    pub async fn revert_level(&self, tournament_id: Uuid, manager_id: Option<Uuid>) -> SqlxResult<TournamentClockRow> {
+    pub async fn revert_level(
+        &self,
+        tournament_id: Uuid,
+        manager_id: Option<Uuid>,
+    ) -> SqlxResult<TournamentClockRow> {
         let now = Utc::now();
-        
+
         // Check current level - don't allow going below level 1
-        let current_clock = self.get_clock(tournament_id).await?
+        let current_clock = self
+            .get_clock(tournament_id)
+            .await?
             .ok_or_else(|| sqlx::Error::RowNotFound)?;
-            
+
         if current_clock.current_level <= 1 {
             return Err(sqlx::Error::RowNotFound);
         }
-        
+
         // Decrement the level
         sqlx::query(
             "UPDATE tournament_clocks SET current_level = current_level - 1 WHERE tournament_id = $1"
@@ -226,21 +300,33 @@ impl TournamentClockRepo {
         .await?;
 
         // Log event
-        self.log_event(tournament_id, "manual_revert", Some(clock.current_level), manager_id, serde_json::json!({})).await?;
+        self.log_event(
+            tournament_id,
+            "manual_revert",
+            Some(clock.current_level),
+            manager_id,
+            serde_json::json!({}),
+        )
+        .await?;
 
         Ok(clock)
     }
 
     /// Get current level structure
-    pub async fn get_current_structure(&self, tournament_id: Uuid) -> SqlxResult<TournamentStructureRow> {
-        let clock = self.get_clock(tournament_id).await?
+    pub async fn get_current_structure(
+        &self,
+        tournament_id: Uuid,
+    ) -> SqlxResult<TournamentStructureRow> {
+        let clock = self
+            .get_clock(tournament_id)
+            .await?
             .ok_or_else(|| sqlx::Error::RowNotFound)?;
 
         sqlx::query_as::<_, TournamentStructureRow>(
             "SELECT id, tournament_id, level_number, small_blind, big_blind, ante, 
                     duration_minutes, is_break, break_duration_minutes, created_at
              FROM tournament_structures 
-             WHERE tournament_id = $1 AND level_number = $2"
+             WHERE tournament_id = $1 AND level_number = $2",
         )
         .bind(tournament_id)
         .bind(clock.current_level)
@@ -249,13 +335,16 @@ impl TournamentClockRepo {
     }
 
     /// Get all structures for a tournament
-    pub async fn get_all_structures(&self, tournament_id: Uuid) -> SqlxResult<Vec<TournamentStructureRow>> {
+    pub async fn get_all_structures(
+        &self,
+        tournament_id: Uuid,
+    ) -> SqlxResult<Vec<TournamentStructureRow>> {
         sqlx::query_as::<_, TournamentStructureRow>(
             "SELECT id, tournament_id, level_number, small_blind, big_blind, ante, 
                     duration_minutes, is_break, break_duration_minutes, created_at
              FROM tournament_structures 
              WHERE tournament_id = $1 
-             ORDER BY level_number ASC"
+             ORDER BY level_number ASC",
         )
         .bind(tournament_id)
         .fetch_all(&self.pool)
@@ -263,9 +352,11 @@ impl TournamentClockRepo {
     }
 
     /// Add structure level
-    pub async fn add_structure(&self, tournament_id: Uuid, level_number: i32, small_blind: i32, 
-                              big_blind: i32, ante: i32, duration_minutes: i32, is_break: bool, 
-                              break_duration_minutes: Option<i32>) -> SqlxResult<TournamentStructureRow> {
+    pub async fn add_structure(
+        &self,
+        tournament_id: Uuid,
+        level: TournamentStructureLevel,
+    ) -> SqlxResult<TournamentStructureRow> {
         sqlx::query_as::<_, TournamentStructureRow>(
             "INSERT INTO tournament_structures 
              (tournament_id, level_number, small_blind, big_blind, ante, duration_minutes, is_break, break_duration_minutes)
@@ -274,24 +365,30 @@ impl TournamentClockRepo {
                        duration_minutes, is_break, break_duration_minutes, created_at"
         )
         .bind(tournament_id)
-        .bind(level_number)
-        .bind(small_blind)
-        .bind(big_blind)
-        .bind(ante)
-        .bind(duration_minutes)
-        .bind(is_break)
-        .bind(break_duration_minutes)
+        .bind(level.level_number)
+        .bind(level.small_blind)
+        .bind(level.big_blind)
+        .bind(level.ante)
+        .bind(level.duration_minutes)
+        .bind(level.is_break)
+        .bind(level.break_duration_minutes)
         .fetch_one(&self.pool)
         .await
     }
 
     /// Log clock event
-    async fn log_event(&self, tournament_id: Uuid, event_type: &str, level_number: Option<i32>, 
-                      manager_id: Option<Uuid>, metadata: serde_json::Value) -> SqlxResult<()> {
+    async fn log_event(
+        &self,
+        tournament_id: Uuid,
+        event_type: &str,
+        level_number: Option<i32>,
+        manager_id: Option<Uuid>,
+        metadata: serde_json::Value,
+    ) -> SqlxResult<()> {
         sqlx::query(
             "INSERT INTO tournament_clock_events 
              (tournament_id, event_type, level_number, manager_id, metadata)
-             VALUES ($1, $2, $3, $4, $5)"
+             VALUES ($1, $2, $3, $4, $5)",
         )
         .bind(tournament_id)
         .bind(event_type)
@@ -307,13 +404,13 @@ impl TournamentClockRepo {
     /// Get tournaments that need level advancement
     pub async fn get_tournaments_to_advance(&self) -> SqlxResult<Vec<Uuid>> {
         let now = Utc::now();
-        
+
         let rows: Vec<(Uuid,)> = sqlx::query_as(
             "SELECT tournament_id FROM tournament_clocks 
              WHERE clock_status = 'running' 
                AND auto_advance = true 
                AND level_end_time IS NOT NULL 
-               AND level_end_time <= $1"
+               AND level_end_time <= $1",
         )
         .bind(now)
         .fetch_all(&self.pool)
