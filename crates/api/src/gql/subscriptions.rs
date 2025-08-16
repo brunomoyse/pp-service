@@ -25,6 +25,15 @@ pub struct SubscriptionRoot;
 
 #[Subscription]
 impl SubscriptionRoot {
+    /// Subscribe to tournament clock updates
+    async fn tournament_clock_updates(
+        &self, 
+        ctx: &Context<'_>, 
+        tournament_id: async_graphql::ID
+    ) -> Result<impl Stream<Item = crate::gql::types::ClockUpdate>, async_graphql::Error> {
+        let subscription = crate::gql::tournament_clock::TournamentClockSubscription;
+        subscription.tournament_clock_updates(ctx, tournament_id).await
+    }
     /// Simple ticking subscription (1..∞), useful as a template for live clock/announcements.
     async fn tick(&self) -> impl Stream<Item = i32> {
         let mut i = 0;

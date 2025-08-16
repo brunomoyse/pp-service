@@ -8,6 +8,17 @@ pub struct QueryRoot;
 
 #[Object]
 impl QueryRoot {
+    /// Get tournament clock state
+    async fn tournament_clock(&self, ctx: &Context<'_>, tournament_id: async_graphql::ID) -> Result<Option<crate::gql::types::TournamentClock>> {
+        let query = crate::gql::tournament_clock::TournamentClockQuery;
+        query.tournament_clock(ctx, tournament_id).await
+    }
+
+    /// Get tournament structure levels
+    async fn tournament_structure(&self, ctx: &Context<'_>, tournament_id: async_graphql::ID) -> Result<Vec<crate::gql::types::TournamentStructure>> {
+        let query = crate::gql::tournament_clock::TournamentClockQuery;
+        query.tournament_structure(ctx, tournament_id).await
+    }
     /// Current server time (UTC), example of returning chrono types.
     async fn server_time(&self) -> DateTime<Utc> {
         Utc::now()
@@ -379,9 +390,9 @@ impl QueryRoot {
                         stack_size: ap.assignment.stack_size,
                         is_current: ap.assignment.is_current,
                         assigned_at: ap.assignment.assigned_at,
-                        unassigned_at: ap.assignment.unassigned_at,
-                        assigned_by: ap.assignment.assigned_by.map(|id| id.into()),
-                        notes: ap.assignment.notes,
+                        unassigned_at: None, // Field not yet implemented in database
+                        assigned_by: None, // Field not yet implemented in database  
+                        notes: None, // Field not yet implemented in database
                     },
                     player: crate::gql::types::User {
                         id: ap.player.id.into(),
@@ -467,9 +478,9 @@ impl QueryRoot {
                     stack_size: ap.assignment.stack_size,
                     is_current: ap.assignment.is_current,
                     assigned_at: ap.assignment.assigned_at,
-                    unassigned_at: ap.assignment.unassigned_at,
-                    assigned_by: ap.assignment.assigned_by.map(|id| id.into()),
-                    notes: ap.assignment.notes,
+                    unassigned_at: None, // Field not yet implemented in database
+                    assigned_by: None, // Field not yet implemented in database
+                    notes: None, // Field not yet implemented in database
                 },
                 player: crate::gql::types::User {
                     id: ap.player.id.into(),
@@ -575,9 +586,9 @@ impl QueryRoot {
                 stack_size: assignment.stack_size,
                 is_current: assignment.is_current,
                 assigned_at: assignment.assigned_at,
-                unassigned_at: assignment.unassigned_at,
-                assigned_by: assignment.assigned_by.map(|id| id.into()),
-                notes: assignment.notes,
+                unassigned_at: None, // Field not yet implemented in database
+                assigned_by: None, // Field not yet implemented in database
+                notes: None, // Field not yet implemented in database
             }
         }).collect())
     }

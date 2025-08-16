@@ -28,6 +28,35 @@ pub struct CreateTournamentInput {
 
 #[Object]
 impl MutationRoot {
+    /// Initialize tournament clock
+    async fn create_tournament_clock(&self, ctx: &Context<'_>, tournament_id: ID) -> Result<crate::gql::types::TournamentClock> {
+        let mutation = crate::gql::tournament_clock::TournamentClockMutation;
+        mutation.create_tournament_clock(ctx, tournament_id).await
+    }
+
+    /// Start tournament clock
+    async fn start_tournament_clock(&self, ctx: &Context<'_>, tournament_id: ID) -> Result<crate::gql::types::TournamentClock> {
+        let mutation = crate::gql::tournament_clock::TournamentClockMutation;
+        mutation.start_tournament_clock(ctx, tournament_id).await
+    }
+
+    /// Pause tournament clock
+    async fn pause_tournament_clock(&self, ctx: &Context<'_>, tournament_id: ID) -> Result<crate::gql::types::TournamentClock> {
+        let mutation = crate::gql::tournament_clock::TournamentClockMutation;
+        mutation.pause_tournament_clock(ctx, tournament_id).await
+    }
+
+    /// Resume tournament clock
+    async fn resume_tournament_clock(&self, ctx: &Context<'_>, tournament_id: ID) -> Result<crate::gql::types::TournamentClock> {
+        let mutation = crate::gql::tournament_clock::TournamentClockMutation;
+        mutation.resume_tournament_clock(ctx, tournament_id).await
+    }
+
+    /// Manually advance to next level
+    async fn advance_tournament_level(&self, ctx: &Context<'_>, tournament_id: ID) -> Result<crate::gql::types::TournamentClock> {
+        let mutation = crate::gql::tournament_clock::TournamentClockMutation;
+        mutation.advance_tournament_level(ctx, tournament_id).await
+    }
     /// Minimal example mutation creating a tournament (stub).
     /// Replace with an INSERT via sqlx later.
     async fn create_tournament(
@@ -632,9 +661,9 @@ impl MutationRoot {
                 stack_size: assignment_row.stack_size,
                 is_current: assignment_row.is_current,
                 assigned_at: assignment_row.assigned_at,
-                unassigned_at: assignment_row.unassigned_at,
-                assigned_by: assignment_row.assigned_by.map(|id| id.into()),
-                notes: assignment_row.notes.clone(),
+                unassigned_at: None, // Field not yet implemented in database
+                assigned_by: None, // Field not yet implemented in database
+                notes: None, // Field not yet implemented in database
             }),
             affected_player: player.map(|p| User {
                 id: p.id.into(),
@@ -660,9 +689,9 @@ impl MutationRoot {
             stack_size: assignment_row.stack_size,
             is_current: assignment_row.is_current,
             assigned_at: assignment_row.assigned_at,
-            unassigned_at: assignment_row.unassigned_at,
-            assigned_by: assignment_row.assigned_by.map(|id| id.into()),
-            notes: assignment_row.notes,
+            unassigned_at: None, // Field not yet implemented in database
+            assigned_by: None, // Field not yet implemented in database
+            notes: None, // Field not yet implemented in database
         })
     }
 
@@ -726,9 +755,9 @@ impl MutationRoot {
                 stack_size: assignment_row.stack_size,
                 is_current: assignment_row.is_current,
                 assigned_at: assignment_row.assigned_at,
-                unassigned_at: assignment_row.unassigned_at,
-                assigned_by: assignment_row.assigned_by.map(|id| id.into()),
-                notes: assignment_row.notes.clone(),
+                unassigned_at: None, // Field not yet implemented in database
+                assigned_by: None, // Field not yet implemented in database
+                notes: None, // Field not yet implemented in database
             }),
             affected_player: player.map(|p| User {
                 id: p.id.into(),
@@ -754,9 +783,9 @@ impl MutationRoot {
             stack_size: assignment_row.stack_size,
             is_current: assignment_row.is_current,
             assigned_at: assignment_row.assigned_at,
-            unassigned_at: assignment_row.unassigned_at,
-            assigned_by: assignment_row.assigned_by.map(|id| id.into()),
-            notes: assignment_row.notes,
+            unassigned_at: None, // Field not yet implemented in database
+            assigned_by: None, // Field not yet implemented in database
+            notes: None, // Field not yet implemented in database
         })
     }
 
@@ -810,9 +839,9 @@ impl MutationRoot {
                 stack_size: assignment_row.stack_size,
                 is_current: assignment_row.is_current,
                 assigned_at: assignment_row.assigned_at,
-                unassigned_at: assignment_row.unassigned_at,
-                assigned_by: assignment_row.assigned_by.map(|id| id.into()),
-                notes: assignment_row.notes.clone(),
+                unassigned_at: None, // Field not yet implemented in database
+                assigned_by: None, // Field not yet implemented in database
+                notes: None, // Field not yet implemented in database
             }),
             affected_player: player.map(|p| User {
                 id: p.id.into(),
@@ -838,9 +867,9 @@ impl MutationRoot {
             stack_size: assignment_row.stack_size,
             is_current: assignment_row.is_current,
             assigned_at: assignment_row.assigned_at,
-            unassigned_at: assignment_row.unassigned_at,
-            assigned_by: assignment_row.assigned_by.map(|id| id.into()),
-            notes: assignment_row.notes,
+            unassigned_at: None, // Field not yet implemented in database
+            assigned_by: None, // Field not yet implemented in database
+            notes: None, // Field not yet implemented in database
         })
     }
 
@@ -1039,9 +1068,9 @@ impl MutationRoot {
                                 stack_size: new_assignment.stack_size,
                                 is_current: new_assignment.is_current,
                                 assigned_at: new_assignment.assigned_at,
-                                unassigned_at: new_assignment.unassigned_at,
-                                assigned_by: new_assignment.assigned_by.map(|id| id.into()),
-                                notes: new_assignment.notes.clone(),
+                                unassigned_at: None, // Field not yet implemented in database
+                                assigned_by: None, // Field not yet implemented in database
+                                notes: None, // Field not yet implemented in database
                             };
                             
                             moves.push(assignment_for_response);
@@ -1134,7 +1163,7 @@ impl MutationRoot {
                     is_current: false,
                     assigned_at: assignment.assigned_at,
                     unassigned_at: Some(chrono::Utc::now()),
-                    assigned_by: assignment.assigned_by.map(|id| id.into()),
+                    assigned_by: None, // Field not yet implemented in database
                     notes: notes.or_else(|| Some("Player eliminated".to_string())),
                 }),
                 affected_player: player.map(|p| User {
