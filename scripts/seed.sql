@@ -175,3 +175,6 @@ WITH tournament_tag_pairs AS (
 )
 INSERT INTO tournament_tags (tournament_id, tag_id)
 SELECT tournament_id, tag_id FROM tournament_tag_pairs LIMIT 50; -- Add some random tags
+
+-- Calculate points for all tournaments with results using the PostgreSQL function
+SELECT recalculate_all_tournament_points();
