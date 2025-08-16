@@ -115,3 +115,70 @@ async fn test_tournament_live_status_specific_values() {
 
     println!("Found {} finished and {} in_progress tournaments", finished_count, in_progress_count);
 }
+
+#[tokio::test]
+async fn test_tournament_business_status_vs_live_status() {
+    let app_state = setup_test_db().await;
+    let schema = build_schema(app_state);
+
+    // Query for tournaments to test both status fields
+    let query = r#"
+        query {
+            tournaments(limit: 10) {
+                id
+                title
+                status
+                liveStatus
+            }
+        }
+    "#;
+
+    let request = Request::new(query);
+    let response = schema.execute(request).await;
+
+    if !response.errors.is_empty() {
+        panic!("GraphQL errors: {:?}", response.errors);
+    }
+
+    let data = response.data.into_json().unwrap();
+    let tournaments = data["tournaments"].as_array().unwrap();
+
+    assert!(!tournaments.is_empty(), "Should have at least one tournament");
+
+    for tournament in tournaments {
+        let status = tournament["status"].as_str().unwrap();
+        let live_status = tournament["liveStatus"].as_str().unwrap();
+        
+        // Verify both status fields are valid
+        assert!(
+            matches!(status, "UPCOMING" | "LIVE" | "COMPLETED"),
+            "Business status should be a valid enum value, got: {}",
+            status
+        );
+        
+        assert!(
+            matches!(
+                live_status,
+                "NOT_STARTED" | "REGISTRATION_OPEN" | "LATE_REGISTRATION" | "IN_PROGRESS" | "BREAK" | "FINAL_TABLE" | "FINISHED"
+            ),
+            "Live status should be a valid enum value, got: {}",
+            live_status
+        );
+
+        // Test the business logic mapping
+        match live_status {
+            "NOT_STARTED" | "REGISTRATION_OPEN" | "LATE_REGISTRATION" => {
+                assert_eq!(status, "UPCOMING", "NOT_STARTED/REGISTRATION should map to UPCOMING business status");
+            },
+            "IN_PROGRESS" | "BREAK" | "FINAL_TABLE" => {
+                assert_eq!(status, "LIVE", "IN_PROGRESS/BREAK/FINAL_TABLE should map to LIVE business status");
+            },
+            "FINISHED" => {
+                assert_eq!(status, "COMPLETED", "FINISHED should map to COMPLETED business status");
+            },
+            _ => panic!("Unknown live status: {}", live_status)
+        }
+
+        println!("Tournament: {} - Business: {} - Live: {}", tournament["title"], status, live_status);
+    }
+}
