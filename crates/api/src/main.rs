@@ -4,6 +4,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use api::app::build_router;
 use api::gql::build_schema;
+use api::services::spawn_clock_service;
 use api::state::AppState;
 
 #[tokio::main]
@@ -23,6 +24,10 @@ async fn main() -> anyhow::Result<()> {
 
     // Build GraphQL schema from the gql module
     let schema = build_schema(state.clone());
+
+    // Start the background clock service for auto-advancing tournament levels
+    let _clock_handle = spawn_clock_service(state.clone());
+    tracing::info!("Tournament clock service started");
 
     let app = build_router(state, schema);
 
