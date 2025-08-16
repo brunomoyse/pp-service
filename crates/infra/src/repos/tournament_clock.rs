@@ -184,6 +184,53 @@ impl TournamentClockRepo {
         Ok(clock)
     }
 
+    /// Revert to previous level
+    pub async fn revert_level(&self, tournament_id: Uuid, manager_id: Option<Uuid>) -> SqlxResult<TournamentClockRow> {
+        let now = Utc::now();
+        
+        // Check current level - don't allow going below level 1
+        let current_clock = self.get_clock(tournament_id).await?
+            .ok_or_else(|| sqlx::Error::RowNotFound)?;
+            
+        if current_clock.current_level <= 1 {
+            return Err(sqlx::Error::RowNotFound);
+        }
+        
+        // Decrement the level
+        sqlx::query(
+            "UPDATE tournament_clocks SET current_level = current_level - 1 WHERE tournament_id = $1"
+        )
+        .bind(tournament_id)
+        .execute(&self.pool)
+        .await?;
+
+        // Get the new structure for timing
+        let structure = self.get_current_structure(tournament_id).await?;
+        let level_duration = Duration::minutes(structure.duration_minutes as i64);
+        let level_end_time = now + level_duration;
+
+        let clock = sqlx::query_as::<_, TournamentClockRow>(
+            "UPDATE tournament_clocks 
+             SET level_started_at = $2,
+                 level_end_time = $3,
+                 total_pause_duration = '0 seconds',
+                 pause_started_at = NULL
+             WHERE tournament_id = $1
+             RETURNING id, tournament_id, clock_status, current_level, level_started_at, level_end_time,
+                       pause_started_at, total_pause_duration, auto_advance, created_at, updated_at"
+        )
+        .bind(tournament_id)
+        .bind(now)
+        .bind(level_end_time)
+        .fetch_one(&self.pool)
+        .await?;
+
+        // Log event
+        self.log_event(tournament_id, "manual_revert", Some(clock.current_level), manager_id, serde_json::json!({})).await?;
+
+        Ok(clock)
+    }
+
     /// Get current level structure
     pub async fn get_current_structure(&self, tournament_id: Uuid) -> SqlxResult<TournamentStructureRow> {
         let clock = self.get_clock(tournament_id).await?

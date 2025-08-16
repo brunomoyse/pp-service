@@ -505,6 +505,28 @@
 					}
 				},
 				{
+					"name": "Revert Tournament Level",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"mutation RevertTournamentLevel($tournamentId: ID!) { revertTournamentLevel(tournamentId: $tournamentId) { id tournamentId status currentLevel timeRemaining totalLevels isPaused } }\",\n  \"variables\": {\n    \"tournamentId\": \"01234567-8901-2345-6789-012345678901\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Manually revert to previous level (Manager required)"
+					}
+				},
+				{
 					"name": "Get Tournament Structure",
 					"request": {
 						"method": "POST",

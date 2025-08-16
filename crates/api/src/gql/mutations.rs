@@ -57,6 +57,13 @@ impl MutationRoot {
         let mutation = crate::gql::tournament_clock::TournamentClockMutation;
         mutation.advance_tournament_level(ctx, tournament_id).await
     }
+
+    /// Manually revert to previous level
+    async fn revert_tournament_level(&self, ctx: &Context<'_>, tournament_id: ID) -> Result<crate::gql::types::TournamentClock> {
+        let mutation = crate::gql::tournament_clock::TournamentClockMutation;
+        mutation.revert_tournament_level(ctx, tournament_id).await
+    }
+    
     /// Minimal example mutation creating a tournament (stub).
     /// Replace with an INSERT via sqlx later.
     async fn create_tournament(

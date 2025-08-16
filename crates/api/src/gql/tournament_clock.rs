@@ -325,6 +325,54 @@ impl TournamentClockMutation {
             }),
         })
     }
+
+    /// Manually revert to previous level
+    pub async fn revert_tournament_level(&self, ctx: &Context<'_>, tournament_id: ID) -> Result<TournamentClock> {
+        let manager = require_role(ctx, Role::Manager).await?;
+        let state = ctx.data::<AppState>()?;
+        let repo = TournamentClockRepo::new(state.db.clone());
+        let tournament_id: Uuid = tournament_id.parse()?;
+
+        let clock_row = repo.revert_level(tournament_id, Some(manager.id.parse()?)).await
+            .map_err(|e| {
+                match e {
+                    sqlx::Error::RowNotFound => async_graphql::Error::new("Cannot revert: Tournament is already at level 1"),
+                    _ => async_graphql::Error::new(format!("Failed to revert level: {}", e)),
+                }
+            })?;
+        let structure = repo.get_current_structure(tournament_id).await.ok();
+        
+        // Calculate time remaining for reverted level
+        let time_remaining = if let Some(end_time) = clock_row.level_end_time {
+            let remaining = end_time - Utc::now();
+            Some(remaining.num_seconds().max(0))
+        } else {
+            None
+        };
+
+        Ok(TournamentClock {
+            id: clock_row.id.into(),
+            tournament_id: clock_row.tournament_id.into(),
+            status: InfraClockStatus::from_str(&clock_row.clock_status).unwrap_or(InfraClockStatus::Stopped).into(),
+            current_level: clock_row.current_level,
+            time_remaining_seconds: time_remaining,
+            level_started_at: clock_row.level_started_at,
+            level_end_time: clock_row.level_end_time,
+            total_pause_duration_seconds: 0, // Reset for reverted level
+            auto_advance: clock_row.auto_advance,
+            current_structure: structure.map(|s| TournamentStructure {
+                id: s.id.into(),
+                tournament_id: s.tournament_id.into(),
+                level_number: s.level_number,
+                small_blind: s.small_blind,
+                big_blind: s.big_blind,
+                ante: s.ante,
+                duration_minutes: s.duration_minutes,
+                is_break: s.is_break,
+                break_duration_minutes: s.break_duration_minutes,
+            }),
+        })
+    }
 }
 
 pub struct TournamentClockSubscription;
