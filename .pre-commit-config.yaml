@@ -14,8 +14,8 @@ repos:
         
       # Rust formatting - runs on commit for fast feedback
       - id: rust-fmt
-        name: Rust formatting check
-        entry: cargo fmt --all -- --check
+        name: Rust formatting
+        entry: cargo fmt --all
         language: system
         files: '\.rs$'
         pass_filenames: false
