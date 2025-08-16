@@ -371,6 +371,78 @@ pub struct TournamentSeatingChart {
     pub unassigned_players: Vec<User>,
 }
 
+#[derive(Enum, Copy, Clone, Eq, PartialEq)]
+pub enum ClockStatus {
+    #[graphql(name = "STOPPED")]
+    Stopped,
+    #[graphql(name = "RUNNING")]
+    Running,
+    #[graphql(name = "PAUSED")]
+    Paused,
+}
+
+impl From<infra::repos::tournament_clock::ClockStatus> for ClockStatus {
+    fn from(status: infra::repos::tournament_clock::ClockStatus) -> Self {
+        match status {
+            infra::repos::tournament_clock::ClockStatus::Stopped => ClockStatus::Stopped,
+            infra::repos::tournament_clock::ClockStatus::Running => ClockStatus::Running,
+            infra::repos::tournament_clock::ClockStatus::Paused => ClockStatus::Paused,
+        }
+    }
+}
+
+impl From<ClockStatus> for infra::repos::tournament_clock::ClockStatus {
+    fn from(status: ClockStatus) -> Self {
+        match status {
+            ClockStatus::Stopped => infra::repos::tournament_clock::ClockStatus::Stopped,
+            ClockStatus::Running => infra::repos::tournament_clock::ClockStatus::Running,
+            ClockStatus::Paused => infra::repos::tournament_clock::ClockStatus::Paused,
+        }
+    }
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct TournamentStructure {
+    pub id: ID,
+    pub tournament_id: ID,
+    pub level_number: i32,
+    pub small_blind: i32,
+    pub big_blind: i32,
+    pub ante: i32,
+    pub duration_minutes: i32,
+    pub is_break: bool,
+    pub break_duration_minutes: Option<i32>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct TournamentClock {
+    pub id: ID,
+    pub tournament_id: ID,
+    pub status: ClockStatus,
+    pub current_level: i32,
+    pub time_remaining_seconds: Option<i64>, // Calculated field
+    pub level_started_at: Option<DateTime<Utc>>,
+    pub level_end_time: Option<DateTime<Utc>>,
+    pub total_pause_duration_seconds: i64, // Calculated field
+    pub auto_advance: bool,
+    pub current_structure: Option<TournamentStructure>,
+}
+
+// Real-time clock update for subscriptions
+#[derive(SimpleObject, Clone)]
+pub struct ClockUpdate {
+    pub tournament_id: ID,
+    pub status: ClockStatus,
+    pub current_level: i32,
+    pub time_remaining_seconds: Option<i64>,
+    pub small_blind: i32,
+    pub big_blind: i32,
+    pub ante: i32,
+    pub is_break: bool,
+    pub level_duration_minutes: i32,
+    pub next_level_preview: Option<TournamentStructure>,
+}
+
 #[derive(SimpleObject, Clone)]
 pub struct TournamentComplete {
     pub tournament: Tournament,
