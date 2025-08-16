@@ -150,10 +150,47 @@ pub struct TableSeatAssignmentRow {
     pub stack_size: Option<i32>,
     pub is_current: bool,
     pub assigned_at: DateTime<Utc>,
-    pub unassigned_at: Option<DateTime<Utc>>,
-    pub assigned_by: Option<Uuid>,
-    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct TournamentStructureRow {
+    pub id: Uuid,
+    pub tournament_id: Uuid,
+    pub level_number: i32,
+    pub small_blind: i32,
+    pub big_blind: i32,
+    pub ante: i32,
+    pub duration_minutes: i32,
+    pub is_break: bool,
+    pub break_duration_minutes: Option<i32>,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct TournamentClockRow {
+    pub id: Uuid,
+    pub tournament_id: Uuid,
+    pub clock_status: String,
+    pub current_level: i32,
+    pub level_started_at: Option<DateTime<Utc>>,
+    pub level_end_time: Option<DateTime<Utc>>,
+    pub pause_started_at: Option<DateTime<Utc>>,
+    #[serde(skip)]
+    pub total_pause_duration: sqlx::postgres::types::PgInterval,
+    pub auto_advance: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct TournamentClockEventRow {
+    pub id: Uuid,
+    pub tournament_id: Uuid,
+    pub event_type: String,
+    pub level_number: Option<i32>,
+    pub manager_id: Option<Uuid>,
+    pub event_time: DateTime<Utc>,
+    pub metadata: serde_json::Value,
     pub updated_at: DateTime<Utc>,
 }
 

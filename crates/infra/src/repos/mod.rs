@@ -1,5 +1,6 @@
 pub mod clubs;
 pub mod tournaments;
+pub mod tournament_clock;
 pub mod tournament_registrations;
 pub mod tournament_results;
 pub mod payout_templates;
@@ -11,6 +12,7 @@ pub mod club_managers;
 
 pub use clubs::ClubRepo;
 pub use tournaments::{TournamentRepo, TournamentFilter, TournamentLiveStatus, UpdateTournamentState};
+pub use tournament_clock::{TournamentClockRepo, ClockStatus};
 pub use tournament_registrations::{TournamentRegistrationRepo, CreateTournamentRegistration};
 pub use tournament_results::{TournamentResultRepo, CreateTournamentResult, UserStatistics, LeaderboardEntry, LeaderboardPeriod};
 pub use payout_templates::{PayoutTemplateRepo, CreatePayoutTemplate};
