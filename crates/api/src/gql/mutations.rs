@@ -886,17 +886,16 @@ impl MutationRoot {
         };
         publish_seating_event(event);
         
-        let status: crate::gql::types::TournamentStatus = tournament_row.calculate_status().into();
         Ok(Tournament {
             id: tournament_row.id.into(),
-            title: tournament_row.name,
-            description: tournament_row.description,
+            title: tournament_row.name.clone(),
+            description: tournament_row.description.clone(),
             club_id: tournament_row.club_id.into(),
             start_time: tournament_row.start_time,
             end_time: tournament_row.end_time,
             buy_in_cents: tournament_row.buy_in_cents,
             seat_cap: tournament_row.seat_cap,
-            status,
+            status: tournament_row.calculate_status().into(),
             live_status: tournament_row.live_status.into(),
             created_at: tournament_row.created_at,
             updated_at: tournament_row.updated_at,

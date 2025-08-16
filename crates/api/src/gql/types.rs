@@ -49,8 +49,8 @@ impl From<Role> for String {
 pub enum TournamentStatus {
     #[graphql(name = "UPCOMING")]
     Upcoming,
-    #[graphql(name = "PROCESSING")]
-    Processing,
+    #[graphql(name = "IN_PROGRESS")]
+    InProgress,
     #[graphql(name = "COMPLETED")]
     Completed,
 }
@@ -77,7 +77,7 @@ impl From<TournamentStatus> for infra::repos::tournaments::TournamentStatus {
     fn from(status: TournamentStatus) -> Self {
         match status {
             TournamentStatus::Upcoming => infra::repos::tournaments::TournamentStatus::Upcoming,
-            TournamentStatus::Processing => infra::repos::tournaments::TournamentStatus::Processing,
+            TournamentStatus::InProgress => infra::repos::tournaments::TournamentStatus::InProgress,
             TournamentStatus::Completed => infra::repos::tournaments::TournamentStatus::Completed,
         }
     }
@@ -87,7 +87,7 @@ impl From<infra::repos::tournaments::TournamentStatus> for TournamentStatus {
     fn from(status: infra::repos::tournaments::TournamentStatus) -> Self {
         match status {
             infra::repos::tournaments::TournamentStatus::Upcoming => TournamentStatus::Upcoming,
-            infra::repos::tournaments::TournamentStatus::Processing => TournamentStatus::Processing,
+            infra::repos::tournaments::TournamentStatus::InProgress => TournamentStatus::InProgress,
             infra::repos::tournaments::TournamentStatus::Completed => TournamentStatus::Completed,
         }
     }
@@ -170,8 +170,8 @@ pub struct Tournament {
     pub end_time: Option<DateTime<Utc>>,
     pub buy_in_cents: i32,
     pub seat_cap: Option<i32>,
-    pub status: TournamentStatus,           // Static: UPCOMING, PROCESSING, COMPLETED
-    pub live_status: TournamentLiveStatus,  // Live: NOT_STARTED, REGISTRATION_OPEN, etc.
+    pub status: TournamentStatus,           // Calculated: UPCOMING, LIVE, COMPLETED
+    pub live_status: TournamentLiveStatus,  // Direct from DB: NOT_STARTED, IN_PROGRESS, FINISHED, etc.
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

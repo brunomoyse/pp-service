@@ -48,11 +48,11 @@ impl QueryRoot {
         });
         let rows = repo.list(filter, page).await?;
         Ok(rows.into_iter().map(|r| {
-            let status: crate::gql::types::TournamentStatus = r.calculate_status().into();
+            let status = r.calculate_status().into();
             crate::gql::types::Tournament {
                 id: r.id.into(),
-                title: r.name,
-                description: r.description,
+                title: r.name.clone(),
+                description: r.description.clone(),
                 club_id: r.club_id.into(),
                 start_time: r.start_time,
                 end_time: r.end_time,
@@ -257,12 +257,11 @@ impl QueryRoot {
                     created_at: result_row.created_at,
                 };
 
-                let status: crate::gql::types::TournamentStatus = tournament_row.calculate_status().into();
-                let status: crate::gql::types::TournamentStatus = tournament_row.calculate_status().into();
-        let tournament = crate::gql::types::Tournament {
+                let status = tournament_row.calculate_status().into();
+                let tournament = crate::gql::types::Tournament {
                     id: tournament_row.id.into(),
-                    title: tournament_row.name,
-                    description: tournament_row.description,
+                    title: tournament_row.name.clone(),
+                    description: tournament_row.description.clone(),
                     club_id: tournament_row.club_id.into(),
                     start_time: tournament_row.start_time,
                     end_time: tournament_row.end_time,
@@ -337,17 +336,16 @@ impl QueryRoot {
         let tournament_row = tournament_repo.get(tournament_id).await?
             .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
         
-        let status: crate::gql::types::TournamentStatus = tournament_row.calculate_status().into();
         let tournament = crate::gql::types::Tournament {
             id: tournament_row.id.into(),
-            title: tournament_row.name,
-            description: tournament_row.description,
+            title: tournament_row.name.clone(),
+            description: tournament_row.description.clone(),
             club_id: tournament_row.club_id.into(),
             start_time: tournament_row.start_time,
             end_time: tournament_row.end_time,
             buy_in_cents: tournament_row.buy_in_cents,
             seat_cap: tournament_row.seat_cap,
-            status,
+            status: tournament_row.calculate_status().into(),
             live_status: tournament_row.live_status.into(),
             created_at: tournament_row.created_at,
             updated_at: tournament_row.updated_at,
@@ -502,17 +500,16 @@ impl QueryRoot {
         let tournament_row = tournament_repo.get(tournament_id).await?
             .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
         
-        let status: crate::gql::types::TournamentStatus = tournament_row.calculate_status().into();
         let tournament = crate::gql::types::Tournament {
             id: tournament_row.id.into(),
-            title: tournament_row.name,
-            description: tournament_row.description,
+            title: tournament_row.name.clone(),
+            description: tournament_row.description.clone(),
             club_id: tournament_row.club_id.into(),
             start_time: tournament_row.start_time,
             end_time: tournament_row.end_time,
             buy_in_cents: tournament_row.buy_in_cents,
             seat_cap: tournament_row.seat_cap,
-            status,
+            status: tournament_row.calculate_status().into(),
             live_status: tournament_row.live_status.into(),
             created_at: tournament_row.created_at,
             updated_at: tournament_row.updated_at,
