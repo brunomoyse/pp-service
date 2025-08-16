@@ -20,6 +20,20 @@ async fn main() -> anyhow::Result<()> {
 
     let pool = PgPool::connect(&std::env::var("DATABASE_URL")?).await?;
     tracing::info!("Connected to Postgres");
+
+    // Run database migrations automatically on startup (can be disabled with SKIP_MIGRATIONS=true)
+    let skip_migrations = std::env::var("SKIP_MIGRATIONS")
+        .map(|v| v.to_lowercase() == "true")
+        .unwrap_or(false);
+
+    if skip_migrations {
+        tracing::info!("Skipping database migrations (SKIP_MIGRATIONS=true)");
+    } else {
+        tracing::info!("Running database migrations...");
+        sqlx::migrate!("../../migrations").run(&pool).await?;
+        tracing::info!("Database migrations completed successfully");
+    }
+
     let state = AppState::new(pool)?;
 
     // Build GraphQL schema from the gql module
