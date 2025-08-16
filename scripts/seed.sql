@@ -178,3 +178,36 @@ SELECT tournament_id, tag_id FROM tournament_tag_pairs LIMIT 50; -- Add some ran
 
 -- Calculate points for all tournaments with results using the PostgreSQL function
 SELECT recalculate_all_tournament_points();
+
+-- Create tournament clocks for all existing tournaments (since trigger only applies to new tournaments)
+INSERT INTO tournament_clocks (tournament_id, clock_status, current_level, auto_advance)
+SELECT id, 'stopped', 1, true 
+FROM tournaments 
+WHERE id NOT IN (SELECT tournament_id FROM tournament_clocks);
+
+-- Create basic tournament structures for all tournaments that don't have them
+INSERT INTO tournament_structures (tournament_id, level_number, small_blind, big_blind, ante, duration_minutes, is_break, break_duration_minutes)
+SELECT t.id, s.level_number, s.small_blind, s.big_blind, s.ante, s.duration_minutes, s.is_break, s.break_duration_minutes
+FROM tournaments t
+CROSS JOIN (
+    VALUES 
+        (1, 25, 50, 0, 20, false, null),
+        (2, 50, 100, 0, 20, false, null),
+        (3, 75, 150, 25, 20, false, null),
+        (4, 100, 200, 25, 20, false, null),
+        (5, 150, 300, 50, 20, false, null),
+        (6, 200, 400, 50, 20, false, null),
+        (7, 300, 600, 75, 20, false, null),
+        (8, 400, 800, 100, 20, false, null),
+        (9, 500, 1000, 100, 20, false, null),
+        (10, 600, 1200, 200, 20, false, null),
+        (11, 0, 0, 0, 15, true, 15), -- Break level
+        (12, 800, 1600, 200, 20, false, null),
+        (13, 1000, 2000, 300, 20, false, null),
+        (14, 1500, 3000, 500, 20, false, null),
+        (15, 2000, 4000, 500, 20, false, null)
+) AS s(level_number, small_blind, big_blind, ante, duration_minutes, is_break, break_duration_minutes)
+WHERE NOT EXISTS (
+    SELECT 1 FROM tournament_structures ts 
+    WHERE ts.tournament_id = t.id
+);
