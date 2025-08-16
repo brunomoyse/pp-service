@@ -1,46 +1,76 @@
-# ---- build stage -------------------------------------------------------------
+########################################
+# Planner stage (generate cargo-chef recipe)
+########################################
+FROM rust:1.89-alpine3.22 AS planner
+WORKDIR /app
+
+# Build deps for musl builds
+RUN apk add --no-cache build-base musl-dev pkgconfig openssl-dev openssl-libs-static
+
+# Install cargo-chef and prepare recipe
+RUN cargo install --locked cargo-chef
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+
+########################################
+# Builder stage (compile with cached deps)
+########################################
 FROM rust:1.89-alpine3.22 AS builder
 WORKDIR /app
 
-# Tools for musl builds + strip
-RUN apk add --no-cache build-base musl-dev pkgconfig binutils
+# Tools + strip for smaller binary + static SSL libs for musl
+RUN apk add --no-cache build-base musl-dev pkgconfig binutils openssl-dev openssl-libs-static
 
-# Build in offline mode (no DB needed)
+# Make cargo-chef available in this stage (to use command: "chef")
+COPY --from=planner /usr/local/cargo/bin/cargo-chef /usr/local/cargo/bin/cargo-chef
+
+# SQLx offline: uses committed .sqlx/
+# Also set OpenSSL to use static linking
 ENV SQLX_OFFLINE=true \
-    CARGO_TERM_COLOR=always
+    CARGO_TERM_COLOR=always \
+    OPENSSL_STATIC=1 \
+    OPENSSL_LIB_DIR=/usr/lib \
+    OPENSSL_INCLUDE_DIR=/usr/include
 
-# (Optional) cache-friendly deps bootstrap
-COPY Cargo.toml Cargo.lock ./
-COPY crates/api/Cargo.toml crates/api/Cargo.toml
-RUN cargo fetch --locked
+# 1) Cook dependency layers (fast incremental rebuilds)
+COPY --from=planner /app/recipe.json recipe.json
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    cargo chef cook --release --recipe-path recipe.json
 
-# Now sources
-COPY crates ./crates
-COPY config ./config
-COPY migrations ./migrations
+# 2) Now add the full source and build
+COPY . .
 
-# Build (locked for reproducibility)
-# Use BuildKit caches for big speedups on rebuilds
+
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     cargo build --release --locked --bin api \
- && strip target/release/api
+ && cp target/release/api /app/api-binary \
+ && strip /app/api-binary
 
-# ---- runtime stage -----------------------------------------------------------
+
+########################################
+# Runtime stage (minimal image)
+########################################
 FROM alpine:3.22
-WORKDIR /usr/local/bin
+WORKDIR /app
 
-# TLS roots + lightweight init (optional but recommended for signal handling)
+# TLS roots, timezones, and a proper init for signal handling
 RUN apk add --no-cache ca-certificates tzdata dumb-init \
  && adduser -S -u 10001 appuser
 
-COPY --from=builder /app/target/release/api /usr/local/bin/api
+# App binary (copied from the persistent location)
+COPY --from=builder /app/api-binary /usr/local/bin/api
+
+# Needed at runtime
+COPY --from=builder /app/migrations /app/migrations
+COPY --from=builder /app/config /app/config
 
 USER 10001
 EXPOSE 8080
 ENV RUST_LOG=info
 
-# Healthcheck (optional)
 # HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD wget -qO- http://127.0.0.1:8080/health || exit 1
 
 ENTRYPOINT ["dumb-init", "--"]

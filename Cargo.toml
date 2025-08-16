@@ -8,9 +8,9 @@ members = [
 resolver = "2"
 
 [workspace.package]
-edition = "2021"
 version = "0.1.0"
 authors = ["Bruno Moyse <contact@brunomoyse.be>"]
+edition = "2021"
 
 [workspace.dependencies]
 # Common dependencies you might want to share across crates
