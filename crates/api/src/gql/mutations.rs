@@ -96,7 +96,7 @@ impl MutationRoot {
         // Check permissions: require admin role if registering another user
         let is_admin_registration = input.user_id.is_some();
         let authenticated_user = require_admin_if(ctx, is_admin_registration, "user_id").await?
-            .ok_or_else(|| async_graphql::Error::new("Authentication required"))?;
+            .ok_or_else(|| async_graphql::Error::new("You must be logged in to perform this action"))?;
         
         // Determine which user to register
         let user_id = match input.user_id {
@@ -234,7 +234,7 @@ impl MutationRoot {
     async fn me(&self, ctx: &Context<'_>) -> Result<User> {
         // Extract claims from request extensions (set by middleware)
         let claims = ctx.data::<Claims>()
-            .map_err(|_| async_graphql::Error::new("Authentication required"))?;
+            .map_err(|_| async_graphql::Error::new("You must be logged in to perform this action"))?;
 
         let state = ctx.data::<AppState>()?;
         let user_id = Uuid::parse_str(&claims.sub)

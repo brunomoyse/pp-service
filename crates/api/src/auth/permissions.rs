@@ -8,7 +8,7 @@ use infra::repos::ClubManagerRepo;
 /// Check if the authenticated user has the required role
 pub async fn require_role(ctx: &Context<'_>, required_role: Role) -> Result<User> {
     let claims = ctx.data::<Claims>()
-        .map_err(|_| Error::new("Authentication required"))?;
+        .map_err(|_| Error::new("You must be logged in to perform this action"))?;
     
     let user_id = Uuid::parse_str(&claims.sub)
         .map_err(|e| Error::new(format!("Invalid user ID: {}", e)))?;
@@ -17,10 +17,11 @@ pub async fn require_role(ctx: &Context<'_>, required_role: Role) -> Result<User
     let user = get_user_by_id_with_role(state, user_id).await?;
     
     if !has_required_role(&user.role, required_role) {
-        return Err(Error::new(format!(
-            "Insufficient permissions. Required role: {:?}",
-            required_role
-        )));
+        return Err(Error::new(match required_role {
+            Role::Admin => format!("Access denied: Administrator privileges required. Your current role is {:?}", user.role),
+            Role::Manager => format!("Access denied: Manager privileges required. Your current role is {:?}", user.role), 
+            Role::Player => "Access denied: You need to be registered as a player".to_string(),
+        }));
     }
     
     Ok(user)
@@ -34,7 +35,7 @@ pub async fn require_admin_if(ctx: &Context<'_>, condition: bool, _field_name: &
     } else {
         // Still need to get the authenticated user for normal operations
         let claims = ctx.data::<Claims>()
-            .map_err(|_| Error::new("Authentication required"))?;
+            .map_err(|_| Error::new("You must be logged in to perform this action"))?;
         
         let user_id = Uuid::parse_str(&claims.sub)
             .map_err(|e| Error::new(format!("Invalid user ID: {}", e)))?;
@@ -87,7 +88,10 @@ pub async fn require_club_manager(ctx: &Context<'_>, club_id: Uuid) -> Result<Us
         .map_err(|e| Error::new(format!("Database error: {}", e)))?;
     
     if !is_manager {
-        return Err(Error::new("You are not authorized to manage this club"));
+        return Err(Error::new(format!(
+            "Access denied: You are not authorized to manage this club. Only administrators and designated managers for this club can perform this action. Current role: {:?}",
+            user.role
+        )));
     }
     
     Ok(user)

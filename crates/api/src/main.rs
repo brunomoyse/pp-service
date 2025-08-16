@@ -1,17 +1,10 @@
-mod app;
-mod auth;
-mod error;
-mod routes;
-mod state;
-mod gql;
-
 use sqlx::PgPool;
 use tokio::net::TcpListener;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::app::build_router;
-use crate::state::AppState;
-use crate::gql::build_schema;
+use api::app::build_router;
+use api::state::AppState;
+use api::gql::build_schema;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

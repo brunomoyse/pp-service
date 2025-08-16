@@ -23,21 +23,35 @@ impl TournamentClockQuery {
             let structure = repo.get_current_structure(tournament_id).await.ok();
             
             // Calculate time remaining
-            let time_remaining = if let (Some(end_time), Some(status)) = (clock_row.level_end_time, InfraClockStatus::from_str(&clock_row.clock_status)) {
+            let time_remaining = if let Some(status) = InfraClockStatus::from_str(&clock_row.clock_status) {
                 match status {
                     InfraClockStatus::Running => {
-                        let remaining = end_time - Utc::now();
-                        Some(remaining.num_seconds().max(0))
+                        if let Some(end_time) = clock_row.level_end_time {
+                            let remaining = end_time - Utc::now();
+                            Some(remaining.num_seconds().max(0))
+                        } else {
+                            None
+                        }
                     },
                     InfraClockStatus::Paused => {
-                        if let Some(pause_start) = clock_row.pause_started_at {
+                        if let (Some(end_time), Some(pause_start)) = (clock_row.level_end_time, clock_row.pause_started_at) {
                             let remaining = end_time - pause_start;
                             Some(remaining.num_seconds().max(0))
                         } else {
                             None
                         }
                     },
-                    _ => None
+                    InfraClockStatus::Stopped => {
+                        // Show full duration of current level when stopped
+                        // Use already fetched structure or fetch it
+                        if let Some(s) = &structure {
+                            Some((s.duration_minutes as i64) * 60)
+                        } else if let Ok(current_structure) = repo.get_current_structure(tournament_id).await {
+                            Some((current_structure.duration_minutes as i64) * 60)
+                        } else {
+                            None
+                        }
+                    }
                 }
             } else {
                 None
@@ -107,18 +121,36 @@ impl TournamentClockMutation {
         let tournament_id: Uuid = tournament_id.parse()?;
 
         let clock_row = repo.create_clock(tournament_id).await?;
+        let structure = repo.get_current_structure(tournament_id).await.ok();
+        
+        // Show full duration of first level when clock is created (stopped state)
+        let time_remaining_seconds = if let Some(s) = &structure {
+            Some((s.duration_minutes as i64) * 60)
+        } else {
+            None
+        };
         
         Ok(TournamentClock {
             id: clock_row.id.into(),
             tournament_id: clock_row.tournament_id.into(),
             status: InfraClockStatus::from_str(&clock_row.clock_status).unwrap_or(InfraClockStatus::Stopped).into(),
             current_level: clock_row.current_level,
-            time_remaining_seconds: None,
+            time_remaining_seconds,
             level_started_at: clock_row.level_started_at,
             level_end_time: clock_row.level_end_time,
             total_pause_duration_seconds: 0,
             auto_advance: clock_row.auto_advance,
-            current_structure: None,
+            current_structure: structure.map(|s| TournamentStructure {
+                id: s.id.into(),
+                tournament_id: s.tournament_id.into(),
+                level_number: s.level_number,
+                small_blind: s.small_blind,
+                big_blind: s.big_blind,
+                ante: s.ante,
+                duration_minutes: s.duration_minutes,
+                is_break: s.is_break,
+                break_duration_minutes: s.break_duration_minutes,
+            }),
         })
     }
 
@@ -323,24 +355,38 @@ impl TournamentClockSubscription {
                             .unwrap_or(InfraClockStatus::Stopped);
                         
                         // Calculate time remaining
-                        let time_remaining = if let Some(end_time) = clock_row.level_end_time {
-                            match clock_status {
-                                InfraClockStatus::Running => {
+                        let time_remaining = match clock_status {
+                            InfraClockStatus::Running => {
+                                if let Some(end_time) = clock_row.level_end_time {
                                     let remaining = end_time - Utc::now();
                                     Some(remaining.num_seconds().max(0))
-                                },
-                                InfraClockStatus::Paused => {
-                                    if let Some(pause_start) = clock_row.pause_started_at {
-                                        let remaining = end_time - pause_start;
-                                        Some(remaining.num_seconds().max(0))
+                                } else {
+                                    None
+                                }
+                            },
+                            InfraClockStatus::Paused => {
+                                if let (Some(end_time), Some(pause_start)) = (clock_row.level_end_time, clock_row.pause_started_at) {
+                                    let remaining = end_time - pause_start;
+                                    Some(remaining.num_seconds().max(0))
+                                } else {
+                                    None
+                                }
+                            },
+                            InfraClockStatus::Stopped => {
+                                // Show full duration of current level when stopped
+                                // If we can't get current level, try to get level 1 as fallback
+                                if let Ok(all_structures) = repo.get_all_structures(tournament_id).await {
+                                    if let Some(current_struct) = all_structures.iter().find(|s| s.level_number == clock_row.current_level) {
+                                        Some((current_struct.duration_minutes as i64) * 60)
+                                    } else if let Some(first_struct) = all_structures.iter().find(|s| s.level_number == 1) {
+                                        Some((first_struct.duration_minutes as i64) * 60)
                                     } else {
-                                        None
+                                        Some((structure.duration_minutes as i64) * 60)
                                     }
-                                },
-                                _ => None
+                                } else {
+                                    Some((structure.duration_minutes as i64) * 60)
+                                }
                             }
-                        } else {
-                            None
                         };
 
                         // Get next level preview

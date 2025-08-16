@@ -1,0 +1,847 @@
+{
+	"info": {
+		"name": "PocketPair Poker API",
+		"description": "Complete GraphQL API collection for PocketPair poker tournament management system. Includes authentication, user management, tournament operations, and club management.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"version": "1.0.0"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{auth_token}}",
+				"type": "string"
+			}
+		]
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Auto-set base URL if not defined",
+					"if (!pm.environment.get('base_url')) {",
+					"    pm.environment.set('base_url', 'http://localhost:8080');",
+					"}"
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "auth_token",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "🔐 Authentication",
+			"item": [
+				{
+					"name": "Register User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"mutation RegisterUser($input: UserRegistrationInput!) { registerUser(input: $input) { id email username firstName lastName role } }\",\n  \"variables\": {\n    \"input\": {\n      \"email\": \"test@example.com\",\n      \"password\": \"password123\",\n      \"firstName\": \"John\",\n      \"lastName\": \"Doe\",\n      \"username\": \"johndoe\"\n    }\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Register a new user account"
+					}
+				},
+				{
+					"name": "Login User",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"// Auto-extract token from response",
+									"if (pm.response.code === 200) {",
+									"    const responseJson = pm.response.json();",
+									"    if (responseJson.data && responseJson.data.loginUser && responseJson.data.loginUser.token) {",
+									"        pm.environment.set('auth_token', responseJson.data.loginUser.token);",
+									"        console.log('Token saved:', responseJson.data.loginUser.token);",
+									"    }",
+									"}"
+								]
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"mutation LoginUser($input: UserLoginInput!) { loginUser(input: $input) { token user { id email username firstName lastName role } } }\",\n  \"variables\": {\n    \"input\": {\n      \"email\": \"contact@brunomoyse.be\",\n      \"password\": \"admin\"\n    }\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Login user and automatically save JWT token"
+					}
+				},
+				{
+					"name": "Get Current User (Me)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"query { me { id email username firstName lastName phone isActive role } }\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Get current authenticated user information"
+					}
+				}
+			],
+			"description": "Authentication related operations"
+		},
+		{
+			"name": "👥 User Management",
+			"item": [
+				{
+					"name": "Get Users",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"query GetUsers($filter: UserFilter, $limit: Int, $offset: Int) { users(filter: $filter, limit: $limit, offset: $offset) { id email username firstName lastName role isActive } }\",\n  \"variables\": {\n    \"limit\": 20,\n    \"offset\": 0\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Get list of users with optional filtering"
+					}
+				},
+				{
+					"name": "Get User by ID",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"query GetUser($userId: ID!) { user(id: $userId) { id email username firstName lastName phone role isActive } }\",\n  \"variables\": {\n    \"userId\": \"ffffffff-ffff-ffff-ffff-ffffffffffff\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Get specific user by ID"
+					}
+				},
+				{
+					"name": "Get User Statistics",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"query GetUserStats($userId: ID!, $period: LeaderboardPeriod) { userStatistics(userId: $userId, period: $period) { totalTournaments totalEarnings averagePosition bestPosition worstPosition pointsEarned } }\",\n  \"variables\": {\n    \"userId\": \"ffffffff-ffff-ffff-ffff-ffffffffffff\",\n    \"period\": \"ALL_TIME\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Get user statistics for tournaments"
+					}
+				}
+			],
+			"description": "User management operations"
+		},
+		{
+			"name": "🏢 Club Management",
+			"item": [
+				{
+					"name": "Get All Clubs",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"query { clubs { id name city } }\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Get all poker clubs"
+					}
+				},
+				{
+					"name": "Get Club by ID",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"query GetClub($clubId: ID!) { club(id: $clubId) { id name city } }\",\n  \"variables\": {\n    \"clubId\": \"01234567-8901-2345-6789-012345678901\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Get specific club by ID"
+					}
+				}
+			],
+			"description": "Club management operations"
+		},
+		{
+			"name": "🏆 Tournament Management",
+			"item": [
+				{
+					"name": "Get Tournaments",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"query GetTournaments($clubId: UUID, $status: TournamentStatus, $limit: Int, $offset: Int) { tournaments(clubId: $clubId, status: $status, limit: $limit, offset: $offset) { id title startTime endTime buyInCents status liveStatus maxPlayers currentPlayers club { id name city } } }\",\n  \"variables\": {\n    \"limit\": 20,\n    \"offset\": 0\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Get tournaments with optional filtering"
+					}
+				},
+				{
+					"name": "Get Tournament by ID",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"query GetTournament($tournamentId: ID!) { tournament(id: $tournamentId) { id title description startTime endTime buyInCents status liveStatus maxPlayers currentPlayers structure club { id name city } } }\",\n  \"variables\": {\n    \"tournamentId\": \"01234567-8901-2345-6789-012345678901\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Get specific tournament by ID"
+					}
+				},
+				{
+					"name": "Register for Tournament",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"mutation RegisterForTournament($input: RegisterForTournamentInput!) { registerForTournament(input: $input) { id tournamentId userId registeredAt } }\",\n  \"variables\": {\n    \"input\": {\n      \"tournamentId\": \"01234567-8901-2345-6789-012345678901\",\n      \"userId\": \"ffffffff-ffff-ffff-ffff-ffffffffffff\"\n    }\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Register user for a tournament"
+					}
+				},
+				{
+					"name": "Enter Tournament Results",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"mutation EnterTournamentResults($input: EnterTournamentResultsInput!) { enterTournamentResults(input: $input) { success message resultsEntered } }\",\n  \"variables\": {\n    \"input\": {\n      \"tournamentId\": \"01234567-8901-2345-6789-012345678901\",\n      \"playerPositions\": [\n        {\n          \"userId\": \"ffffffff-ffff-ffff-ffff-ffffffffffff\",\n          \"position\": 1,\n          \"prizeAmountCents\": 50000\n        }\n      ],\n      \"playerDeals\": []\n    }\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Enter final results for a tournament (Manager required)"
+					}
+				},
+				{
+					"name": "Update Tournament Status",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"mutation UpdateTournamentStatus($input: UpdateTournamentStatusInput!) { updateTournamentStatus(input: $input) { id status liveStatus } }\",\n  \"variables\": {\n    \"input\": {\n      \"tournamentId\": \"01234567-8901-2345-6789-012345678901\",\n      \"status\": \"IN_PROGRESS\"\n    }\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Update tournament status (Manager required)"
+					}
+				}
+			],
+			"description": "Tournament management operations"
+		},
+		{
+			"name": "⏰ Tournament Clock",
+			"item": [
+				{
+					"name": "Get Tournament Clock",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"query GetTournamentClock($tournamentId: ID!) { tournamentClock(tournamentId: $tournamentId) { id tournamentId status currentLevel timeRemaining totalLevels isPaused } }\",\n  \"variables\": {\n    \"tournamentId\": \"01234567-8901-2345-6789-012345678901\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Get tournament clock state"
+					}
+				},
+				{
+					"name": "Create Tournament Clock",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"mutation CreateTournamentClock($tournamentId: ID!) { createTournamentClock(tournamentId: $tournamentId) { id tournamentId status currentLevel timeRemaining totalLevels isPaused } }\",\n  \"variables\": {\n    \"tournamentId\": \"01234567-8901-2345-6789-012345678901\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Initialize tournament clock (Manager required)"
+					}
+				},
+				{
+					"name": "Start Tournament Clock",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"mutation StartTournamentClock($tournamentId: ID!) { startTournamentClock(tournamentId: $tournamentId) { id tournamentId status currentLevel timeRemaining totalLevels isPaused } }\",\n  \"variables\": {\n    \"tournamentId\": \"01234567-8901-2345-6789-012345678901\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Start tournament clock (Manager required)"
+					}
+				},
+				{
+					"name": "Pause Tournament Clock",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"mutation PauseTournamentClock($tournamentId: ID!) { pauseTournamentClock(tournamentId: $tournamentId) { id tournamentId status currentLevel timeRemaining totalLevels isPaused } }\",\n  \"variables\": {\n    \"tournamentId\": \"01234567-8901-2345-6789-012345678901\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Pause tournament clock (Manager required)"
+					}
+				},
+				{
+					"name": "Resume Tournament Clock",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"mutation ResumeTournamentClock($tournamentId: ID!) { resumeTournamentClock(tournamentId: $tournamentId) { id tournamentId status currentLevel timeRemaining totalLevels isPaused } }\",\n  \"variables\": {\n    \"tournamentId\": \"01234567-8901-2345-6789-012345678901\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Resume tournament clock (Manager required)"
+					}
+				},
+				{
+					"name": "Advance Tournament Level",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"mutation AdvanceTournamentLevel($tournamentId: ID!) { advanceTournamentLevel(tournamentId: $tournamentId) { id tournamentId status currentLevel timeRemaining totalLevels isPaused } }\",\n  \"variables\": {\n    \"tournamentId\": \"01234567-8901-2345-6789-012345678901\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Manually advance to next level (Manager required)"
+					}
+				},
+				{
+					"name": "Get Tournament Structure",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"query GetTournamentStructure($tournamentId: ID!) { tournamentStructure(tournamentId: $tournamentId) { level smallBlind bigBlind ante duration } }\",\n  \"variables\": {\n    \"tournamentId\": \"01234567-8901-2345-6789-012345678901\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Get tournament blind structure levels"
+					}
+				}
+			],
+			"description": "Tournament clock and timing operations"
+		},
+		{
+			"name": "🪑 Table & Seating Management",
+			"item": [
+				{
+					"name": "Create Tournament Table",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"mutation CreateTournamentTable($input: CreateTournamentTableInput!) { createTournamentTable(input: $input) { id tableNumber maxSeats currentSeats tournament { id title } } }\",\n  \"variables\": {\n    \"input\": {\n      \"tournamentId\": \"01234567-8901-2345-6789-012345678901\",\n      \"tableNumber\": 1,\n      \"maxSeats\": 9\n    }\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Create a new tournament table (Club Manager required)"
+					}
+				},
+				{
+					"name": "Assign Player to Seat",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"mutation AssignPlayerToSeat($input: AssignPlayerToSeatInput!) { assignPlayerToSeat(input: $input) { id seatNumber stackSize player { id firstName lastName } table { id tableNumber } } }\",\n  \"variables\": {\n    \"input\": {\n      \"tableId\": \"01234567-8901-2345-6789-012345678901\",\n      \"playerId\": \"ffffffff-ffff-ffff-ffff-ffffffffffff\",\n      \"seatNumber\": 1,\n      \"stackSize\": 20000\n    }\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Assign player to specific seat (Club Manager required)"
+					}
+				},
+				{
+					"name": "Move Player",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"mutation MovePlayer($input: MovePlayerInput!) { movePlayer(input: $input) { id seatNumber stackSize player { id firstName lastName } table { id tableNumber } } }\",\n  \"variables\": {\n    \"input\": {\n      \"playerId\": \"ffffffff-ffff-ffff-ffff-ffffffffffff\",\n      \"fromTableId\": \"01234567-8901-2345-6789-012345678901\",\n      \"toTableId\": \"01234567-8901-2345-6789-012345678902\",\n      \"toSeatNumber\": 3\n    }\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Move player to different table/seat (Club Manager required)"
+					}
+				},
+				{
+					"name": "Update Stack Size",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"mutation UpdateStackSize($input: UpdateStackSizeInput!) { updateStackSize(input: $input) { id seatNumber stackSize player { id firstName lastName } } }\",\n  \"variables\": {\n    \"input\": {\n      \"playerId\": \"ffffffff-ffff-ffff-ffff-ffffffffffff\",\n      \"newStackSize\": 15000\n    }\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Update player's chip stack (Manager required)"
+					}
+				},
+				{
+					"name": "Balance Tables",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"mutation BalanceTables($input: BalanceTablesInput!) { balanceTables(input: $input) { id seatNumber stackSize player { id firstName lastName } table { id tableNumber } } }\",\n  \"variables\": {\n    \"input\": {\n      \"tournamentId\": \"01234567-8901-2345-6789-012345678901\"\n    }\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Auto-balance players across tables (Manager required)"
+					}
+				},
+				{
+					"name": "Get Seat Assignments",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"query GetSeatAssignments($tournamentId: ID, $tableId: ID, $limit: Int, $offset: Int) { seatAssignments(tournamentId: $tournamentId, tableId: $tableId, limit: $limit, offset: $offset) { id seatNumber stackSize player { id firstName lastName } table { id tableNumber } } }\",\n  \"variables\": {\n    \"tournamentId\": \"01234567-8901-2345-6789-012345678901\",\n    \"limit\": 50,\n    \"offset\": 0\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Get current seat assignments for tournament"
+					}
+				}
+			],
+			"description": "Table and seating management operations"
+		},
+		{
+			"name": "📊 Leaderboards & Statistics",
+			"item": [
+				{
+					"name": "Get Tournament Leaderboard",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"query GetTournamentLeaderboard($period: LeaderboardPeriod, $clubId: UUID, $limit: Int, $offset: Int) { tournamentLeaderboard(period: $period, clubId: $clubId, limit: $limit, offset: $offset) { rank user { id firstName lastName } totalPoints totalTournaments totalEarnings averagePosition } }\",\n  \"variables\": {\n    \"period\": \"ALL_TIME\",\n    \"limit\": 20,\n    \"offset\": 0\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Get tournament leaderboard rankings"
+					}
+				},
+				{
+					"name": "Get Tournament Players",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"query GetTournamentPlayers($tournamentId: ID!) { tournamentPlayers(tournamentId: $tournamentId) { id user { id firstName lastName email } registeredAt position prizeAmountCents pointsAwarded } }\",\n  \"variables\": {\n    \"tournamentId\": \"01234567-8901-2345-6789-012345678901\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Get all players registered for a tournament"
+					}
+				}
+			],
+			"description": "Leaderboards and statistics"
+		},
+		{
+			"name": "🔧 System & Utilities",
+			"item": [
+				{
+					"name": "Server Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/health",
+							"host": ["{{base_url}}"],
+							"path": ["health"]
+						},
+						"description": "Check if the server is running and database is connected"
+					}
+				},
+				{
+					"name": "Get Server Time",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"query { serverTime }\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Get current server time (UTC)"
+					}
+				},
+				{
+					"name": "GraphQL Schema Introspection",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"query { __schema { types { name description fields { name type { name } } } } }\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Get GraphQL schema information for development"
+					}
+				}
+			],
+			"description": "System utilities and health checks"
+		},
+		{
+			"name": "❌ Error Testing",
+			"item": [
+				{
+					"name": "Test - No Authentication",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"mutation { createTournamentClock(tournamentId: \\\"01234567-8901-2345-6789-012345678901\\\") { id } }\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Test protected endpoint without authentication - should return: 'You must be logged in to perform this action'"
+					}
+				},
+				{
+					"name": "Test - Invalid Token",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "invalid-token-here",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"query\": \"mutation { createTournamentClock(tournamentId: \\\"01234567-8901-2345-6789-012345678901\\\") { id } }\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/graphql",
+							"host": ["{{base_url}}"],
+							"path": ["graphql"]
+						},
+						"description": "Test protected endpoint with invalid token - should return: 'You must be logged in to perform this action'"
+					}
+				}
+			],
+			"description": "Test error scenarios and improved error messages"
+		}
+	]
+}
