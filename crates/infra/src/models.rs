@@ -29,6 +29,24 @@ pub struct TournamentRow {
     pub updated_at: DateTime<Utc>,
 }
 
+impl TournamentRow {
+    /// Calculate static status based on live status and timing
+    pub fn calculate_status(&self) -> crate::repos::tournaments::TournamentStatus {
+        use crate::repos::tournaments::TournamentLiveStatus as LiveStatus;
+        use crate::repos::tournaments::TournamentStatus;
+        
+        match self.live_status {
+            LiveStatus::NotStarted => TournamentStatus::Upcoming,
+            LiveStatus::RegistrationOpen | 
+            LiveStatus::LateRegistration | 
+            LiveStatus::InProgress | 
+            LiveStatus::Break | 
+            LiveStatus::FinalTable => TournamentStatus::Processing,
+            LiveStatus::Finished => TournamentStatus::Completed,
+        }
+    }
+}
+
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct TournamentStateRow {
     pub id: Uuid,

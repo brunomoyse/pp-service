@@ -14,8 +14,8 @@ pub struct TournamentFilter {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TournamentStatus {
     Upcoming,
-    Ongoing,
-    Ended,
+    Processing,
+    Completed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, sqlx::Type, serde::Serialize, serde::Deserialize)]
@@ -122,8 +122,8 @@ impl TournamentRepo {
             .bind(filter.to)
             .bind(filter.status.map(|s| match s {
                 TournamentStatus::Upcoming => "upcoming",
-                TournamentStatus::Ongoing => "ongoing", 
-                TournamentStatus::Ended => "ended",
+                TournamentStatus::Processing => "processing", 
+                TournamentStatus::Completed => "completed",
             }))
             .bind(p.limit)
             .bind(p.offset)

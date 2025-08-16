@@ -49,10 +49,10 @@ impl From<Role> for String {
 pub enum TournamentStatus {
     #[graphql(name = "UPCOMING")]
     Upcoming,
-    #[graphql(name = "ONGOING")]
-    Ongoing,
-    #[graphql(name = "ENDED")]
-    Ended,
+    #[graphql(name = "PROCESSING")]
+    Processing,
+    #[graphql(name = "COMPLETED")]
+    Completed,
 }
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
@@ -77,8 +77,18 @@ impl From<TournamentStatus> for infra::repos::tournaments::TournamentStatus {
     fn from(status: TournamentStatus) -> Self {
         match status {
             TournamentStatus::Upcoming => infra::repos::tournaments::TournamentStatus::Upcoming,
-            TournamentStatus::Ongoing => infra::repos::tournaments::TournamentStatus::Ongoing,
-            TournamentStatus::Ended => infra::repos::tournaments::TournamentStatus::Ended,
+            TournamentStatus::Processing => infra::repos::tournaments::TournamentStatus::Processing,
+            TournamentStatus::Completed => infra::repos::tournaments::TournamentStatus::Completed,
+        }
+    }
+}
+
+impl From<infra::repos::tournaments::TournamentStatus> for TournamentStatus {
+    fn from(status: infra::repos::tournaments::TournamentStatus) -> Self {
+        match status {
+            infra::repos::tournaments::TournamentStatus::Upcoming => TournamentStatus::Upcoming,
+            infra::repos::tournaments::TournamentStatus::Processing => TournamentStatus::Processing,
+            infra::repos::tournaments::TournamentStatus::Completed => TournamentStatus::Completed,
         }
     }
 }
@@ -160,7 +170,8 @@ pub struct Tournament {
     pub end_time: Option<DateTime<Utc>>,
     pub buy_in_cents: i32,
     pub seat_cap: Option<i32>,
-    pub live_status: Option<TournamentLiveStatus>,
+    pub status: TournamentStatus,           // Static: UPCOMING, PROCESSING, COMPLETED
+    pub live_status: TournamentLiveStatus,  // Live: NOT_STARTED, REGISTRATION_OPEN, etc.
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

@@ -47,18 +47,22 @@ impl QueryRoot {
             offset: offset.unwrap_or(0).max(0),
         });
         let rows = repo.list(filter, page).await?;
-        Ok(rows.into_iter().map(|r| crate::gql::types::Tournament {
-            id: r.id.into(),
-            title: r.name,
-            description: r.description,
-            club_id: r.club_id.into(),
-            start_time: r.start_time,
-            end_time: r.end_time,
-            buy_in_cents: r.buy_in_cents,
-            seat_cap: r.seat_cap,
-            live_status: Some(r.live_status.into()),
-            created_at: r.created_at,
-            updated_at: r.updated_at,
+        Ok(rows.into_iter().map(|r| {
+            let status: crate::gql::types::TournamentStatus = r.calculate_status().into();
+            crate::gql::types::Tournament {
+                id: r.id.into(),
+                title: r.name,
+                description: r.description,
+                club_id: r.club_id.into(),
+                start_time: r.start_time,
+                end_time: r.end_time,
+                buy_in_cents: r.buy_in_cents,
+                seat_cap: r.seat_cap,
+                status,
+                live_status: r.live_status.into(),
+                created_at: r.created_at,
+                updated_at: r.updated_at,
+            }
         }).collect())
     }
 
@@ -253,7 +257,9 @@ impl QueryRoot {
                     created_at: result_row.created_at,
                 };
 
-                let tournament = crate::gql::types::Tournament {
+                let status: crate::gql::types::TournamentStatus = tournament_row.calculate_status().into();
+                let status: crate::gql::types::TournamentStatus = tournament_row.calculate_status().into();
+        let tournament = crate::gql::types::Tournament {
                     id: tournament_row.id.into(),
                     title: tournament_row.name,
                     description: tournament_row.description,
@@ -262,7 +268,8 @@ impl QueryRoot {
                     end_time: tournament_row.end_time,
                     buy_in_cents: tournament_row.buy_in_cents,
                     seat_cap: tournament_row.seat_cap,
-                    live_status: Some(tournament_row.live_status.into()),
+                    status,
+                    live_status: tournament_row.live_status.into(),
                     created_at: tournament_row.created_at,
                     updated_at: tournament_row.updated_at,
                 };
@@ -330,6 +337,7 @@ impl QueryRoot {
         let tournament_row = tournament_repo.get(tournament_id).await?
             .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
         
+        let status: crate::gql::types::TournamentStatus = tournament_row.calculate_status().into();
         let tournament = crate::gql::types::Tournament {
             id: tournament_row.id.into(),
             title: tournament_row.name,
@@ -339,7 +347,8 @@ impl QueryRoot {
             end_time: tournament_row.end_time,
             buy_in_cents: tournament_row.buy_in_cents,
             seat_cap: tournament_row.seat_cap,
-            live_status: Some(tournament_row.live_status.into()),
+            status,
+            live_status: tournament_row.live_status.into(),
             created_at: tournament_row.created_at,
             updated_at: tournament_row.updated_at,
         };
@@ -493,6 +502,7 @@ impl QueryRoot {
         let tournament_row = tournament_repo.get(tournament_id).await?
             .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
         
+        let status: crate::gql::types::TournamentStatus = tournament_row.calculate_status().into();
         let tournament = crate::gql::types::Tournament {
             id: tournament_row.id.into(),
             title: tournament_row.name,
@@ -502,7 +512,8 @@ impl QueryRoot {
             end_time: tournament_row.end_time,
             buy_in_cents: tournament_row.buy_in_cents,
             seat_cap: tournament_row.seat_cap,
-            live_status: Some(tournament_row.live_status.into()),
+            status,
+            live_status: tournament_row.live_status.into(),
             created_at: tournament_row.created_at,
             updated_at: tournament_row.updated_at,
         };

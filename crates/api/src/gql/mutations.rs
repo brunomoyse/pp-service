@@ -47,7 +47,8 @@ impl MutationRoot {
             end_time: None,
             buy_in_cents: 0,
             seat_cap: None,
-            live_status: Some(crate::gql::types::TournamentLiveStatus::NotStarted),
+            status: crate::gql::types::TournamentStatus::Upcoming,
+            live_status: crate::gql::types::TournamentLiveStatus::NotStarted,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         })
@@ -885,6 +886,7 @@ impl MutationRoot {
         };
         publish_seating_event(event);
         
+        let status: crate::gql::types::TournamentStatus = tournament_row.calculate_status().into();
         Ok(Tournament {
             id: tournament_row.id.into(),
             title: tournament_row.name,
@@ -894,7 +896,8 @@ impl MutationRoot {
             end_time: tournament_row.end_time,
             buy_in_cents: tournament_row.buy_in_cents,
             seat_cap: tournament_row.seat_cap,
-            live_status: Some(tournament_row.live_status.into()),
+            status,
+            live_status: tournament_row.live_status.into(),
             created_at: tournament_row.created_at,
             updated_at: tournament_row.updated_at,
         })
