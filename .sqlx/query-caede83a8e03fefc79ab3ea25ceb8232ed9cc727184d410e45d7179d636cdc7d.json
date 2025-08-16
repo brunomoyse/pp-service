@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO tournament_structures (tournament_id, level_number, small_blind, big_blind, ante, duration_minutes) \n           VALUES ($1, 1, 25, 50, 0, 20) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "caede83a8e03fefc79ab3ea25ceb8232ed9cc727184d410e45d7179d636cdc7d"
+}

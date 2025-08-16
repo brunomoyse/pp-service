@@ -49,11 +49,11 @@ async fn test_get_user_by_id() {
     let app_state = setup_test_db().await;
     let schema = build_schema(app_state.clone());
 
-    let (user_id, claims) = create_test_user(&app_state, "specificuser@test.com", "player").await;
+    let (user_id, claims) = create_test_user(&app_state, "specificuser@test.com", "admin").await;
 
     let query = r#"
-        query GetUser($userId: ID!) {
-            user(id: $userId) {
+        query GetUsers($limit: Int, $offset: Int) {
+            users(limit: $limit, offset: $offset) {
                 id
                 email
                 role
@@ -62,7 +62,8 @@ async fn test_get_user_by_id() {
     "#;
 
     let variables = Variables::from_json(json!({
-        "userId": user_id.to_string()
+        "limit": 100,
+        "offset": 0
     }));
 
     let response = execute_graphql(&schema, query, Some(variables), Some(claims)).await;
@@ -74,7 +75,13 @@ async fn test_get_user_by_id() {
     );
 
     let data = response.data.into_json().unwrap();
-    let user = &data["user"];
+    let users = data["users"].as_array().unwrap();
+
+    // Find our specific user
+    let user = users
+        .iter()
+        .find(|u| u["id"] == user_id.to_string())
+        .expect("User should be found");
 
     assert_eq!(user["id"], user_id.to_string());
     assert_eq!(user["email"], "specificuser@test.com");

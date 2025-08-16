@@ -136,5 +136,6 @@ jobs:
 
       - name: Run integration tests
         env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/pocketpair
           TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/pocketpair
         run: cargo test --workspace --test '*' --all-features -- --nocapture

@@ -1,0 +1,40 @@
+# Pre-commit configuration for Rust project with SQLx
+# Note: SQLx cache checks run on pre-push to avoid disrupting local development
+repos:
+  - repo: local
+    hooks:
+      # SQLx cache validation - runs on push
+      - id: sqlx-check
+        name: Check SQLx query cache is up to date
+        entry: sh -c 'if git diff --name-only @{upstream}..HEAD 2>/dev/null | xargs grep -l "sqlx::query" 2>/dev/null; then echo "SQLx queries detected. Ensuring cache is up to date..."; DATABASE_URL="postgres://brunomoyse:A9WeJQk%3F%217W0n%C2%A3h%C2%A3@192.168.0.14:5433/pocketpair" cargo sqlx prepare --workspace -- --tests --check || (echo "SQLx cache is outdated. Run: cargo sqlx prepare --workspace -- --tests"; exit 1); fi'
+        language: system
+        files: '\.rs$'
+        pass_filenames: false
+        stages: [push]
+        
+      # Rust formatting - runs on commit for fast feedback
+      - id: rust-fmt
+        name: Rust formatting check
+        entry: cargo fmt --all -- --check
+        language: system
+        files: '\.rs$'
+        pass_filenames: false
+        stages: [commit]
+        
+      # Rust clippy - runs on push for comprehensive check
+      - id: rust-clippy
+        name: Rust clippy
+        entry: sh -c 'SQLX_OFFLINE=true cargo clippy --all-targets --all-features -- -D warnings'
+        language: system
+        files: '\.rs$'
+        pass_filenames: false
+        stages: [push]
+
+  # Optional: Add other useful hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml

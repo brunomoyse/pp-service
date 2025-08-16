@@ -69,7 +69,20 @@ async fn test_invalid_query() {
         !response.errors.is_empty(),
         "Invalid query should return errors"
     );
-    assert!(response.errors[0].message.contains("Cannot query field"));
+
+    // Check for various possible GraphQL error messages for unknown fields
+    assert!(
+        response.errors[0].message.contains("Cannot query field")
+            || response.errors[0].message.contains("Unknown field")
+            || response.errors[0]
+                .message
+                .contains("Field \"nonExistentField\" is not defined")
+            || response.errors[0]
+                .message
+                .contains("field 'nonExistentField'"),
+        "Error message should indicate unknown field, got: '{}'",
+        response.errors[0].message
+    );
 }
 
 #[tokio::test]

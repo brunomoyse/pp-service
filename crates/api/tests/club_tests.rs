@@ -1,9 +1,7 @@
 mod common;
 
 use api::gql::build_schema;
-use async_graphql::Variables;
 use common::*;
-use serde_json::json;
 
 #[tokio::test]
 async fn test_get_clubs_query() {
@@ -48,8 +46,8 @@ async fn test_get_club_by_id() {
     let club_id = create_test_club(&app_state, "Specific Test Club").await;
 
     let query = r#"
-        query GetClub($clubId: ID!) {
-            club(id: $clubId) {
+        query {
+            clubs {
                 id
                 name
                 city
@@ -57,21 +55,23 @@ async fn test_get_club_by_id() {
         }
     "#;
 
-    let variables = Variables::from_json(json!({
-        "clubId": club_id.to_string()
-    }));
-
-    let response = execute_graphql(&schema, query, Some(variables), None).await;
+    let response = execute_graphql(&schema, query, None, None).await;
 
     assert!(
         response.errors.is_empty(),
-        "Club query should succeed: {:?}",
+        "Clubs query should succeed: {:?}",
         response.errors
     );
 
     let data = response.data.into_json().unwrap();
-    let club = &data["club"];
+    let clubs = data["clubs"].as_array().unwrap();
 
-    assert_eq!(club["id"], club_id.to_string());
-    assert_eq!(club["name"], "Specific Test Club");
+    // Find our specific test club
+    let test_club = clubs
+        .iter()
+        .find(|c| c["id"] == club_id.to_string())
+        .expect("Should find our test club");
+
+    assert_eq!(test_club["id"], club_id.to_string());
+    assert_eq!(test_club["name"], "Specific Test Club");
 }

@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO table_seat_assignments (tournament_id, table_id, user_id, seat_number, stack_size) VALUES ($1, $2, $3, $4, $5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ac1f13b28b7d044c16e8b07442d81021be4c62788a1806c1b9891e6ebbb22105"
+}

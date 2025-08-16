@@ -23,13 +23,22 @@ async fn test_user_registration() {
         }
     "#;
 
+    let unique_email = format!(
+        "newuser_{}@test.com",
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+    );
+    let unique_username = format!(
+        "newuser_{}",
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+    );
+
     let variables = Variables::from_json(json!({
         "input": {
-            "email": "newuser@test.com",
+            "email": unique_email,
             "password": "testpassword123",
             "firstName": "New",
             "lastName": "User",
-            "username": "newuser"
+            "username": unique_username
         }
     }));
 
@@ -44,7 +53,7 @@ async fn test_user_registration() {
     let data = response.data.into_json().unwrap();
     let user = &data["registerUser"];
 
-    assert_eq!(user["email"], "newuser@test.com");
+    assert_eq!(user["email"], unique_email);
     assert_eq!(user["firstName"], "New");
     assert_eq!(user["lastName"], "User");
     assert_eq!(user["role"], "PLAYER");
@@ -143,5 +152,7 @@ async fn test_me_query_unauthenticated() {
         !response.errors.is_empty(),
         "Me query should fail without authentication"
     );
-    assert!(response.errors[0].message.contains("You must be logged in"));
+    assert!(response.errors[0]
+        .message
+        .contains("Authentication required"));
 }

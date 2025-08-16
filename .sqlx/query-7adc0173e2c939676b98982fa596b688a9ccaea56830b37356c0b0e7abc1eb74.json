@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO clubs (id, name, city) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7adc0173e2c939676b98982fa596b688a9ccaea56830b37356c0b0e7abc1eb74"
+}

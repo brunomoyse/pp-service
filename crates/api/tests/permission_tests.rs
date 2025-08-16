@@ -154,7 +154,7 @@ async fn test_club_manager_restrictions() {
     let schema = build_schema(app_state.clone());
 
     let (manager_id, manager_claims) =
-        create_test_user(&app_state, "clubmanager@test.com", "manager").await;
+        create_test_user(&app_state, "clubmanager_restrictions@test.com", "manager").await;
     let club_a_id = create_test_club(&app_state, "Club A").await;
     let club_b_id = create_test_club(&app_state, "Club B").await;
 

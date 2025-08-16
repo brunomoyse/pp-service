@@ -69,14 +69,22 @@ pub async fn create_test_user(
     .await
     .expect("Failed to create test user");
 
+    // Get the actual user ID (in case of conflict, it might be different)
+    let actual_user = sqlx::query!("SELECT id FROM users WHERE email = $1", email)
+        .fetch_one(&app_state.db)
+        .await
+        .expect("Failed to fetch created user");
+
+    let actual_user_id = actual_user.id;
+
     let claims = api::auth::Claims {
-        sub: user_id.to_string(),
+        sub: actual_user_id.to_string(),
         email: email.to_string(),
         iat: chrono::Utc::now().timestamp(),
         exp: (chrono::Utc::now() + chrono::Duration::hours(1)).timestamp(),
     };
 
-    (user_id, claims)
+    (actual_user_id, claims)
 }
 
 /// Create test club and return its ID
@@ -106,7 +114,7 @@ pub async fn create_test_tournament(app_state: &AppState, club_id: Uuid, title: 
         r#"INSERT INTO tournaments (
             id, name, description, club_id, start_time, end_time, 
             buy_in_cents, seat_cap, live_status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'not_started'::tournament_live_status) 
         ON CONFLICT (id) DO NOTHING"#,
         tournament_id,
         title,
@@ -115,8 +123,7 @@ pub async fn create_test_tournament(app_state: &AppState, club_id: Uuid, title: 
         chrono::Utc::now(),
         chrono::Utc::now() + chrono::Duration::hours(4),
         5000i32, // $50.00
-        100i32,
-        "not_started" as _
+        100i32
     )
     .execute(&app_state.db)
     .await

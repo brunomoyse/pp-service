@@ -333,10 +333,21 @@ impl TournamentClockMutation {
         ctx: &Context<'_>,
         tournament_id: ID,
     ) -> Result<TournamentClock> {
-        let manager = require_role(ctx, Role::Manager).await?;
         let state = ctx.data::<AppState>()?;
-        let repo = TournamentClockRepo::new(state.db.clone());
         let tournament_id: Uuid = tournament_id.parse()?;
+
+        // Get tournament to find club_id for authorization
+        let tournament_repo = infra::repos::TournamentRepo::new(state.db.clone());
+        let tournament = tournament_repo
+            .get(tournament_id)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
+
+        // Require club-specific manager authorization
+        let manager =
+            crate::auth::permissions::require_club_manager(ctx, tournament.club_id).await?;
+
+        let repo = TournamentClockRepo::new(state.db.clone());
 
         let clock_row = repo
             .advance_level(tournament_id, false, Some(manager.id.parse()?))

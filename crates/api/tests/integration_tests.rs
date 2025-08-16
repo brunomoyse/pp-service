@@ -29,8 +29,7 @@ async fn test_tournament_live_status_enum() {
                 id
                 title
                 liveStatus
-                currentLevel
-                playersRemaining
+                status
             }
         }
     "#;
@@ -172,7 +171,7 @@ async fn test_tournament_business_status_vs_live_status() {
 
         // Verify both status fields are valid
         assert!(
-            matches!(status, "UPCOMING" | "LIVE" | "COMPLETED"),
+            matches!(status, "UPCOMING" | "IN_PROGRESS" | "COMPLETED"),
             "Business status should be a valid enum value, got: {}",
             status
         );
@@ -202,8 +201,8 @@ async fn test_tournament_business_status_vs_live_status() {
             }
             "IN_PROGRESS" | "BREAK" | "FINAL_TABLE" => {
                 assert_eq!(
-                    status, "LIVE",
-                    "IN_PROGRESS/BREAK/FINAL_TABLE should map to LIVE business status"
+                    status, "IN_PROGRESS",
+                    "IN_PROGRESS/BREAK/FINAL_TABLE should map to IN_PROGRESS business status"
                 );
             }
             "FINISHED" => {

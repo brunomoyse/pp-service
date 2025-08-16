@@ -104,7 +104,7 @@ async fn create_test_tournament(app_state: &AppState, club_id: Uuid, title: &str
         r#"INSERT INTO tournaments (
             id, name, description, club_id, start_time, end_time, 
             buy_in_cents, seat_cap, live_status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'not_started'::tournament_live_status) 
         ON CONFLICT (id) DO NOTHING"#,
         tournament_id,
         title,
@@ -113,8 +113,7 @@ async fn create_test_tournament(app_state: &AppState, club_id: Uuid, title: &str
         chrono::Utc::now(),
         chrono::Utc::now() + chrono::Duration::hours(4),
         5000i32, // $50.00
-        100i32,
-        "not_started" as _
+        100i32
     )
     .execute(&app_state.db)
     .await
@@ -158,11 +157,10 @@ async fn test_create_tournament_table() {
                 id
                 tableNumber
                 maxSeats
-                currentSeats
-                tournament {
-                    id
-                    title
-                }
+                isActive
+                tournamentId
+                tableName
+                createdAt
             }
         }
     "#;
@@ -188,8 +186,8 @@ async fn test_create_tournament_table() {
 
     assert_eq!(table["tableNumber"], 1);
     assert_eq!(table["maxSeats"], 9);
-    assert_eq!(table["currentSeats"], 0);
-    assert_eq!(table["tournament"]["id"], tournament_id.to_string());
+    assert_eq!(table["isActive"], true);
+    assert_eq!(table["tournamentId"], tournament_id.to_string());
 }
 
 #[tokio::test]
@@ -271,23 +269,20 @@ async fn test_assign_player_to_seat() {
                 id
                 seatNumber
                 stackSize
-                player {
-                    id
-                    firstName
-                    lastName
-                }
-                table {
-                    id
-                    tableNumber
-                }
+                userId
+                tableId
+                tournamentId
+                isCurrent
+                assignedAt
             }
         }
     "#;
 
     let variables = Variables::from_json(json!({
         "input": {
+            "tournamentId": tournament_id.to_string(),
             "tableId": table_id.to_string(),
-            "playerId": player_id.to_string(),
+            "userId": player_id.to_string(),
             "seatNumber": 1,
             "stackSize": 20000
         }
@@ -306,8 +301,8 @@ async fn test_assign_player_to_seat() {
 
     assert_eq!(assignment["seatNumber"], 1);
     assert_eq!(assignment["stackSize"], 20000);
-    assert_eq!(assignment["player"]["id"], player_id.to_string());
-    assert_eq!(assignment["table"]["id"], table_id.to_string());
+    assert_eq!(assignment["userId"], player_id.to_string());
+    assert_eq!(assignment["tableId"], table_id.to_string());
 }
 
 #[tokio::test]
@@ -356,23 +351,21 @@ async fn test_move_player() {
                 id
                 seatNumber
                 stackSize
-                player {
-                    id
-                }
-                table {
-                    id
-                    tableNumber
-                }
+                userId
+                tableId
+                tournamentId
+                isCurrent
+                assignedAt
             }
         }
     "#;
 
     let variables = Variables::from_json(json!({
         "input": {
-            "playerId": player_id.to_string(),
-            "fromTableId": from_table_id.to_string(),
-            "toTableId": to_table_id.to_string(),
-            "toSeatNumber": 3
+            "tournamentId": tournament_id.to_string(),
+            "userId": player_id.to_string(),
+            "newTableId": to_table_id.to_string(),
+            "newSeatNumber": 3
         }
     }));
 
@@ -388,9 +381,8 @@ async fn test_move_player() {
     let assignment = &data["movePlayer"];
 
     assert_eq!(assignment["seatNumber"], 3);
-    assert_eq!(assignment["player"]["id"], player_id.to_string());
-    assert_eq!(assignment["table"]["id"], to_table_id.to_string());
-    assert_eq!(assignment["table"]["tableNumber"], 2);
+    assert_eq!(assignment["userId"], player_id.to_string());
+    assert_eq!(assignment["tableId"], to_table_id.to_string());
 }
 
 #[tokio::test]
@@ -398,10 +390,13 @@ async fn test_update_stack_size() {
     let app_state = setup_test_db().await;
     let schema = build_schema(app_state.clone());
 
-    let (_, manager_claims) =
+    let (manager_id, manager_claims) =
         create_test_user(&app_state, "stackmanager@test.com", "manager").await;
     let (player_id, _) = create_test_user(&app_state, "stackplayer@test.com", "player").await;
     let club_id = create_test_club(&app_state, "Stack Test Club").await;
+
+    // Create club manager relationship
+    create_club_manager(&app_state, manager_id, club_id).await;
     let tournament_id = create_test_tournament(&app_state, club_id, "Stack Test Tournament").await;
 
     // Create table and initial assignment
@@ -435,18 +430,19 @@ async fn test_update_stack_size() {
                 id
                 seatNumber
                 stackSize
-                player {
-                    id
-                    firstName
-                    lastName
-                }
+                userId
+                tableId
+                tournamentId
+                isCurrent
+                assignedAt
             }
         }
     "#;
 
     let variables = Variables::from_json(json!({
         "input": {
-            "playerId": player_id.to_string(),
+            "tournamentId": tournament_id.to_string(),
+            "userId": player_id.to_string(),
             "newStackSize": 15000
         }
     }));
@@ -463,7 +459,7 @@ async fn test_update_stack_size() {
     let assignment = &data["updateStackSize"];
 
     assert_eq!(assignment["stackSize"], 15000);
-    assert_eq!(assignment["player"]["id"], player_id.to_string());
+    assert_eq!(assignment["userId"], player_id.to_string());
 }
 
 #[tokio::test]
@@ -471,9 +467,12 @@ async fn test_balance_tables() {
     let app_state = setup_test_db().await;
     let schema = build_schema(app_state.clone());
 
-    let (_, manager_claims) =
+    let (manager_id, manager_claims) =
         create_test_user(&app_state, "balancemanager@test.com", "manager").await;
     let club_id = create_test_club(&app_state, "Balance Test Club").await;
+
+    // Create club manager relationship
+    create_club_manager(&app_state, manager_id, club_id).await;
     let tournament_id =
         create_test_tournament(&app_state, club_id, "Balance Test Tournament").await;
 
@@ -483,15 +482,11 @@ async fn test_balance_tables() {
                 id
                 seatNumber
                 stackSize
-                player {
-                    id
-                    firstName
-                    lastName
-                }
-                table {
-                    id
-                    tableNumber
-                }
+                userId
+                tableId
+                tournamentId
+                isCurrent
+                assignedAt
             }
         }
     "#;
@@ -532,28 +527,40 @@ async fn test_get_seat_assignments() {
     let tournament_id = create_test_tournament(&app_state, club_id, "Query Test Tournament").await;
 
     let query = r#"
-        query GetSeatAssignments($tournamentId: ID, $limit: Int, $offset: Int) {
-            seatAssignments(tournamentId: $tournamentId, limit: $limit, offset: $offset) {
-                id
-                seatNumber
-                stackSize
+        query GetSeatAssignments($tableId: ID!) {
+            tableSeatAssignments(tableId: $tableId) {
+                assignment {
+                    id
+                    seatNumber
+                    stackSize
+                    userId
+                    tableId
+                    tournamentId
+                }
                 player {
                     id
                     firstName
                     lastName
                 }
-                table {
-                    id
-                    tableNumber
-                }
             }
         }
     "#;
 
+    // Create a test table first
+    let table_id = Uuid::new_v4();
+    sqlx::query!(
+        "INSERT INTO tournament_tables (id, tournament_id, table_number, max_seats) VALUES ($1, $2, $3, $4)",
+        table_id,
+        tournament_id,
+        1,
+        9
+    )
+    .execute(&app_state.db)
+    .await
+    .expect("Failed to create test table");
+
     let variables = Variables::from_json(json!({
-        "tournamentId": tournament_id.to_string(),
-        "limit": 50,
-        "offset": 0
+        "tableId": table_id.to_string()
     }));
 
     let response = execute_graphql(&schema, query, Some(variables), None).await;
@@ -565,7 +572,7 @@ async fn test_get_seat_assignments() {
     );
 
     let data = response.data.into_json().unwrap();
-    let _assignments = data["seatAssignments"].as_array().unwrap();
+    let _assignments = data["tableSeatAssignments"].as_array().unwrap();
 
     // Should return an array (may be empty for new tournament) - assignments is already a Vec from as_array()
     // No need to assert anything here since we already got a Vec from as_array().unwrap()
@@ -608,14 +615,15 @@ async fn test_seat_assignment_filtering() {
 
     // Test filtering by table ID
     let query = r#"
-        query GetSeatAssignments($tableId: ID, $limit: Int) {
-            seatAssignments(tableId: $tableId, limit: $limit) {
-                id
-                seatNumber
-                player {
+        query GetSeatAssignments($tableId: ID!) {
+            tableSeatAssignments(tableId: $tableId) {
+                assignment {
                     id
+                    seatNumber
+                    userId
+                    tableId
                 }
-                table {
+                player {
                     id
                 }
             }
@@ -623,8 +631,7 @@ async fn test_seat_assignment_filtering() {
     "#;
 
     let variables = Variables::from_json(json!({
-        "tableId": table_id.to_string(),
-        "limit": 10
+        "tableId": table_id.to_string()
     }));
 
     let response = execute_graphql(&schema, query, Some(variables), None).await;
@@ -636,11 +643,14 @@ async fn test_seat_assignment_filtering() {
     );
 
     let data = response.data.into_json().unwrap();
-    let assignments = data["seatAssignments"].as_array().unwrap();
+    let assignments = data["tableSeatAssignments"].as_array().unwrap();
 
     // Should find our test assignment
     if !assignments.is_empty() {
-        assert_eq!(assignments[0]["table"]["id"], table_id.to_string());
+        assert_eq!(
+            assignments[0]["assignment"]["tableId"],
+            table_id.to_string()
+        );
         assert_eq!(assignments[0]["player"]["id"], player_id.to_string());
     }
 }
