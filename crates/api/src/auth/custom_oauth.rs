@@ -57,8 +57,6 @@ pub struct AuthorizeRequest {
     pub redirect_uri: String,
     pub scope: Option<String>,
     pub state: Option<String>,
-    pub code_challenge: Option<String>,
-    pub code_challenge_method: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,8 +66,6 @@ pub struct TokenRequest {
     pub redirect_uri: Option<String>,
     pub client_id: String,
     pub client_secret: Option<String>,
-    pub code_verifier: Option<String>,
-    pub refresh_token: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -297,36 +293,6 @@ impl CustomOAuthService {
         Ok((access_token_obj, refresh_token_obj))
     }
 
-    pub async fn get_access_token(
-        state: &AppState,
-        token: &str,
-    ) -> Result<Option<AccessToken>, AppError> {
-        let row = sqlx::query!(
-            "SELECT id, token, client_id, user_id, scopes, expires_at FROM oauth_access_tokens WHERE token = $1",
-            token
-        )
-        .fetch_optional(&state.db)
-        .await?;
-
-        match row {
-            Some(row) => {
-                // Check if token is expired
-                if row.expires_at < Utc::now() {
-                    return Ok(None);
-                }
-
-                Ok(Some(AccessToken {
-                    id: row.id,
-                    token: row.token,
-                    client_id: row.client_id,
-                    user_id: row.user_id,
-                    scopes: row.scopes,
-                    expires_at: row.expires_at,
-                }))
-            }
-            None => Ok(None),
-        }
-    }
 
     pub async fn validate_redirect_uri(
         client: &OAuthClient,

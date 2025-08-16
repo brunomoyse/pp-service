@@ -69,4 +69,4 @@ curl http://localhost:8080/health
 ## Development Notes
 - Postgres data persists in `./db_data` (bind-mounted from host).
 - Use `sqlx migrate run` (inside the API container) to run migrations.
-- Don’t commit `db_data/` — it’s in `.gitignore`.
+- Don't commit `db_data/` — it's in `.gitignore`.

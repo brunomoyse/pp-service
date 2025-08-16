@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
+use crate::repos::tournaments::TournamentLiveStatus;
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct ClubRow {
@@ -23,7 +24,23 @@ pub struct TournamentRow {
     pub end_time: Option<DateTime<Utc>>,
     pub buy_in_cents: i32,
     pub seat_cap: Option<i32>,
-    pub location: Option<String>,
+    pub live_status: TournamentLiveStatus,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct TournamentStateRow {
+    pub id: Uuid,
+    pub tournament_id: Uuid,
+    pub current_level: Option<i32>,
+    pub players_remaining: Option<i32>,
+    pub break_until: Option<DateTime<Utc>>,
+    pub current_small_blind: Option<i32>,
+    pub current_big_blind: Option<i32>,
+    pub current_ante: Option<i32>,
+    pub level_started_at: Option<DateTime<Utc>>,
+    pub level_duration_minutes: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -61,6 +78,7 @@ pub struct TournamentResultRow {
     pub user_id: Uuid,
     pub final_position: i32,
     pub prize_cents: i32,
+    pub points: i32,
     pub notes: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -88,6 +106,48 @@ pub struct PlayerDealRow {
     pub total_amount_cents: i32,
     pub notes: Option<String>,
     pub created_by: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct TournamentTableRow {
+    pub id: Uuid,
+    pub tournament_id: Uuid,
+    pub table_number: i32,
+    pub max_seats: i32,
+    pub is_active: bool,
+    pub table_name: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct TableSeatAssignmentRow {
+    pub id: Uuid,
+    pub tournament_id: Uuid,
+    pub table_id: Uuid,
+    pub user_id: Uuid,
+    pub seat_number: i32,
+    pub stack_size: Option<i32>,
+    pub is_current: bool,
+    pub assigned_at: DateTime<Utc>,
+    pub unassigned_at: Option<DateTime<Utc>>,
+    pub assigned_by: Option<Uuid>,
+    pub notes: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct ClubManagerRow {
+    pub id: Uuid,
+    pub club_id: Uuid,
+    pub user_id: Uuid,
+    pub assigned_at: DateTime<Utc>,
+    pub assigned_by: Option<Uuid>,
+    pub is_active: bool,
+    pub notes: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

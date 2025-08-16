@@ -7,7 +7,6 @@ CREATE TABLE tournaments (
      end_time     TIMESTAMPTZ,
      buy_in_cents INTEGER NOT NULL DEFAULT 0,     -- store money as integer cents
      seat_cap     INTEGER,                        -- optional max seats
-     location     TEXT,                           -- e.g., room/address
      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

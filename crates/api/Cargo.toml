@@ -59,3 +59,6 @@ bcrypt = "0.16"
 # HTTP client for OAuth
 url = "2.4"
 urlencoding = "2.1"
+
+[dev-dependencies]
+tokio-test = "0.4"

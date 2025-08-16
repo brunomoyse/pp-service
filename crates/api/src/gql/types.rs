@@ -7,6 +7,8 @@ use crate::gql::loaders::ClubLoader;
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Role {
+    #[graphql(name = "ADMIN")]
+    Admin,
     #[graphql(name = "MANAGER")]
     Manager,
     #[graphql(name = "PLAYER")]
@@ -16,6 +18,7 @@ pub enum Role {
 impl From<String> for Role {
     fn from(role: String) -> Self {
         match role.as_str() {
+            "admin" => Role::Admin,
             "manager" => Role::Manager,
             "player" => Role::Player,
             _ => Role::Player, // Default to player for invalid roles
@@ -35,6 +38,7 @@ impl From<Option<String>> for Role {
 impl From<Role> for String {
     fn from(role: Role) -> Self {
         match role {
+            Role::Admin => "admin".to_string(),
             Role::Manager => "manager".to_string(),
             Role::Player => "player".to_string(),
         }
@@ -51,6 +55,24 @@ pub enum TournamentStatus {
     Ended,
 }
 
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum TournamentLiveStatus {
+    #[graphql(name = "NOT_STARTED")]
+    NotStarted,
+    #[graphql(name = "REGISTRATION_OPEN")]
+    RegistrationOpen,
+    #[graphql(name = "LATE_REGISTRATION")]
+    LateRegistration,
+    #[graphql(name = "IN_PROGRESS")]
+    InProgress,
+    #[graphql(name = "BREAK")]
+    Break,
+    #[graphql(name = "FINAL_TABLE")]
+    FinalTable,
+    #[graphql(name = "FINISHED")]
+    Finished,
+}
+
 impl From<TournamentStatus> for infra::repos::tournaments::TournamentStatus {
     fn from(status: TournamentStatus) -> Self {
         match status {
@@ -61,12 +83,102 @@ impl From<TournamentStatus> for infra::repos::tournaments::TournamentStatus {
     }
 }
 
+impl From<String> for TournamentLiveStatus {
+    fn from(status: String) -> Self {
+        match status.as_str() {
+            "not_started" => TournamentLiveStatus::NotStarted,
+            "registration_open" => TournamentLiveStatus::RegistrationOpen,
+            "late_registration" => TournamentLiveStatus::LateRegistration,
+            "in_progress" => TournamentLiveStatus::InProgress,
+            "break" => TournamentLiveStatus::Break,
+            "final_table" => TournamentLiveStatus::FinalTable,
+            "finished" => TournamentLiveStatus::Finished,
+            _ => TournamentLiveStatus::NotStarted, // Default to not_started for invalid statuses
+        }
+    }
+}
+
+impl From<Option<String>> for TournamentLiveStatus {
+    fn from(status: Option<String>) -> Self {
+        match status {
+            Some(s) => TournamentLiveStatus::from(s),
+            None => TournamentLiveStatus::NotStarted, // Default to not_started if no status specified
+        }
+    }
+}
+
+impl From<TournamentLiveStatus> for String {
+    fn from(status: TournamentLiveStatus) -> Self {
+        match status {
+            TournamentLiveStatus::NotStarted => "not_started".to_string(),
+            TournamentLiveStatus::RegistrationOpen => "registration_open".to_string(),
+            TournamentLiveStatus::LateRegistration => "late_registration".to_string(),
+            TournamentLiveStatus::InProgress => "in_progress".to_string(),
+            TournamentLiveStatus::Break => "break".to_string(),
+            TournamentLiveStatus::FinalTable => "final_table".to_string(),
+            TournamentLiveStatus::Finished => "finished".to_string(),
+        }
+    }
+}
+
+impl From<infra::repos::tournaments::TournamentLiveStatus> for TournamentLiveStatus {
+    fn from(status: infra::repos::tournaments::TournamentLiveStatus) -> Self {
+        match status {
+            infra::repos::tournaments::TournamentLiveStatus::NotStarted => TournamentLiveStatus::NotStarted,
+            infra::repos::tournaments::TournamentLiveStatus::RegistrationOpen => TournamentLiveStatus::RegistrationOpen,
+            infra::repos::tournaments::TournamentLiveStatus::LateRegistration => TournamentLiveStatus::LateRegistration,
+            infra::repos::tournaments::TournamentLiveStatus::InProgress => TournamentLiveStatus::InProgress,
+            infra::repos::tournaments::TournamentLiveStatus::Break => TournamentLiveStatus::Break,
+            infra::repos::tournaments::TournamentLiveStatus::FinalTable => TournamentLiveStatus::FinalTable,
+            infra::repos::tournaments::TournamentLiveStatus::Finished => TournamentLiveStatus::Finished,
+        }
+    }
+}
+
+impl From<TournamentLiveStatus> for infra::repos::tournaments::TournamentLiveStatus {
+    fn from(status: TournamentLiveStatus) -> Self {
+        match status {
+            TournamentLiveStatus::NotStarted => infra::repos::tournaments::TournamentLiveStatus::NotStarted,
+            TournamentLiveStatus::RegistrationOpen => infra::repos::tournaments::TournamentLiveStatus::RegistrationOpen,
+            TournamentLiveStatus::LateRegistration => infra::repos::tournaments::TournamentLiveStatus::LateRegistration,
+            TournamentLiveStatus::InProgress => infra::repos::tournaments::TournamentLiveStatus::InProgress,
+            TournamentLiveStatus::Break => infra::repos::tournaments::TournamentLiveStatus::Break,
+            TournamentLiveStatus::FinalTable => infra::repos::tournaments::TournamentLiveStatus::FinalTable,
+            TournamentLiveStatus::Finished => infra::repos::tournaments::TournamentLiveStatus::Finished,
+        }
+    }
+}
+
 #[derive(SimpleObject, Clone)]
 #[graphql(complex)]
 pub struct Tournament {
     pub id: ID,
     pub title: String,
+    pub description: Option<String>,
     pub club_id: ID,
+    pub start_time: DateTime<Utc>,
+    pub end_time: Option<DateTime<Utc>>,
+    pub buy_in_cents: i32,
+    pub seat_cap: Option<i32>,
+    pub live_status: Option<TournamentLiveStatus>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct TournamentState {
+    pub id: ID,
+    pub tournament_id: ID,
+    pub current_level: Option<i32>,
+    pub players_remaining: Option<i32>,
+    pub break_until: Option<DateTime<Utc>>,
+    pub current_small_blind: Option<i32>,
+    pub current_big_blind: Option<i32>,
+    pub current_ante: Option<i32>,
+    pub level_started_at: Option<DateTime<Utc>>,
+    pub level_duration_minutes: Option<i32>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(SimpleObject, Clone)]
@@ -111,6 +223,7 @@ pub struct TournamentResult {
     pub user_id: ID,
     pub final_position: i32,
     pub prize_cents: i32,
+    pub points: i32,
     pub notes: Option<String>,
     pub created_at: DateTime<Utc>,
 }
@@ -121,21 +234,6 @@ pub struct UserTournamentResult {
     pub tournament: Tournament,
 }
 
-#[derive(SimpleObject, Clone)]
-pub struct PayoutPosition {
-    pub position: i32,
-    pub percentage: f64,
-}
-
-#[derive(SimpleObject, Clone)]
-pub struct PayoutTemplate {
-    pub id: ID,
-    pub name: String,
-    pub description: Option<String>,
-    pub min_players: i32,
-    pub max_players: Option<i32>,
-    pub payout_structure: Vec<PayoutPosition>,
-}
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
 pub enum DealType {
@@ -218,6 +316,58 @@ pub struct PlayerStatsResponse {
 }
 
 #[derive(SimpleObject, Clone)]
+pub struct TournamentTable {
+    pub id: ID,
+    pub tournament_id: ID,
+    pub table_number: i32,
+    pub max_seats: i32,
+    pub is_active: bool,
+    pub table_name: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct SeatAssignment {
+    pub id: ID,
+    pub tournament_id: ID,
+    pub table_id: ID,
+    pub user_id: ID,
+    pub seat_number: i32,
+    pub stack_size: Option<i32>,
+    pub is_current: bool,
+    pub assigned_at: DateTime<Utc>,
+    pub unassigned_at: Option<DateTime<Utc>>,
+    pub assigned_by: Option<ID>,
+    pub notes: Option<String>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct TableWithSeats {
+    pub table: TournamentTable,
+    pub seats: Vec<SeatWithPlayer>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct SeatWithPlayer {
+    pub assignment: SeatAssignment,
+    pub player: User,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct TournamentSeatingChart {
+    pub tournament: Tournament,
+    pub tables: Vec<TableWithSeats>,
+    pub unassigned_players: Vec<User>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct TournamentComplete {
+    pub tournament: Tournament,
+    pub live_state: Option<TournamentState>,
+    pub total_registered: i32,
+}
+
+#[derive(SimpleObject, Clone)]
 pub struct PlayerRegistrationEvent {
     pub tournament_id: ID,
     pub player: TournamentPlayer,
@@ -286,6 +436,146 @@ pub struct UserRegistrationInput {
 pub struct UserLoginInput {
     pub email: String,
     pub password: String,
+}
+
+#[derive(InputObject)]
+pub struct CreateTournamentTableInput {
+    pub tournament_id: ID,
+    pub table_number: i32,
+    pub max_seats: Option<i32>,
+    pub table_name: Option<String>,
+}
+
+#[derive(InputObject)]
+pub struct AssignPlayerToSeatInput {
+    pub tournament_id: ID,
+    pub table_id: ID,
+    pub user_id: ID,
+    pub seat_number: i32,
+    pub stack_size: Option<i32>,
+    pub notes: Option<String>,
+}
+
+#[derive(InputObject)]
+pub struct MovePlayerInput {
+    pub tournament_id: ID,
+    pub user_id: ID,
+    pub new_table_id: ID,
+    pub new_seat_number: i32,
+    pub notes: Option<String>,
+}
+
+#[derive(InputObject)]
+pub struct UpdateStackSizeInput {
+    pub tournament_id: ID,
+    pub user_id: ID,
+    pub new_stack_size: i32,
+}
+
+#[derive(InputObject)]
+pub struct UpdateTournamentStatusInput {
+    pub tournament_id: ID,
+    pub live_status: TournamentLiveStatus,
+}
+
+#[derive(InputObject)]
+pub struct UpdateTournamentStateInput {
+    pub tournament_id: ID,
+    pub current_level: Option<i32>,
+    pub players_remaining: Option<i32>,
+    pub break_until: Option<DateTime<Utc>>,
+    pub current_small_blind: Option<i32>,
+    pub current_big_blind: Option<i32>,
+    pub current_ante: Option<i32>,
+    pub level_started_at: Option<DateTime<Utc>>,
+    pub level_duration_minutes: Option<i32>,
+}
+
+#[derive(InputObject)]
+pub struct BalanceTablesInput {
+    pub tournament_id: ID,
+    pub target_players_per_table: Option<i32>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct SeatingChangeEvent {
+    pub event_type: SeatingEventType,
+    pub tournament_id: ID,
+    pub club_id: ID, // Add club_id to enable club-based filtering
+    pub affected_assignment: Option<SeatAssignment>,
+    pub affected_player: Option<User>,
+    pub message: String,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
+pub enum SeatingEventType {
+    #[graphql(name = "PLAYER_ASSIGNED")]
+    PlayerAssigned,
+    #[graphql(name = "PLAYER_MOVED")]
+    PlayerMoved,
+    #[graphql(name = "PLAYER_ELIMINATED")]
+    PlayerEliminated,
+    #[graphql(name = "STACK_UPDATED")]
+    StackUpdated,
+    #[graphql(name = "TABLE_CREATED")]
+    TableCreated,
+    #[graphql(name = "TABLE_CLOSED")]
+    TableClosed,
+    #[graphql(name = "TOURNAMENT_STATUS_CHANGED")]
+    TournamentStatusChanged,
+    #[graphql(name = "TABLES_BALANCED")]
+    TablesBalanced,
+}
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
+pub enum LeaderboardPeriod {
+    #[graphql(name = "ALL_TIME")]
+    AllTime,
+    #[graphql(name = "LAST_YEAR")]
+    LastYear,
+    #[graphql(name = "LAST_6_MONTHS")]
+    Last6Months,
+    #[graphql(name = "LAST_30_DAYS")]
+    Last30Days,
+    #[graphql(name = "LAST_7_DAYS")]
+    Last7Days,
+}
+
+impl From<LeaderboardPeriod> for infra::repos::LeaderboardPeriod {
+    fn from(period: LeaderboardPeriod) -> Self {
+        match period {
+            LeaderboardPeriod::AllTime => infra::repos::LeaderboardPeriod::AllTime,
+            LeaderboardPeriod::LastYear => infra::repos::LeaderboardPeriod::LastYear,
+            LeaderboardPeriod::Last6Months => infra::repos::LeaderboardPeriod::Last6Months,
+            LeaderboardPeriod::Last30Days => infra::repos::LeaderboardPeriod::Last30Days,
+            LeaderboardPeriod::Last7Days => infra::repos::LeaderboardPeriod::Last7Days,
+        }
+    }
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct LeaderboardEntry {
+    pub user: User,                // Full user object with complete info
+    pub rank: i32,                 // Position in leaderboard (1-based)
+    pub total_tournaments: i32,
+    pub total_buy_ins: i32,        // Total amount spent (cents)
+    pub total_winnings: i32,       // Total amount won (cents) 
+    pub net_profit: i32,           // winnings - buy_ins (cents)
+    pub total_itm: i32,            // Number of tournaments where player finished in the money
+    pub itm_percentage: f64,       // (total_itm / total_tournaments) * 100
+    pub roi_percentage: f64,       // ((total_winnings - total_buy_ins) / total_buy_ins) * 100
+    pub average_finish: f64,       // Average finishing position
+    pub first_places: i32,         // Number of first place finishes
+    pub final_tables: i32,         // Number of final table finishes (top 9)
+    pub points: f64,               // Calculated leaderboard points
+}
+
+#[derive(SimpleObject)]
+pub struct LeaderboardResponse {
+    pub entries: Vec<LeaderboardEntry>,
+    pub total_players: i32,
+    pub period: LeaderboardPeriod,
 }
 
 #[ComplexObject]

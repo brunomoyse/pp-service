@@ -12,14 +12,8 @@ use crate::gql::types::User;
 use crate::state::AppState;
 
 #[derive(Deserialize)]
-pub struct AuthorizeQuery {
-    pub provider: String,
-}
-
-#[derive(Deserialize)]
 pub struct CallbackQuery {
     pub code: String,
-    pub state: Option<String>,
 }
 
 #[derive(Serialize)]

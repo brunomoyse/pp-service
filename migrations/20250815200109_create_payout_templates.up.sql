@@ -34,5 +34,10 @@ CREATE INDEX player_deals_tournament_id_idx ON player_deals (tournament_id);
 CREATE INDEX player_deals_created_by_idx ON player_deals (created_by);
 
 -- Add triggers for updated_at
-SELECT trigger_updated_at('payout_templates');
-SELECT trigger_updated_at('player_deals');
+CREATE TRIGGER trg_payout_templates_updated_at
+    BEFORE UPDATE ON payout_templates
+    FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+
+CREATE TRIGGER trg_player_deals_updated_at
+    BEFORE UPDATE ON player_deals
+    FOR EACH ROW EXECUTE PROCEDURE set_updated_at();

@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{encode, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -31,7 +31,6 @@ impl Claims {
 #[derive(Clone)]
 pub struct JwtService {
     encoding_key: EncodingKey,
-    decoding_key: DecodingKey,
     expiration_hours: u64,
 }
 
@@ -40,7 +39,6 @@ impl JwtService {
         let secret = config.jwt_secret.as_bytes();
         Self {
             encoding_key: EncodingKey::from_secret(secret),
-            decoding_key: DecodingKey::from_secret(secret),
             expiration_hours: config.jwt_expiration_hours,
         }
     }
@@ -51,16 +49,4 @@ impl JwtService {
             .map_err(|e| AppError::Internal(e.to_string()))
     }
 
-    pub fn verify_token(&self, token: &str) -> Result<Claims, AppError> {
-        let validation = Validation::new(Algorithm::HS256);
-        decode::<Claims>(token, &self.decoding_key, &validation)
-            .map(|token_data| token_data.claims)
-            .map_err(|e| AppError::Unauthorized(e.to_string()))
-    }
-
-    pub fn extract_user_id(&self, token: &str) -> Result<Uuid, AppError> {
-        let claims = self.verify_token(token)?;
-        Uuid::parse_str(&claims.sub)
-            .map_err(|e| AppError::Internal(format!("Invalid user ID in token: {}", e)))
-    }
 }

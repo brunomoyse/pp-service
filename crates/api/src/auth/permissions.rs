@@ -3,6 +3,7 @@ use uuid::Uuid;
 use crate::auth::Claims;
 use crate::state::AppState;
 use crate::gql::types::{User, Role};
+use infra::repos::ClubManagerRepo;
 
 /// Check if the authenticated user has the required role
 pub async fn require_role(ctx: &Context<'_>, required_role: Role) -> Result<User> {
@@ -65,9 +66,42 @@ async fn get_user_by_id_with_role(state: &AppState, user_id: Uuid) -> Result<Use
     })
 }
 
+/// Check if the authenticated user is a manager for a specific club
+pub async fn require_club_manager(ctx: &Context<'_>, club_id: Uuid) -> Result<User> {
+    let user = require_role(ctx, Role::Manager).await?;
+    
+    // Admin can manage any club
+    if user.role == Role::Admin {
+        return Ok(user);
+    }
+    
+    let state = ctx.data::<AppState>()?;
+    let club_manager_repo = ClubManagerRepo::new(state.db.clone());
+    
+    let user_id = Uuid::parse_str(user.id.as_str())
+        .map_err(|e| Error::new(format!("Invalid user ID: {}", e)))?;
+    
+    let is_manager = club_manager_repo
+        .is_club_manager(user_id, club_id)
+        .await
+        .map_err(|e| Error::new(format!("Database error: {}", e)))?;
+    
+    if !is_manager {
+        return Err(Error::new("You are not authorized to manage this club"));
+    }
+    
+    Ok(user)
+}
+
+/// Check if the authenticated user is an admin (global access)
+pub async fn require_admin(ctx: &Context<'_>) -> Result<User> {
+    require_role(ctx, Role::Admin).await
+}
+
 fn has_required_role(user_role: &Role, required_role: Role) -> bool {
     match required_role {
-        Role::Manager => *user_role == Role::Manager,
+        Role::Admin => *user_role == Role::Admin,
+        Role::Manager => *user_role == Role::Manager || *user_role == Role::Admin, // Admin has manager permissions
         Role::Player => true, // Everyone has player permissions
     }
 }

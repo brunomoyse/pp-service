@@ -19,4 +19,6 @@ CREATE INDEX tournament_results_user_id_idx ON tournament_results (user_id);
 CREATE INDEX tournament_results_created_at_idx ON tournament_results (created_at);
 
 -- Add trigger for updated_at
-SELECT trigger_updated_at('tournament_results');
+CREATE TRIGGER trg_tournament_results_updated_at
+    BEFORE UPDATE ON tournament_results
+    FOR EACH ROW EXECUTE PROCEDURE set_updated_at();

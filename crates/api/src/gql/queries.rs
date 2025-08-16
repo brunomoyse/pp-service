@@ -2,17 +2,12 @@ use async_graphql::{Context, Object, Result};
 use chrono::{DateTime, Utc};
 
 use crate::state::AppState;
-use infra::{repos::{ClubRepo, TournamentRepo, TournamentFilter, UserRepo, UserFilter, TournamentRegistrationRepo, TournamentResultRepo, UserStatistics}, pagination::LimitOffset};
+use infra::{repos::{ClubRepo, TournamentRepo, TournamentFilter, UserRepo, UserFilter, TournamentRegistrationRepo, TournamentResultRepo, UserStatistics, TournamentTableRepo, TableSeatAssignmentRepo, SeatAssignmentFilter, LeaderboardPeriod}, pagination::LimitOffset};
 
 pub struct QueryRoot;
 
 #[Object]
 impl QueryRoot {
-    /// Simple ping to test the API.
-    async fn hello(&self) -> String {
-        "Hello, PocketPair!".to_string()
-    }
-
     /// Current server time (UTC), example of returning chrono types.
     async fn server_time(&self) -> DateTime<Utc> {
         Utc::now()
@@ -55,8 +50,43 @@ impl QueryRoot {
         Ok(rows.into_iter().map(|r| crate::gql::types::Tournament {
             id: r.id.into(),
             title: r.name,
+            description: r.description,
             club_id: r.club_id.into(),
+            start_time: r.start_time,
+            end_time: r.end_time,
+            buy_in_cents: r.buy_in_cents,
+            seat_cap: r.seat_cap,
+            live_status: Some(r.live_status.into()),
+            created_at: r.created_at,
+            updated_at: r.updated_at,
         }).collect())
+    }
+
+    async fn tournament_state(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: uuid::Uuid,
+    ) -> Result<Option<crate::gql::types::TournamentState>> {
+        let state = ctx.data::<AppState>()?;
+        let repo = TournamentRepo::new(state.db.clone());
+        
+        match repo.get_state(tournament_id).await? {
+            Some(state_row) => Ok(Some(crate::gql::types::TournamentState {
+                id: state_row.id.into(),
+                tournament_id: state_row.tournament_id.into(),
+                current_level: state_row.current_level,
+                players_remaining: state_row.players_remaining,
+                break_until: state_row.break_until,
+                current_small_blind: state_row.current_small_blind,
+                current_big_blind: state_row.current_big_blind,
+                current_ante: state_row.current_ante,
+                level_started_at: state_row.level_started_at,
+                level_duration_minutes: state_row.level_duration_minutes,
+                created_at: state_row.created_at,
+                updated_at: state_row.updated_at,
+            })),
+            None => Ok(None),
+        }
     }
 
     async fn users(
@@ -131,6 +161,35 @@ impl QueryRoot {
         Ok(players)
     }
 
+    /// Get the current authenticated user's information
+    async fn me(&self, ctx: &Context<'_>) -> Result<crate::gql::types::User> {
+        use crate::auth::Claims;
+        
+        // Get authenticated user from JWT token
+        let claims = ctx.data::<Claims>()
+            .map_err(|_| async_graphql::Error::new("Authentication required"))?;
+        
+        let user_id = uuid::Uuid::parse_str(&claims.sub)
+            .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
+
+        let state = ctx.data::<AppState>()?;
+        let user_repo = UserRepo::new(state.db.clone());
+        
+        let user = user_repo.get_by_id(user_id).await?
+            .ok_or_else(|| async_graphql::Error::new("User not found"))?;
+        
+        Ok(crate::gql::types::User {
+            id: user.id.into(),
+            email: user.email,
+            username: user.username,
+            first_name: user.first_name,
+            last_name: user.last_name,
+            phone: user.phone,
+            is_active: user.is_active,
+            role: crate::gql::types::Role::from(user.role),
+        })
+    }
+
     async fn my_tournament_registrations(
         &self,
         ctx: &Context<'_>,
@@ -189,6 +248,7 @@ impl QueryRoot {
                     user_id: result_row.user_id.into(),
                     final_position: result_row.final_position,
                     prize_cents: result_row.prize_cents,
+                    points: result_row.points,
                     notes: result_row.notes,
                     created_at: result_row.created_at,
                 };
@@ -196,7 +256,15 @@ impl QueryRoot {
                 let tournament = crate::gql::types::Tournament {
                     id: tournament_row.id.into(),
                     title: tournament_row.name,
+                    description: tournament_row.description,
                     club_id: tournament_row.club_id.into(),
+                    start_time: tournament_row.start_time,
+                    end_time: tournament_row.end_time,
+                    buy_in_cents: tournament_row.buy_in_cents,
+                    seat_cap: tournament_row.seat_cap,
+                    live_status: Some(tournament_row.live_status.into()),
+                    created_at: tournament_row.created_at,
+                    updated_at: tournament_row.updated_at,
                 };
 
                 user_results.push(crate::gql::types::UserTournamentResult {
@@ -244,6 +312,320 @@ impl QueryRoot {
             last_7_days: convert_stats(stats_7_days),
             last_30_days: convert_stats(stats_30_days),
             last_year: convert_stats(stats_year),
+        })
+    }
+
+    /// Get the current seating chart for a tournament
+    async fn tournament_seating_chart(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: uuid::Uuid,
+    ) -> Result<crate::gql::types::TournamentSeatingChart> {
+        let state = ctx.data::<AppState>()?;
+        let tournament_repo = TournamentRepo::new(state.db.clone());
+        let table_repo = TournamentTableRepo::new(state.db.clone());
+        let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
+        
+        // Get tournament
+        let tournament_row = tournament_repo.get(tournament_id).await?
+            .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
+        
+        let tournament = crate::gql::types::Tournament {
+            id: tournament_row.id.into(),
+            title: tournament_row.name,
+            description: tournament_row.description,
+            club_id: tournament_row.club_id.into(),
+            start_time: tournament_row.start_time,
+            end_time: tournament_row.end_time,
+            buy_in_cents: tournament_row.buy_in_cents,
+            seat_cap: tournament_row.seat_cap,
+            live_status: Some(tournament_row.live_status.into()),
+            created_at: tournament_row.created_at,
+            updated_at: tournament_row.updated_at,
+        };
+        
+        // Get all active tables for the tournament
+        let table_rows = table_repo.get_active_by_tournament(tournament_id).await?;
+        
+        // For each table, get current seat assignments with player info
+        let mut tables = Vec::new();
+        for table_row in table_rows {
+            let table = crate::gql::types::TournamentTable {
+                id: table_row.id.into(),
+                tournament_id: table_row.tournament_id.into(),
+                table_number: table_row.table_number,
+                max_seats: table_row.max_seats,
+                is_active: table_row.is_active,
+                table_name: table_row.table_name,
+                created_at: table_row.created_at,
+            };
+            
+            let assignments_with_players = assignment_repo.get_current_with_players_for_table(table_row.id).await?;
+            let seats: Vec<crate::gql::types::SeatWithPlayer> = assignments_with_players.into_iter().map(|ap| {
+                crate::gql::types::SeatWithPlayer {
+                    assignment: crate::gql::types::SeatAssignment {
+                        id: ap.assignment.id.into(),
+                        tournament_id: ap.assignment.tournament_id.into(),
+                        table_id: ap.assignment.table_id.into(),
+                        user_id: ap.assignment.user_id.into(),
+                        seat_number: ap.assignment.seat_number,
+                        stack_size: ap.assignment.stack_size,
+                        is_current: ap.assignment.is_current,
+                        assigned_at: ap.assignment.assigned_at,
+                        unassigned_at: ap.assignment.unassigned_at,
+                        assigned_by: ap.assignment.assigned_by.map(|id| id.into()),
+                        notes: ap.assignment.notes,
+                    },
+                    player: crate::gql::types::User {
+                        id: ap.player.id.into(),
+                        email: ap.player.email,
+                        username: ap.player.username,
+                        first_name: ap.player.first_name,
+                        last_name: ap.player.last_name,
+                        phone: ap.player.phone,
+                        is_active: ap.player.is_active,
+                        role: crate::gql::types::Role::from(ap.player.role),
+                    },
+                }
+            }).collect();
+            
+            tables.push(crate::gql::types::TableWithSeats { table, seats });
+        }
+        
+        // Get unassigned players
+        let unassigned_player_rows = assignment_repo.get_unassigned_players(tournament_id).await?;
+        let unassigned_players: Vec<crate::gql::types::User> = unassigned_player_rows.into_iter().map(|p| {
+            crate::gql::types::User {
+                id: p.id.into(),
+                email: p.email,
+                username: p.username,
+                first_name: p.first_name,
+                last_name: p.last_name,
+                phone: p.phone,
+                is_active: p.is_active,
+                role: crate::gql::types::Role::from(p.role),
+            }
+        }).collect();
+        
+        Ok(crate::gql::types::TournamentSeatingChart {
+            tournament,
+            tables,
+            unassigned_players,
+        })
+    }
+
+    /// Get all tables for a tournament
+    async fn tournament_tables(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: uuid::Uuid,
+    ) -> Result<Vec<crate::gql::types::TournamentTable>> {
+        let state = ctx.data::<AppState>()?;
+        let table_repo = TournamentTableRepo::new(state.db.clone());
+        
+        let table_rows = table_repo.get_by_tournament(tournament_id).await?;
+        
+        Ok(table_rows.into_iter().map(|table_row| {
+            crate::gql::types::TournamentTable {
+                id: table_row.id.into(),
+                tournament_id: table_row.tournament_id.into(),
+                table_number: table_row.table_number,
+                max_seats: table_row.max_seats,
+                is_active: table_row.is_active,
+                table_name: table_row.table_name,
+                created_at: table_row.created_at,
+            }
+        }).collect())
+    }
+
+    /// Get current seat assignments for a specific table
+    async fn table_seat_assignments(
+        &self,
+        ctx: &Context<'_>,
+        table_id: uuid::Uuid,
+    ) -> Result<Vec<crate::gql::types::SeatWithPlayer>> {
+        let state = ctx.data::<AppState>()?;
+        let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
+        
+        let assignments_with_players = assignment_repo.get_current_with_players_for_table(table_id).await?;
+        
+        Ok(assignments_with_players.into_iter().map(|ap| {
+            crate::gql::types::SeatWithPlayer {
+                assignment: crate::gql::types::SeatAssignment {
+                    id: ap.assignment.id.into(),
+                    tournament_id: ap.assignment.tournament_id.into(),
+                    table_id: ap.assignment.table_id.into(),
+                    user_id: ap.assignment.user_id.into(),
+                    seat_number: ap.assignment.seat_number,
+                    stack_size: ap.assignment.stack_size,
+                    is_current: ap.assignment.is_current,
+                    assigned_at: ap.assignment.assigned_at,
+                    unassigned_at: ap.assignment.unassigned_at,
+                    assigned_by: ap.assignment.assigned_by.map(|id| id.into()),
+                    notes: ap.assignment.notes,
+                },
+                player: crate::gql::types::User {
+                    id: ap.player.id.into(),
+                    email: ap.player.email,
+                    username: ap.player.username,
+                    first_name: ap.player.first_name,
+                    last_name: ap.player.last_name,
+                    phone: ap.player.phone,
+                    is_active: ap.player.is_active,
+                    role: crate::gql::types::Role::from(ap.player.role),
+                },
+            }
+        }).collect())
+    }
+
+    /// Get seating history for a tournament (useful for tracking moves)
+    /// Get complete tournament data - static info, live state, players, and seating
+    async fn tournament_complete(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: uuid::Uuid,
+    ) -> Result<crate::gql::types::TournamentComplete> {
+        let state = ctx.data::<AppState>()?;
+        let tournament_repo = TournamentRepo::new(state.db.clone());
+        let registration_repo = TournamentRegistrationRepo::new(state.db.clone());
+        
+        // Get tournament with all static data
+        let tournament_row = tournament_repo.get(tournament_id).await?
+            .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
+        
+        let tournament = crate::gql::types::Tournament {
+            id: tournament_row.id.into(),
+            title: tournament_row.name,
+            description: tournament_row.description,
+            club_id: tournament_row.club_id.into(),
+            start_time: tournament_row.start_time,
+            end_time: tournament_row.end_time,
+            buy_in_cents: tournament_row.buy_in_cents,
+            seat_cap: tournament_row.seat_cap,
+            live_status: Some(tournament_row.live_status.into()),
+            created_at: tournament_row.created_at,
+            updated_at: tournament_row.updated_at,
+        };
+        
+        // Get live state
+        let live_state = match tournament_repo.get_state(tournament_id).await? {
+            Some(state_row) => Some(crate::gql::types::TournamentState {
+                id: state_row.id.into(),
+                tournament_id: state_row.tournament_id.into(),
+                current_level: state_row.current_level,
+                players_remaining: state_row.players_remaining,
+                break_until: state_row.break_until,
+                current_small_blind: state_row.current_small_blind,
+                current_big_blind: state_row.current_big_blind,
+                current_ante: state_row.current_ante,
+                level_started_at: state_row.level_started_at,
+                level_duration_minutes: state_row.level_duration_minutes,
+                created_at: state_row.created_at,
+                updated_at: state_row.updated_at,
+            }),
+            None => None,
+        };
+        
+        // Get registrations count
+        let registrations = registration_repo.get_by_tournament(tournament_id).await?;
+        let total_registered = registrations.len() as i32;
+        
+        Ok(crate::gql::types::TournamentComplete {
+            tournament,
+            live_state,
+            total_registered,
+        })
+    }
+
+    async fn tournament_seating_history(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: uuid::Uuid,
+        limit: Option<i64>,
+    ) -> Result<Vec<crate::gql::types::SeatAssignment>> {
+        let state = ctx.data::<AppState>()?;
+        let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
+        
+        let filter = SeatAssignmentFilter {
+            tournament_id: Some(tournament_id),
+            table_id: None,
+            user_id: None,
+            is_current: None, // Show both current and historical
+            from_date: None,
+            to_date: None,
+        };
+        
+        let assignment_rows = assignment_repo.get_history(filter, limit).await?;
+        
+        Ok(assignment_rows.into_iter().map(|assignment| {
+            crate::gql::types::SeatAssignment {
+                id: assignment.id.into(),
+                tournament_id: assignment.tournament_id.into(),
+                table_id: assignment.table_id.into(),
+                user_id: assignment.user_id.into(),
+                seat_number: assignment.seat_number,
+                stack_size: assignment.stack_size,
+                is_current: assignment.is_current,
+                assigned_at: assignment.assigned_at,
+                unassigned_at: assignment.unassigned_at,
+                assigned_by: assignment.assigned_by.map(|id| id.into()),
+                notes: assignment.notes,
+            }
+        }).collect())
+    }
+
+    /// Get player leaderboard with comprehensive statistics and points
+    async fn leaderboard(
+        &self,
+        ctx: &Context<'_>,
+        period: Option<crate::gql::types::LeaderboardPeriod>,
+        limit: Option<i32>,
+        club_id: Option<uuid::Uuid>,
+    ) -> Result<crate::gql::types::LeaderboardResponse> {
+        let state = ctx.data::<AppState>()?;
+        let result_repo = TournamentResultRepo::new(state.db.clone());
+        
+        let period = period.unwrap_or(crate::gql::types::LeaderboardPeriod::AllTime);
+        let infra_period: LeaderboardPeriod = period.into();
+        
+        let leaderboard_entries = result_repo.get_leaderboard(infra_period, limit, club_id).await?;
+        
+        // Convert to GraphQL types and add rank
+        let entries: Vec<crate::gql::types::LeaderboardEntry> = leaderboard_entries
+            .into_iter()
+            .enumerate()
+            .map(|(index, entry)| crate::gql::types::LeaderboardEntry {
+                user: crate::gql::types::User {
+                    id: entry.user_id.into(),
+                    email: entry.email,
+                    username: entry.username,
+                    first_name: entry.first_name,
+                    last_name: entry.last_name,
+                    phone: entry.phone,
+                    is_active: entry.is_active,
+                    role: crate::gql::types::Role::from(entry.role),
+                },
+                rank: (index + 1) as i32, // 1-based ranking
+                total_tournaments: entry.total_tournaments,
+                total_buy_ins: entry.total_buy_ins,
+                total_winnings: entry.total_winnings,
+                net_profit: entry.net_profit,
+                total_itm: entry.total_itm,
+                itm_percentage: entry.itm_percentage,
+                roi_percentage: entry.roi_percentage,
+                average_finish: entry.average_finish,
+                first_places: entry.first_places,
+                final_tables: entry.final_tables,
+                points: entry.points,
+            })
+            .collect();
+        
+        let total_players = entries.len() as i32;
+        
+        Ok(crate::gql::types::LeaderboardResponse {
+            entries,
+            total_players,
+            period,
         })
     }
 }
