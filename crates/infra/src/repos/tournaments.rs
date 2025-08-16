@@ -14,7 +14,7 @@ pub struct TournamentFilter {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TournamentStatus {
     Upcoming,
-    Processing,
+    InProgress,
     Completed,
 }
 
@@ -113,7 +113,7 @@ impl TournamentRepo {
                 OR ($4 = 'ongoing' AND start_time <= NOW() AND (end_time IS NULL OR end_time > NOW()))
                 OR ($4 = 'ended' AND end_time IS NOT NULL AND end_time <= NOW())
               )
-            ORDER BY start_time ASC
+            ORDER BY created_at DESC
             LIMIT $5 OFFSET $6
             "#
         )
@@ -122,7 +122,7 @@ impl TournamentRepo {
             .bind(filter.to)
             .bind(filter.status.map(|s| match s {
                 TournamentStatus::Upcoming => "upcoming",
-                TournamentStatus::Processing => "processing", 
+                TournamentStatus::InProgress => "in_progress", 
                 TournamentStatus::Completed => "completed",
             }))
             .bind(p.limit)

@@ -30,18 +30,18 @@ pub struct TournamentRow {
 }
 
 impl TournamentRow {
-    /// Calculate static status based on live status and timing
+    /// Calculate static status based on live status
     pub fn calculate_status(&self) -> crate::repos::tournaments::TournamentStatus {
         use crate::repos::tournaments::TournamentLiveStatus as LiveStatus;
         use crate::repos::tournaments::TournamentStatus;
         
         match self.live_status {
-            LiveStatus::NotStarted => TournamentStatus::Upcoming,
-            LiveStatus::RegistrationOpen | 
+            LiveStatus::NotStarted | 
+            LiveStatus::RegistrationOpen => TournamentStatus::Upcoming,
             LiveStatus::LateRegistration | 
             LiveStatus::InProgress | 
             LiveStatus::Break | 
-            LiveStatus::FinalTable => TournamentStatus::Processing,
+            LiveStatus::FinalTable => TournamentStatus::InProgress,
             LiveStatus::Finished => TournamentStatus::Completed,
         }
     }
