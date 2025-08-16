@@ -94,6 +94,7 @@ pub async fn require_club_manager(ctx: &Context<'_>, club_id: Uuid) -> Result<Us
 }
 
 /// Check if the authenticated user is an admin (global access)
+#[allow(dead_code)]
 pub async fn require_admin(ctx: &Context<'_>) -> Result<User> {
     require_role(ctx, Role::Admin).await
 }

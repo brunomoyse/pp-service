@@ -146,11 +146,6 @@ impl TableSeatAssignmentRepo {
             stack_size: Option<i32>,
             is_current: bool,
             assigned_at: DateTime<Utc>,
-            unassigned_at: Option<DateTime<Utc>>,
-            assigned_by: Option<Uuid>,
-            notes: Option<String>,
-            created_at: DateTime<Utc>,
-            updated_at: DateTime<Utc>,
             // User fields
             email: String,
             username: Option<String>,
@@ -192,11 +187,6 @@ impl TableSeatAssignmentRepo {
                     stack_size: row.stack_size,
                     is_current: row.is_current,
                     assigned_at: row.assigned_at,
-                    unassigned_at: row.unassigned_at,
-                    assigned_by: row.assigned_by,
-                    notes: row.notes,
-                    created_at: row.created_at,
-                    updated_at: row.updated_at,
                 },
                 player: UserRow {
                     id: row.user_id,
