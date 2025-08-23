@@ -72,7 +72,7 @@ impl TournamentClockRepo {
 
     /// Initialize tournament clock
     pub async fn create_clock(&self, tournament_id: Uuid) -> SqlxResult<TournamentClockRow> {
-        sqlx::query_as::<_, TournamentClockRow>(
+        let clock = sqlx::query_as::<_, TournamentClockRow>(
             "INSERT INTO tournament_clocks (tournament_id, clock_status, current_level)
              VALUES ($1, 'stopped', 1)
              RETURNING id, tournament_id, clock_status, current_level, level_started_at, level_end_time,
@@ -80,7 +80,37 @@ impl TournamentClockRepo {
         )
         .bind(tournament_id)
         .fetch_one(&self.pool)
-        .await
+        .await?;
+
+        // Get the first level structure to sync with tournament_state
+        if let Ok(structure) = self.get_current_structure(tournament_id).await {
+            // Ensure tournament_state is synced with initial clock level
+            sqlx::query(
+                "INSERT INTO tournament_state (
+                    tournament_id, current_level, current_small_blind, 
+                    current_big_blind, current_ante, level_duration_minutes
+                )
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (tournament_id)
+                DO UPDATE SET
+                    current_level = $2,
+                    current_small_blind = $3,
+                    current_big_blind = $4,
+                    current_ante = $5,
+                    level_duration_minutes = $6,
+                    updated_at = NOW()",
+            )
+            .bind(tournament_id)
+            .bind(1i32) // Starting at level 1
+            .bind(structure.small_blind)
+            .bind(structure.big_blind)
+            .bind(structure.ante)
+            .bind(structure.duration_minutes)
+            .execute(&self.pool)
+            .await?;
+        }
+
+        Ok(clock)
     }
 
     /// Start/resume tournament clock
@@ -234,6 +264,28 @@ impl TournamentClockRepo {
         .fetch_one(&self.pool)
         .await?;
 
+        // Sync tournament_state table with the new level and structure values
+        sqlx::query(
+            "UPDATE tournament_state 
+             SET current_level = $2,
+                 current_small_blind = $3,
+                 current_big_blind = $4,
+                 current_ante = $5,
+                 level_started_at = $6,
+                 level_duration_minutes = $7,
+                 updated_at = NOW()
+             WHERE tournament_id = $1",
+        )
+        .bind(tournament_id)
+        .bind(clock.current_level)
+        .bind(structure.small_blind)
+        .bind(structure.big_blind)
+        .bind(structure.ante)
+        .bind(now)
+        .bind(structure.duration_minutes)
+        .execute(&self.pool)
+        .await?;
+
         // Log event
         let event_type = if auto {
             "level_advance"
@@ -297,6 +349,28 @@ impl TournamentClockRepo {
         .bind(now)
         .bind(level_end_time)
         .fetch_one(&self.pool)
+        .await?;
+
+        // Sync tournament_state table with the reverted level and structure values
+        sqlx::query(
+            "UPDATE tournament_state 
+             SET current_level = $2,
+                 current_small_blind = $3,
+                 current_big_blind = $4,
+                 current_ante = $5,
+                 level_started_at = $6,
+                 level_duration_minutes = $7,
+                 updated_at = NOW()
+             WHERE tournament_id = $1",
+        )
+        .bind(tournament_id)
+        .bind(clock.current_level)
+        .bind(structure.small_blind)
+        .bind(structure.big_blind)
+        .bind(structure.ante)
+        .bind(now)
+        .bind(structure.duration_minutes)
+        .execute(&self.pool)
         .await?;
 
         // Log event

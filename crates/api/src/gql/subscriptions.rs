@@ -2,10 +2,8 @@ use async_graphql::{Context, Result, Subscription};
 use futures_util::Stream;
 use once_cell::sync::Lazy;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use tokio::sync::broadcast;
-use tokio::time::interval;
-use tokio_stream::wrappers::{errors::BroadcastStreamRecvError, BroadcastStream, IntervalStream};
+use tokio_stream::wrappers::{errors::BroadcastStreamRecvError, BroadcastStream};
 
 use crate::gql::types::{PlayerRegistrationEvent, SeatingChangeEvent};
 
