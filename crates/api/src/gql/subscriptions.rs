@@ -36,17 +36,6 @@ impl SubscriptionRoot {
             .tournament_clock_updates(ctx, tournament_id)
             .await
     }
-    /// Simple ticking subscription (1..∞), useful as a template for live clock/announcements.
-    async fn tick(&self) -> impl Stream<Item = i32> {
-        let mut i = 0;
-        tokio_stream::StreamExt::map(
-            IntervalStream::new(interval(Duration::from_secs(1))),
-            move |_| {
-                i += 1;
-                i
-            },
-        )
-    }
 
     /// Subscribe to player registration events for all tournaments
     async fn tournament_registrations(

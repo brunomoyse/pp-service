@@ -10,6 +10,27 @@ use crate::gql::types::{ClockStatus, ClockUpdate, Role, TournamentClock, Tournam
 use crate::{auth::permissions::require_role, AppState};
 use infra::repos::{ClockStatus as InfraClockStatus, TournamentClockRepo};
 
+/// Helper function to get next structure for a tournament
+async fn get_next_structure(repo: &TournamentClockRepo, tournament_id: Uuid, current_level: i32) -> Option<TournamentStructure> {
+    repo.get_all_structures(tournament_id).await
+        .ok()
+        .and_then(|structures| {
+            structures.into_iter()
+                .find(|s| s.level_number == current_level + 1)
+                .map(|s| TournamentStructure {
+                    id: s.id.into(),
+                    tournament_id: s.tournament_id.into(),
+                    level_number: s.level_number,
+                    small_blind: s.small_blind,
+                    big_blind: s.big_blind,
+                    ante: s.ante,
+                    duration_minutes: s.duration_minutes,
+                    is_break: s.is_break,
+                    break_duration_minutes: s.break_duration_minutes,
+                })
+        })
+}
+
 pub struct TournamentClockQuery;
 
 #[Object]
@@ -26,6 +47,7 @@ impl TournamentClockQuery {
 
         if let Some(clock_row) = repo.get_clock(tournament_id).await? {
             let structure = repo.get_current_structure(tournament_id).await.ok();
+            let next_structure = get_next_structure(&repo, tournament_id, clock_row.current_level).await;
 
             // Calculate time remaining
             let time_remaining =
@@ -94,6 +116,7 @@ impl TournamentClockQuery {
                     is_break: s.is_break,
                     break_duration_minutes: s.break_duration_minutes,
                 }),
+                next_structure,
             }))
         } else {
             Ok(None)
@@ -146,6 +169,7 @@ impl TournamentClockMutation {
 
         let clock_row = repo.create_clock(tournament_id).await?;
         let structure = repo.get_current_structure(tournament_id).await.ok();
+        let next_structure = get_next_structure(&repo, tournament_id, clock_row.current_level).await;
 
         // Show full duration of first level when clock is created (stopped state)
         let time_remaining_seconds = structure.as_ref().map(|s| (s.duration_minutes as i64) * 60);
@@ -174,6 +198,7 @@ impl TournamentClockMutation {
                 is_break: s.is_break,
                 break_duration_minutes: s.break_duration_minutes,
             }),
+            next_structure,
         })
     }
 
@@ -192,6 +217,7 @@ impl TournamentClockMutation {
             .start_clock(tournament_id, Some(manager.id.parse()?))
             .await?;
         let structure = repo.get_current_structure(tournament_id).await.ok();
+        let next_structure = get_next_structure(&repo, tournament_id, clock_row.current_level).await;
 
         // Calculate time remaining
         let time_remaining = if let Some(end_time) = clock_row.level_end_time {
@@ -222,6 +248,7 @@ impl TournamentClockMutation {
                 is_break: s.is_break,
                 break_duration_minutes: s.break_duration_minutes,
             }),
+            next_structure,
         })
     }
 
@@ -240,6 +267,7 @@ impl TournamentClockMutation {
             .pause_clock(tournament_id, Some(manager.id.parse()?))
             .await?;
         let structure = repo.get_current_structure(tournament_id).await.ok();
+        let next_structure = get_next_structure(&repo, tournament_id, clock_row.current_level).await;
 
         // Calculate time remaining at pause
         let time_remaining = if let (Some(end_time), Some(pause_start)) =
@@ -274,6 +302,7 @@ impl TournamentClockMutation {
                 is_break: s.is_break,
                 break_duration_minutes: s.break_duration_minutes,
             }),
+            next_structure,
         })
     }
 
@@ -292,6 +321,7 @@ impl TournamentClockMutation {
             .resume_clock(tournament_id, Some(manager.id.parse()?))
             .await?;
         let structure = repo.get_current_structure(tournament_id).await.ok();
+        let next_structure = get_next_structure(&repo, tournament_id, clock_row.current_level).await;
 
         // Calculate time remaining
         let time_remaining = if let Some(end_time) = clock_row.level_end_time {
@@ -324,6 +354,7 @@ impl TournamentClockMutation {
                 is_break: s.is_break,
                 break_duration_minutes: s.break_duration_minutes,
             }),
+            next_structure,
         })
     }
 
@@ -353,6 +384,7 @@ impl TournamentClockMutation {
             .advance_level(tournament_id, false, Some(manager.id.parse()?))
             .await?;
         let structure = repo.get_current_structure(tournament_id).await.ok();
+        let next_structure = get_next_structure(&repo, tournament_id, clock_row.current_level).await;
 
         // Calculate time remaining for new level
         let time_remaining = if let Some(end_time) = clock_row.level_end_time {
@@ -386,6 +418,7 @@ impl TournamentClockMutation {
                 is_break: s.is_break,
                 break_duration_minutes: s.break_duration_minutes,
             }),
+            next_structure,
         })
     }
 
@@ -410,6 +443,7 @@ impl TournamentClockMutation {
                 _ => async_graphql::Error::new(format!("Failed to revert level: {}", e)),
             })?;
         let structure = repo.get_current_structure(tournament_id).await.ok();
+        let next_structure = get_next_structure(&repo, tournament_id, clock_row.current_level).await;
 
         // Calculate time remaining for reverted level
         let time_remaining = if let Some(end_time) = clock_row.level_end_time {
@@ -443,6 +477,7 @@ impl TournamentClockMutation {
                 is_break: s.is_break,
                 break_duration_minutes: s.break_duration_minutes,
             }),
+            next_structure,
         })
     }
 }

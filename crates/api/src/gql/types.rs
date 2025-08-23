@@ -449,6 +449,7 @@ pub struct TournamentClock {
     pub total_pause_duration_seconds: i64, // Calculated field
     pub auto_advance: bool,
     pub current_structure: Option<TournamentStructure>,
+    pub next_structure: Option<TournamentStructure>,
 }
 
 // Real-time clock update for subscriptions
