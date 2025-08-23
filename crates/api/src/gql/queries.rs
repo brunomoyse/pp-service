@@ -6,8 +6,8 @@ use infra::{
     pagination::LimitOffset,
     repos::{
         ClubRepo, LeaderboardPeriod, SeatAssignmentFilter, TableSeatAssignmentRepo,
-        TournamentFilter, TournamentRegistrationRepo, TournamentRepo, TournamentResultRepo,
-        TournamentTableRepo, UserFilter, UserRepo, UserStatistics,
+        TournamentFilter, TournamentPayoutRepo, TournamentRegistrationRepo, TournamentRepo,
+        TournamentResultRepo, TournamentTableRepo, UserFilter, UserRepo, UserStatistics,
     },
 };
 
@@ -648,6 +648,69 @@ impl QueryRoot {
                 }
             })
             .collect())
+    }
+
+    /// Get tournament payout structure
+    async fn tournament_payout(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: async_graphql::ID,
+    ) -> Result<Option<crate::gql::types::TournamentPayout>> {
+        let state = ctx.data::<AppState>()?;
+        let repo = TournamentPayoutRepo::new(state.db.clone());
+
+        let tournament_id = uuid::Uuid::parse_str(tournament_id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+
+        if let Some(payout_row) = repo.get_by_tournament(tournament_id).await? {
+            // Parse the JSONB payout_positions into structured data
+            let positions_array = payout_row
+                .payout_positions
+                .as_array()
+                .ok_or_else(|| async_graphql::Error::new("Invalid payout positions format"))?;
+
+            let mut positions = Vec::new();
+            for pos in positions_array {
+                let position = pos
+                    .get("position")
+                    .and_then(|v| v.as_i64())
+                    .ok_or_else(|| async_graphql::Error::new("Invalid position value"))?
+                    as i32;
+
+                let percentage = pos
+                    .get("percentage")
+                    .and_then(|v| v.as_f64())
+                    .ok_or_else(|| async_graphql::Error::new("Invalid percentage value"))?;
+
+                let amount_cents = pos
+                    .get("amount_cents")
+                    .and_then(|v| v.as_i64())
+                    .ok_or_else(|| async_graphql::Error::new("Invalid amount_cents value"))?
+                    as i32;
+
+                positions.push(crate::gql::types::PayoutPosition {
+                    position,
+                    percentage,
+                    amount_cents,
+                });
+            }
+
+            // Sort positions by position number
+            positions.sort_by_key(|p| p.position);
+
+            Ok(Some(crate::gql::types::TournamentPayout {
+                id: payout_row.id.into(),
+                tournament_id: payout_row.tournament_id.into(),
+                template_id: payout_row.template_id.map(|id| id.into()),
+                player_count: payout_row.player_count,
+                total_prize_pool: payout_row.total_prize_pool,
+                positions,
+                created_at: payout_row.created_at,
+                updated_at: payout_row.updated_at,
+            }))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Get player leaderboard with comprehensive statistics and points

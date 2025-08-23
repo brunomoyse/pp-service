@@ -28,7 +28,7 @@ impl SubscriptionRoot {
         &self,
         ctx: &Context<'_>,
         tournament_id: async_graphql::ID,
-    ) -> Result<impl Stream<Item = crate::gql::types::ClockUpdate>, async_graphql::Error> {
+    ) -> Result<impl Stream<Item = crate::gql::types::TournamentClock>, async_graphql::Error> {
         let subscription = crate::gql::tournament_clock::TournamentClockSubscription;
         subscription
             .tournament_clock_updates(ctx, tournament_id)

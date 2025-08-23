@@ -4,6 +4,7 @@ pub mod payout_templates;
 pub mod player_deals;
 pub mod table_seat_assignments;
 pub mod tournament_clock;
+pub mod tournament_payouts;
 pub mod tournament_registrations;
 pub mod tournament_results;
 pub mod tournament_tables;
@@ -19,6 +20,7 @@ pub use table_seat_assignments::{
     UpdateSeatAssignment,
 };
 pub use tournament_clock::{ClockStatus, TournamentClockRepo};
+pub use tournament_payouts::TournamentPayoutRepo;
 pub use tournament_registrations::{CreateTournamentRegistration, TournamentRegistrationRepo};
 pub use tournament_results::{
     CreateTournamentResult, LeaderboardEntry, LeaderboardPeriod, TournamentResultRepo,

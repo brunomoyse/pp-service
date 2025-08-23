@@ -205,3 +205,15 @@ pub struct ClubManagerRow {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct TournamentPayoutRow {
+    pub id: Uuid,
+    pub tournament_id: Uuid,
+    pub template_id: Option<Uuid>,
+    pub player_count: i32,
+    pub total_prize_pool: i32,
+    pub payout_positions: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}

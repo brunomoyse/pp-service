@@ -450,21 +450,12 @@ pub struct TournamentClock {
     pub auto_advance: bool,
     pub current_structure: Option<TournamentStructure>,
     pub next_structure: Option<TournamentStructure>,
-}
-
-// Real-time clock update for subscriptions
-#[derive(SimpleObject, Clone)]
-pub struct ClockUpdate {
-    pub tournament_id: ID,
-    pub status: ClockStatus,
-    pub current_level: i32,
-    pub time_remaining_seconds: Option<i64>,
-    pub small_blind: i32,
-    pub big_blind: i32,
-    pub ante: i32,
-    pub is_break: bool,
-    pub level_duration_minutes: i32,
-    pub next_level_preview: Option<TournamentStructure>,
+    // Additional fields for real-time updates (previously in ClockUpdate)
+    pub small_blind: Option<i32>,
+    pub big_blind: Option<i32>,
+    pub ante: Option<i32>,
+    pub is_break: Option<bool>,
+    pub level_duration_minutes: Option<i32>,
 }
 
 #[derive(SimpleObject, Clone)]
@@ -472,6 +463,25 @@ pub struct TournamentComplete {
     pub tournament: Tournament,
     pub live_state: Option<TournamentState>,
     pub total_registered: i32,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct PayoutPosition {
+    pub position: i32,
+    pub percentage: f64,
+    pub amount_cents: i32,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct TournamentPayout {
+    pub id: ID,
+    pub tournament_id: ID,
+    pub template_id: Option<ID>,
+    pub player_count: i32,
+    pub total_prize_pool: i32,
+    pub positions: Vec<PayoutPosition>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(SimpleObject, Clone)]

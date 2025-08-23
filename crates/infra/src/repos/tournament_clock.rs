@@ -248,12 +248,19 @@ impl TournamentClockRepo {
         let level_duration = Duration::minutes(structure.duration_minutes as i64);
         let level_end_time = now + level_duration;
 
+        // Update tournament clock, preserving any accumulated pause time
         let clock = sqlx::query_as::<_, TournamentClockRow>(
             "UPDATE tournament_clocks 
              SET level_started_at = $2,
                  level_end_time = $3,
-                 total_pause_duration = '0 seconds',
-                 pause_started_at = NULL
+                 total_pause_duration = CASE 
+                     WHEN pause_started_at IS NOT NULL THEN 
+                         total_pause_duration + (EXTRACT(EPOCH FROM ($2 - pause_started_at)) * INTERVAL '1 second')
+                     ELSE 
+                         total_pause_duration
+                 END,
+                 pause_started_at = NULL,
+                 clock_status = 'running'
              WHERE tournament_id = $1
              RETURNING id, tournament_id, clock_status, current_level, level_started_at, level_end_time,
                        pause_started_at, total_pause_duration, auto_advance, created_at, updated_at"
@@ -335,12 +342,19 @@ impl TournamentClockRepo {
         let level_duration = Duration::minutes(structure.duration_minutes as i64);
         let level_end_time = now + level_duration;
 
+        // Update tournament clock, preserving any accumulated pause time
         let clock = sqlx::query_as::<_, TournamentClockRow>(
             "UPDATE tournament_clocks 
              SET level_started_at = $2,
                  level_end_time = $3,
-                 total_pause_duration = '0 seconds',
-                 pause_started_at = NULL
+                 total_pause_duration = CASE 
+                     WHEN pause_started_at IS NOT NULL THEN 
+                         total_pause_duration + (EXTRACT(EPOCH FROM ($2 - pause_started_at)) * INTERVAL '1 second')
+                     ELSE 
+                         total_pause_duration
+                 END,
+                 pause_started_at = NULL,
+                 clock_status = 'running'
              WHERE tournament_id = $1
              RETURNING id, tournament_id, clock_status, current_level, level_started_at, level_end_time,
                        pause_started_at, total_pause_duration, auto_advance, created_at, updated_at"
