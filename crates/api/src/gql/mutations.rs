@@ -2,8 +2,8 @@ use async_graphql::{Context, InputObject, Object, Result, ID};
 
 use super::subscriptions::{publish_registration_event, publish_seating_event};
 use super::types::{
-    AssignPlayerToSeatInput, AuthPayload, BalanceTablesInput, CreateOAuthClientInput,
-    CreateOAuthClientResponse, CreateTournamentTableInput, DealType, EnterTournamentResultsInput,
+    AssignPlayerToSeatInput, AssignTableToTournamentInput, AuthPayload, BalanceTablesInput,
+    CreateOAuthClientInput, CreateOAuthClientResponse, DealType, EnterTournamentResultsInput,
     EnterTournamentResultsResponse, MovePlayerInput, OAuthCallbackInput, OAuthClient,
     OAuthUrlResponse, PlayerDeal, PlayerDealInput, PlayerPositionInput, PlayerRegistrationEvent,
     RegisterForTournamentInput, Role, SeatAssignment, SeatingChangeEvent, SeatingEventType,
@@ -18,10 +18,10 @@ use crate::auth::{
 use crate::state::AppState;
 use infra::models::TournamentRow;
 use infra::repos::{
-    CreatePlayerDeal, CreateSeatAssignment, CreateTournamentRegistration, CreateTournamentResult,
-    CreateTournamentTable, PayoutTemplateRepo, PlayerDealRepo, TableSeatAssignmentRepo,
+    ClubTableRepo, CreatePlayerDeal, CreateSeatAssignment, CreateTournamentRegistration,
+    CreateTournamentResult, PayoutTemplateRepo, PlayerDealRepo, TableSeatAssignmentRepo,
     TournamentLiveStatus, TournamentRegistrationRepo, TournamentRepo, TournamentResultRepo,
-    TournamentTableRepo, UpdateSeatAssignment, UpdateTournamentState, UserRepo,
+    UpdateSeatAssignment, UpdateTournamentState, UserRepo,
 };
 use rand::{distributions::Alphanumeric, Rng};
 use serde_json;
@@ -599,17 +599,19 @@ impl MutationRoot {
         })
     }
 
-    /// Create a new table for a tournament (managers only)
-    async fn create_tournament_table(
+    /// Assign a club table to a tournament (managers only)
+    async fn assign_table_to_tournament(
         &self,
         ctx: &Context<'_>,
-        input: CreateTournamentTableInput,
+        input: AssignTableToTournamentInput,
     ) -> Result<TournamentTable> {
         use crate::auth::permissions::require_club_manager;
 
         let state = ctx.data::<AppState>()?;
         let tournament_id = Uuid::parse_str(input.tournament_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+        let club_table_id = Uuid::parse_str(input.club_table_id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid club table ID: {}", e)))?;
 
         // Get club ID for the tournament to verify permissions
         let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
@@ -617,37 +619,45 @@ impl MutationRoot {
         // Require manager role for this specific club
         let _manager = require_club_manager(ctx, club_id).await?;
 
-        let table_repo = TournamentTableRepo::new(state.db.clone());
+        let club_table_repo = ClubTableRepo::new(state.db.clone());
 
-        let create_data = CreateTournamentTable {
-            tournament_id,
-            table_number: input.table_number,
-            max_seats: input.max_seats.unwrap_or(9),
-            table_name: input.table_name,
-        };
+        // Verify the club table belongs to the same club as the tournament
+        let club_table = club_table_repo
+            .get_by_id(club_table_id)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Club table not found"))?;
 
-        let table_row = table_repo.create(create_data).await?;
+        if club_table.club_id != club_id {
+            return Err(async_graphql::Error::new(
+                "Club table does not belong to the tournament's club",
+            ));
+        }
+
+        // Assign the table to the tournament
+        let _assignment = club_table_repo
+            .assign_to_tournament(tournament_id, club_table_id)
+            .await?;
 
         // Publish seating change event
         let event = SeatingChangeEvent {
             event_type: SeatingEventType::TableCreated,
-            tournament_id: table_row.tournament_id.into(),
+            tournament_id: tournament_id.into(),
             club_id: club_id.into(),
             affected_assignment: None,
             affected_player: None,
-            message: format!("Table {} created", table_row.table_number),
+            message: format!("Table {} assigned to tournament", club_table.table_number),
             timestamp: chrono::Utc::now(),
         };
         publish_seating_event(event);
 
         Ok(TournamentTable {
-            id: table_row.id.into(),
-            tournament_id: table_row.tournament_id.into(),
-            table_number: table_row.table_number,
-            max_seats: table_row.max_seats,
-            is_active: table_row.is_active,
-            table_name: table_row.table_name,
-            created_at: table_row.created_at,
+            id: club_table.id.into(),
+            tournament_id: tournament_id.into(),
+            table_number: club_table.table_number,
+            max_seats: club_table.max_seats,
+            is_active: club_table.is_active,
+            table_name: club_table.table_name,
+            created_at: club_table.created_at,
         })
     }
 
@@ -670,7 +680,7 @@ impl MutationRoot {
         let manager = require_club_manager(ctx, club_id).await?;
 
         let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
-        let table_id = Uuid::parse_str(input.table_id.as_str())
+        let club_table_id = Uuid::parse_str(input.club_table_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid table ID: {}", e)))?;
         let user_id = Uuid::parse_str(input.user_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
@@ -679,7 +689,7 @@ impl MutationRoot {
 
         // Check if seat is available
         let is_available = assignment_repo
-            .is_seat_available(table_id, input.seat_number)
+            .is_seat_available(club_table_id, input.seat_number)
             .await?;
         if !is_available {
             return Err(async_graphql::Error::new("Seat is already occupied"));
@@ -687,7 +697,7 @@ impl MutationRoot {
 
         let create_data = CreateSeatAssignment {
             tournament_id,
-            table_id,
+            club_table_id,
             user_id,
             seat_number: input.seat_number,
             stack_size: input.stack_size,
@@ -709,7 +719,7 @@ impl MutationRoot {
             affected_assignment: Some(SeatAssignment {
                 id: assignment_row.id.into(),
                 tournament_id: assignment_row.tournament_id.into(),
-                table_id: assignment_row.table_id.into(),
+                club_table_id: assignment_row.club_table_id.into(),
                 user_id: assignment_row.user_id.into(),
                 seat_number: assignment_row.seat_number,
                 stack_size: assignment_row.stack_size,
@@ -737,7 +747,7 @@ impl MutationRoot {
         Ok(SeatAssignment {
             id: assignment_row.id.into(),
             tournament_id: assignment_row.tournament_id.into(),
-            table_id: assignment_row.table_id.into(),
+            club_table_id: assignment_row.club_table_id.into(),
             user_id: assignment_row.user_id.into(),
             seat_number: assignment_row.seat_number,
             stack_size: assignment_row.stack_size,
@@ -770,14 +780,14 @@ impl MutationRoot {
         let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
         let user_id = Uuid::parse_str(input.user_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
-        let new_table_id = Uuid::parse_str(input.new_table_id.as_str())
+        let new_club_table_id = Uuid::parse_str(input.new_club_table_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid table ID: {}", e)))?;
         let manager_id = Uuid::parse_str(manager.id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid manager ID: {}", e)))?;
 
         // Check if new seat is available
         let is_available = assignment_repo
-            .is_seat_available(new_table_id, input.new_seat_number)
+            .is_seat_available(new_club_table_id, input.new_seat_number)
             .await?;
         if !is_available {
             return Err(async_graphql::Error::new("Target seat is already occupied"));
@@ -787,7 +797,7 @@ impl MutationRoot {
             .move_player(
                 tournament_id,
                 user_id,
-                new_table_id,
+                new_club_table_id,
                 input.new_seat_number,
                 Some(manager_id),
                 input.notes,
@@ -807,7 +817,7 @@ impl MutationRoot {
             affected_assignment: Some(SeatAssignment {
                 id: assignment_row.id.into(),
                 tournament_id: assignment_row.tournament_id.into(),
-                table_id: assignment_row.table_id.into(),
+                club_table_id: assignment_row.club_table_id.into(),
                 user_id: assignment_row.user_id.into(),
                 seat_number: assignment_row.seat_number,
                 stack_size: assignment_row.stack_size,
@@ -835,7 +845,7 @@ impl MutationRoot {
         Ok(SeatAssignment {
             id: assignment_row.id.into(),
             tournament_id: assignment_row.tournament_id.into(),
-            table_id: assignment_row.table_id.into(),
+            club_table_id: assignment_row.club_table_id.into(),
             user_id: assignment_row.user_id.into(),
             seat_number: assignment_row.seat_number,
             stack_size: assignment_row.stack_size,
@@ -895,7 +905,7 @@ impl MutationRoot {
             affected_assignment: Some(SeatAssignment {
                 id: assignment_row.id.into(),
                 tournament_id: assignment_row.tournament_id.into(),
-                table_id: assignment_row.table_id.into(),
+                club_table_id: assignment_row.club_table_id.into(),
                 user_id: assignment_row.user_id.into(),
                 seat_number: assignment_row.seat_number,
                 stack_size: assignment_row.stack_size,
@@ -923,7 +933,7 @@ impl MutationRoot {
         Ok(SeatAssignment {
             id: assignment_row.id.into(),
             tournament_id: assignment_row.tournament_id.into(),
-            table_id: assignment_row.table_id.into(),
+            club_table_id: assignment_row.club_table_id.into(),
             user_id: assignment_row.user_id.into(),
             seat_number: assignment_row.seat_number,
             stack_size: assignment_row.stack_size,
@@ -1059,7 +1069,7 @@ impl MutationRoot {
         let manager = require_role(ctx, Role::Manager).await?;
 
         let state = ctx.data::<AppState>()?;
-        let table_repo = TournamentTableRepo::new(state.db.clone());
+        let club_table_repo = ClubTableRepo::new(state.db.clone());
         let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
 
         let tournament_id = Uuid::parse_str(input.tournament_id.as_str())
@@ -1068,7 +1078,9 @@ impl MutationRoot {
             .map_err(|e| async_graphql::Error::new(format!("Invalid manager ID: {}", e)))?;
 
         // Get all active tables
-        let tables = table_repo.get_active_by_tournament(tournament_id).await?;
+        let tables = club_table_repo
+            .get_assigned_to_tournament(tournament_id)
+            .await?;
         if tables.is_empty() {
             return Ok(Vec::new());
         }
@@ -1083,7 +1095,7 @@ impl MutationRoot {
             std::collections::HashMap::new();
         for assignment in assignments {
             table_players
-                .entry(assignment.table_id)
+                .entry(assignment.club_table_id)
                 .or_default()
                 .push(assignment);
         }
@@ -1148,7 +1160,7 @@ impl MutationRoot {
                             let assignment_for_response = SeatAssignment {
                                 id: new_assignment.id.into(),
                                 tournament_id: new_assignment.tournament_id.into(),
-                                table_id: new_assignment.table_id.into(),
+                                club_table_id: new_assignment.club_table_id.into(),
                                 user_id: new_assignment.user_id.into(),
                                 seat_number: new_assignment.seat_number,
                                 stack_size: new_assignment.stack_size,
@@ -1253,7 +1265,7 @@ impl MutationRoot {
                 affected_assignment: Some(SeatAssignment {
                     id: assignment.id.into(),
                     tournament_id: assignment.tournament_id.into(),
-                    table_id: assignment.table_id.into(),
+                    club_table_id: assignment.club_table_id.into(),
                     user_id: assignment.user_id.into(),
                     seat_number: assignment.seat_number,
                     stack_size: Some(0),

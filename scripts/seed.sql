@@ -1,7 +1,7 @@
 -- Clear existing data (except clubs as requested)
 DELETE FROM club_managers;
 DELETE FROM table_seat_assignments;
-DELETE FROM tournament_tables;
+-- tournament_tables no longer exists (removed in favor of club_tables system)
 DELETE FROM tournament_results;
 DELETE FROM tournament_registrations;
 DELETE FROM player_deals;
@@ -48,6 +48,14 @@ INSERT INTO club_managers (id, club_id, user_id, assigned_by, notes) VALUES
     (gen_random_uuid(), '66666666-6666-6666-6666-666666666666', 'ffffffff-ffff-ffff-ffff-ffffffffffff', null, 'Manager of Poker One'),
     (gen_random_uuid(), 'cccccccc-cccc-cccc-cccc-cccccccccccc', '10101010-1010-1010-1010-101010101010', null, 'Manager of Liège Poker Club'),
     (gen_random_uuid(), 'dddddddd-dddd-dddd-dddd-dddddddddddd', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', null, 'Manager of Pokah Room Antwerp');
+
+-- Insert club tables (physical tables at each club)
+INSERT INTO club_tables (id, club_id, table_number, max_seats, table_name, location) VALUES
+    -- Poker One tables (Charleroi)
+    ('11111111-1111-1111-1111-111111111111', '66666666-6666-6666-6666-666666666666', 1, 9, 'Main Table 1', 'Center room'),
+    ('11111111-1111-1111-1111-111111111112', '66666666-6666-6666-6666-666666666666', 2, 9, 'Main Table 2', 'Center room'),
+    ('11111111-1111-1111-1111-111111111113', '66666666-6666-6666-6666-666666666666', 3, 8, 'Side Table 3', 'Near bar'),
+    ('11111111-1111-1111-1111-111111111114', '66666666-6666-6666-6666-666666666666', 4, 6, 'Final Table', 'VIP area');
 
 -- Insert tags
 INSERT INTO tags (id, slug, label) VALUES

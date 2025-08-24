@@ -5,9 +5,9 @@ use crate::state::AppState;
 use infra::{
     pagination::LimitOffset,
     repos::{
-        ClubRepo, LeaderboardPeriod, SeatAssignmentFilter, TableSeatAssignmentRepo,
+        ClubRepo, ClubTableRepo, LeaderboardPeriod, SeatAssignmentFilter, TableSeatAssignmentRepo,
         TournamentFilter, TournamentPayoutRepo, TournamentRegistrationRepo, TournamentRepo,
-        TournamentResultRepo, TournamentTableRepo, UserFilter, UserRepo, UserStatistics,
+        TournamentResultRepo, UserFilter, UserRepo, UserStatistics,
     },
 };
 
@@ -376,7 +376,7 @@ impl QueryRoot {
     ) -> Result<crate::gql::types::TournamentSeatingChart> {
         let state = ctx.data::<AppState>()?;
         let tournament_repo = TournamentRepo::new(state.db.clone());
-        let table_repo = TournamentTableRepo::new(state.db.clone());
+        let club_table_repo = ClubTableRepo::new(state.db.clone());
         let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
 
         // Get tournament
@@ -401,14 +401,16 @@ impl QueryRoot {
         };
 
         // Get all active tables for the tournament
-        let table_rows = table_repo.get_active_by_tournament(tournament_id).await?;
+        let table_rows = club_table_repo
+            .get_assigned_to_tournament(tournament_id)
+            .await?;
 
         // For each table, get current seat assignments with player info
         let mut tables = Vec::new();
         for table_row in table_rows {
             let table = crate::gql::types::TournamentTable {
                 id: table_row.id.into(),
-                tournament_id: table_row.tournament_id.into(),
+                tournament_id: tournament_id.into(), // Use the parameter since club table doesn't have tournament_id
                 table_number: table_row.table_number,
                 max_seats: table_row.max_seats,
                 is_active: table_row.is_active,
@@ -426,7 +428,7 @@ impl QueryRoot {
                         assignment: crate::gql::types::SeatAssignment {
                             id: ap.assignment.id.into(),
                             tournament_id: ap.assignment.tournament_id.into(),
-                            table_id: ap.assignment.table_id.into(),
+                            club_table_id: ap.assignment.club_table_id.into(),
                             user_id: ap.assignment.user_id.into(),
                             seat_number: ap.assignment.seat_number,
                             stack_size: ap.assignment.stack_size,
@@ -478,22 +480,24 @@ impl QueryRoot {
         })
     }
 
-    /// Get all tables for a tournament
+    /// Get all tables assigned to a tournament (from club tables)
     async fn tournament_tables(
         &self,
         ctx: &Context<'_>,
         tournament_id: uuid::Uuid,
     ) -> Result<Vec<crate::gql::types::TournamentTable>> {
         let state = ctx.data::<AppState>()?;
-        let table_repo = TournamentTableRepo::new(state.db.clone());
+        let club_table_repo = ClubTableRepo::new(state.db.clone());
 
-        let table_rows = table_repo.get_by_tournament(tournament_id).await?;
+        let table_rows = club_table_repo
+            .get_assigned_to_tournament(tournament_id)
+            .await?;
 
         Ok(table_rows
             .into_iter()
             .map(|table_row| crate::gql::types::TournamentTable {
                 id: table_row.id.into(),
-                tournament_id: table_row.tournament_id.into(),
+                tournament_id: tournament_id.into(), // Use the tournament_id parameter
                 table_number: table_row.table_number,
                 max_seats: table_row.max_seats,
                 is_active: table_row.is_active,
@@ -503,17 +507,44 @@ impl QueryRoot {
             .collect())
     }
 
+    /// Get all tables for a club
+    async fn club_tables(
+        &self,
+        ctx: &Context<'_>,
+        club_id: uuid::Uuid,
+    ) -> Result<Vec<crate::gql::types::ClubTable>> {
+        let state = ctx.data::<AppState>()?;
+        let club_table_repo = ClubTableRepo::new(state.db.clone());
+
+        let table_rows = club_table_repo.get_by_club(club_id).await?;
+
+        Ok(table_rows
+            .into_iter()
+            .map(|table_row| crate::gql::types::ClubTable {
+                id: table_row.id.into(),
+                club_id: table_row.club_id.into(),
+                table_number: table_row.table_number,
+                max_seats: table_row.max_seats,
+                table_name: table_row.table_name,
+                location: table_row.location,
+                is_active: table_row.is_active,
+                created_at: table_row.created_at,
+                updated_at: table_row.updated_at,
+            })
+            .collect())
+    }
+
     /// Get current seat assignments for a specific table
     async fn table_seat_assignments(
         &self,
         ctx: &Context<'_>,
-        table_id: uuid::Uuid,
+        club_table_id: uuid::Uuid,
     ) -> Result<Vec<crate::gql::types::SeatWithPlayer>> {
         let state = ctx.data::<AppState>()?;
         let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
 
         let assignments_with_players = assignment_repo
-            .get_current_with_players_for_table(table_id)
+            .get_current_with_players_for_table(club_table_id)
             .await?;
 
         Ok(assignments_with_players
@@ -523,7 +554,7 @@ impl QueryRoot {
                     assignment: crate::gql::types::SeatAssignment {
                         id: ap.assignment.id.into(),
                         tournament_id: ap.assignment.tournament_id.into(),
-                        table_id: ap.assignment.table_id.into(),
+                        club_table_id: ap.assignment.club_table_id.into(),
                         user_id: ap.assignment.user_id.into(),
                         seat_number: ap.assignment.seat_number,
                         stack_size: ap.assignment.stack_size,
@@ -621,7 +652,7 @@ impl QueryRoot {
 
         let filter = SeatAssignmentFilter {
             tournament_id: Some(tournament_id),
-            table_id: None,
+            club_table_id: None,
             user_id: None,
             is_current: None, // Show both current and historical
             from_date: None,
@@ -636,7 +667,7 @@ impl QueryRoot {
                 crate::gql::types::SeatAssignment {
                     id: assignment.id.into(),
                     tournament_id: assignment.tournament_id.into(),
-                    table_id: assignment.table_id.into(),
+                    club_table_id: assignment.club_table_id.into(),
                     user_id: assignment.user_id.into(),
                     seat_number: assignment.seat_number,
                     stack_size: assignment.stack_size,

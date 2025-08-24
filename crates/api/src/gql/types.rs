@@ -361,10 +361,23 @@ pub struct TournamentTable {
 }
 
 #[derive(SimpleObject, Clone)]
+pub struct ClubTable {
+    pub id: ID,
+    pub club_id: ID,
+    pub table_number: i32,
+    pub max_seats: i32,
+    pub table_name: Option<String>,
+    pub location: Option<String>,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(SimpleObject, Clone)]
 pub struct SeatAssignment {
     pub id: ID,
     pub tournament_id: ID,
-    pub table_id: ID,
+    pub club_table_id: ID,
     pub user_id: ID,
     pub seat_number: i32,
     pub stack_size: Option<i32>,
@@ -566,7 +579,7 @@ pub struct CreateTournamentTableInput {
 #[derive(InputObject)]
 pub struct AssignPlayerToSeatInput {
     pub tournament_id: ID,
-    pub table_id: ID,
+    pub club_table_id: ID,
     pub user_id: ID,
     pub seat_number: i32,
     pub stack_size: Option<i32>,
@@ -577,7 +590,7 @@ pub struct AssignPlayerToSeatInput {
 pub struct MovePlayerInput {
     pub tournament_id: ID,
     pub user_id: ID,
-    pub new_table_id: ID,
+    pub new_club_table_id: ID,
     pub new_seat_number: i32,
     pub notes: Option<String>,
 }
@@ -587,6 +600,12 @@ pub struct UpdateStackSizeInput {
     pub tournament_id: ID,
     pub user_id: ID,
     pub new_stack_size: i32,
+}
+
+#[derive(InputObject)]
+pub struct AssignTableToTournamentInput {
+    pub tournament_id: ID,
+    pub club_table_id: ID,
 }
 
 #[derive(InputObject)]

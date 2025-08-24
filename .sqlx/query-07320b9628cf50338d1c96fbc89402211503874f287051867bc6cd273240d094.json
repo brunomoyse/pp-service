@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO tournament_tables (id, tournament_id, table_number, max_seats) VALUES ($1, $2, $3, $4)",
+  "query": "INSERT INTO club_tables (id, club_id, table_number, max_seats) VALUES ($1, $2, $3, $4)",
   "describe": {
     "columns": [],
     "parameters": {
@@ -13,5 +13,5 @@
     },
     "nullable": []
   },
-  "hash": "6e399bcf272edffde22cdfcc33cd20b9af377315bdbd5bf9c195c5f513b83413"
+  "hash": "07320b9628cf50338d1c96fbc89402211503874f287051867bc6cd273240d094"
 }

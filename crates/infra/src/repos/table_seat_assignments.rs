@@ -9,7 +9,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone)]
 pub struct CreateSeatAssignment {
     pub tournament_id: Uuid,
-    pub table_id: Uuid,
+    pub club_table_id: Uuid,
     pub user_id: Uuid,
     pub seat_number: i32,
     pub stack_size: Option<i32>,
@@ -32,7 +32,7 @@ pub struct SeatAssignmentWithPlayer {
 #[derive(Debug, Clone)]
 pub struct SeatAssignmentFilter {
     pub tournament_id: Option<Uuid>,
-    pub table_id: Option<Uuid>,
+    pub club_table_id: Option<Uuid>,
     pub user_id: Option<Uuid>,
     pub is_current: Option<bool>,
     pub from_date: Option<DateTime<Utc>>,
@@ -54,16 +54,16 @@ impl TableSeatAssignmentRepo {
         sqlx::query_as::<_, TableSeatAssignmentRow>(
             r#"
             INSERT INTO table_seat_assignments (
-                tournament_id, table_id, user_id, seat_number, 
+                tournament_id, club_table_id, user_id, seat_number, 
                 stack_size, assigned_by, notes
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id, tournament_id, table_id, user_id, seat_number, stack_size, 
+            RETURNING id, tournament_id, club_table_id, user_id, seat_number, stack_size, 
                      is_current, assigned_at, unassigned_at, assigned_by, notes, created_at, updated_at
             "#
         )
         .bind(data.tournament_id)
-        .bind(data.table_id)
+        .bind(data.club_table_id)
         .bind(data.user_id)
         .bind(data.seat_number)
         .bind(data.stack_size)
@@ -77,7 +77,7 @@ impl TableSeatAssignmentRepo {
     pub async fn get_by_id(&self, id: Uuid) -> SqlxResult<Option<TableSeatAssignmentRow>> {
         sqlx::query_as::<_, TableSeatAssignmentRow>(
             r#"
-            SELECT id, tournament_id, table_id, user_id, seat_number, stack_size, 
+            SELECT id, tournament_id, club_table_id, user_id, seat_number, stack_size, 
                    is_current, assigned_at, unassigned_at, assigned_by, notes, created_at, updated_at
             FROM table_seat_assignments
             WHERE id = $1
@@ -96,7 +96,7 @@ impl TableSeatAssignmentRepo {
     ) -> SqlxResult<Option<TableSeatAssignmentRow>> {
         sqlx::query_as::<_, TableSeatAssignmentRow>(
             r#"
-            SELECT id, tournament_id, table_id, user_id, seat_number, stack_size, 
+            SELECT id, tournament_id, club_table_id, user_id, seat_number, stack_size, 
                    is_current, assigned_at, unassigned_at, assigned_by, notes, created_at, updated_at
             FROM table_seat_assignments
             WHERE tournament_id = $1 AND user_id = $2 AND is_current = true
@@ -111,18 +111,18 @@ impl TableSeatAssignmentRepo {
     /// Get all current seat assignments for a table
     pub async fn get_current_for_table(
         &self,
-        table_id: Uuid,
+        club_table_id: Uuid,
     ) -> SqlxResult<Vec<TableSeatAssignmentRow>> {
         sqlx::query_as::<_, TableSeatAssignmentRow>(
             r#"
-            SELECT id, tournament_id, table_id, user_id, seat_number, stack_size, 
+            SELECT id, tournament_id, club_table_id, user_id, seat_number, stack_size, 
                    is_current, assigned_at, unassigned_at, assigned_by, notes, created_at, updated_at
             FROM table_seat_assignments
-            WHERE table_id = $1 AND is_current = true
+            WHERE club_table_id = $1 AND is_current = true
             ORDER BY seat_number ASC
             "#
         )
-        .bind(table_id)
+        .bind(club_table_id)
         .fetch_all(&self.pool)
         .await
     }
@@ -134,11 +134,11 @@ impl TableSeatAssignmentRepo {
     ) -> SqlxResult<Vec<TableSeatAssignmentRow>> {
         sqlx::query_as::<_, TableSeatAssignmentRow>(
             r#"
-            SELECT id, tournament_id, table_id, user_id, seat_number, stack_size, 
+            SELECT id, tournament_id, club_table_id, user_id, seat_number, stack_size, 
                    is_current, assigned_at, unassigned_at, assigned_by, notes, created_at, updated_at
             FROM table_seat_assignments
             WHERE tournament_id = $1 AND is_current = true
-            ORDER BY table_id, seat_number ASC
+            ORDER BY club_table_id, seat_number ASC
             "#
         )
         .bind(tournament_id)
@@ -149,14 +149,14 @@ impl TableSeatAssignmentRepo {
     /// Get current seat assignments with player information for a table
     pub async fn get_current_with_players_for_table(
         &self,
-        table_id: Uuid,
+        club_table_id: Uuid,
     ) -> SqlxResult<Vec<SeatAssignmentWithPlayer>> {
         #[derive(sqlx::FromRow)]
         struct JoinedRow {
             // Assignment fields
             id: Uuid,
             tournament_id: Uuid,
-            table_id: Uuid,
+            club_table_id: Uuid,
             user_id: Uuid,
             seat_number: i32,
             stack_size: Option<i32>,
@@ -177,18 +177,18 @@ impl TableSeatAssignmentRepo {
         let rows = sqlx::query_as::<_, JoinedRow>(
             r#"
             SELECT 
-                tsa.id, tsa.tournament_id, tsa.table_id, tsa.user_id, tsa.seat_number, 
+                tsa.id, tsa.tournament_id, tsa.club_table_id, tsa.user_id, tsa.seat_number, 
                 tsa.stack_size, tsa.is_current, tsa.assigned_at, tsa.unassigned_at, 
                 tsa.assigned_by, tsa.notes, tsa.created_at, tsa.updated_at,
                 u.email, u.username, u.first_name, u.last_name, u.phone, u.is_active, u.role,
                 u.created_at as user_created_at, u.updated_at as user_updated_at
             FROM table_seat_assignments tsa
             JOIN users u ON tsa.user_id = u.id
-            WHERE tsa.table_id = $1 AND tsa.is_current = true
+            WHERE tsa.club_table_id = $1 AND tsa.is_current = true
             ORDER BY tsa.seat_number ASC
             "#,
         )
-        .bind(table_id)
+        .bind(club_table_id)
         .fetch_all(&self.pool)
         .await?;
 
@@ -198,7 +198,7 @@ impl TableSeatAssignmentRepo {
                 assignment: TableSeatAssignmentRow {
                     id: row.id,
                     tournament_id: row.tournament_id,
-                    table_id: row.table_id,
+                    club_table_id: row.club_table_id,
                     user_id: row.user_id,
                     seat_number: row.seat_number,
                     stack_size: row.stack_size,
@@ -233,11 +233,11 @@ impl TableSeatAssignmentRepo {
 
         sqlx::query_as::<_, TableSeatAssignmentRow>(
             r#"
-            SELECT id, tournament_id, table_id, user_id, seat_number, stack_size, 
+            SELECT id, tournament_id, club_table_id, user_id, seat_number, stack_size, 
                    is_current, assigned_at, unassigned_at, assigned_by, notes, created_at, updated_at
             FROM table_seat_assignments
             WHERE ($1::uuid IS NULL OR tournament_id = $1)
-              AND ($2::uuid IS NULL OR table_id = $2)
+              AND ($2::uuid IS NULL OR club_table_id = $2)
               AND ($3::uuid IS NULL OR user_id = $3)
               AND ($4::boolean IS NULL OR is_current = $4)
               AND ($5::timestamptz IS NULL OR assigned_at >= $5)
@@ -247,7 +247,7 @@ impl TableSeatAssignmentRepo {
             "#
         )
         .bind(filter.tournament_id)
-        .bind(filter.table_id)
+        .bind(filter.club_table_id)
         .bind(filter.user_id)
         .bind(filter.is_current)
         .bind(filter.from_date)
@@ -270,7 +270,7 @@ impl TableSeatAssignmentRepo {
                 notes = COALESCE($3, notes),
                 updated_at = NOW()
             WHERE id = $1
-            RETURNING id, tournament_id, table_id, user_id, seat_number, stack_size, 
+            RETURNING id, tournament_id, club_table_id, user_id, seat_number, stack_size, 
                      is_current, assigned_at, unassigned_at, assigned_by, notes, created_at, updated_at
             "#
         )
@@ -295,7 +295,7 @@ impl TableSeatAssignmentRepo {
                 assigned_by = COALESCE($2, assigned_by),
                 updated_at = NOW()
             WHERE id = $1
-            RETURNING id, tournament_id, table_id, user_id, seat_number, stack_size, 
+            RETURNING id, tournament_id, club_table_id, user_id, seat_number, stack_size, 
                      is_current, assigned_at, unassigned_at, assigned_by, notes, created_at, updated_at
             "#
         )
@@ -310,7 +310,7 @@ impl TableSeatAssignmentRepo {
         &self,
         tournament_id: Uuid,
         user_id: Uuid,
-        new_table_id: Uuid,
+        new_club_table_id: Uuid,
         new_seat_number: i32,
         moved_by: Option<Uuid>,
         notes: Option<String>,
@@ -339,15 +339,15 @@ impl TableSeatAssignmentRepo {
         let new_assignment = sqlx::query_as::<_, TableSeatAssignmentRow>(
             r#"
             INSERT INTO table_seat_assignments (
-                tournament_id, table_id, user_id, seat_number, assigned_by, notes
+                tournament_id, club_table_id, user_id, seat_number, assigned_by, notes
             )
             VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING id, tournament_id, table_id, user_id, seat_number, stack_size, 
+            RETURNING id, tournament_id, club_table_id, user_id, seat_number, stack_size, 
                      is_current, assigned_at, unassigned_at, assigned_by, notes, created_at, updated_at
             "#
         )
         .bind(tournament_id)
-        .bind(new_table_id)
+        .bind(new_club_table_id)
         .bind(user_id)
         .bind(new_seat_number)
         .bind(moved_by)
@@ -360,11 +360,11 @@ impl TableSeatAssignmentRepo {
     }
 
     /// Count players at a table
-    pub async fn count_players_at_table(&self, table_id: Uuid) -> SqlxResult<i64> {
+    pub async fn count_players_at_table(&self, club_table_id: Uuid) -> SqlxResult<i64> {
         let result: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM table_seat_assignments WHERE table_id = $1 AND is_current = true",
+            "SELECT COUNT(*) FROM table_seat_assignments WHERE club_table_id = $1 AND is_current = true",
         )
-        .bind(table_id)
+        .bind(club_table_id)
         .fetch_one(&self.pool)
         .await?;
 
@@ -393,11 +393,15 @@ impl TableSeatAssignmentRepo {
     }
 
     /// Check if a seat is available
-    pub async fn is_seat_available(&self, table_id: Uuid, seat_number: i32) -> SqlxResult<bool> {
+    pub async fn is_seat_available(
+        &self,
+        club_table_id: Uuid,
+        seat_number: i32,
+    ) -> SqlxResult<bool> {
         let result: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM table_seat_assignments WHERE table_id = $1 AND seat_number = $2 AND is_current = true"
+            "SELECT COUNT(*) FROM table_seat_assignments WHERE club_table_id = $1 AND seat_number = $2 AND is_current = true"
         )
-        .bind(table_id)
+        .bind(club_table_id)
         .bind(seat_number)
         .fetch_one(&self.pool)
         .await?;

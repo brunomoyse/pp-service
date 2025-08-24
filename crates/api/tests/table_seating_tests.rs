@@ -251,13 +251,23 @@ async fn test_assign_player_to_seat() {
     create_club_manager(&app_state, manager_id, club_id).await;
 
     // First create a table
-    let table_id = Uuid::new_v4();
+    let club_table_id = Uuid::new_v4();
+    // Create club table and assign to tournament
     sqlx::query!(
-        "INSERT INTO tournament_tables (id, tournament_id, table_number, max_seats) VALUES ($1, $2, $3, $4)",
-        table_id,
-        tournament_id,
+        "INSERT INTO club_tables (id, club_id, table_number, max_seats) VALUES ($1, $2, $3, $4)",
+        club_table_id,
+        club_id,
         1,
         9
+    )
+    .execute(&app_state.db)
+    .await
+    .expect("Failed to create club table");
+
+    sqlx::query!(
+        "INSERT INTO tournament_table_assignments (tournament_id, club_table_id) VALUES ($1, $2)",
+        tournament_id,
+        club_table_id
     )
     .execute(&app_state.db)
     .await
@@ -270,7 +280,7 @@ async fn test_assign_player_to_seat() {
                 seatNumber
                 stackSize
                 userId
-                tableId
+                clubTableId
                 tournamentId
                 isCurrent
                 assignedAt
@@ -281,7 +291,7 @@ async fn test_assign_player_to_seat() {
     let variables = Variables::from_json(json!({
         "input": {
             "tournamentId": tournament_id.to_string(),
-            "tableId": table_id.to_string(),
+            "clubTableId": club_table_id.to_string(),
             "userId": player_id.to_string(),
             "seatNumber": 1,
             "stackSize": 20000
@@ -302,7 +312,7 @@ async fn test_assign_player_to_seat() {
     assert_eq!(assignment["seatNumber"], 1);
     assert_eq!(assignment["stackSize"], 20000);
     assert_eq!(assignment["userId"], player_id.to_string());
-    assert_eq!(assignment["tableId"], table_id.to_string());
+    assert_eq!(assignment["clubTableId"], club_table_id.to_string());
 }
 
 #[tokio::test]
@@ -320,13 +330,37 @@ async fn test_move_player() {
     create_club_manager(&app_state, manager_id, club_id).await;
 
     // Create two tables
-    let from_table_id = Uuid::new_v4();
-    let to_table_id = Uuid::new_v4();
+    let from_club_table_id = Uuid::new_v4();
+    let to_club_table_id = Uuid::new_v4();
+
+    // Create two club tables and assign to tournament
+    sqlx::query!(
+        "INSERT INTO club_tables (id, club_id, table_number, max_seats) VALUES ($1, $2, $3, $4)",
+        from_club_table_id,
+        club_id,
+        1,
+        9
+    )
+    .execute(&app_state.db)
+    .await
+    .expect("Failed to create first club table");
 
     sqlx::query!(
-        "INSERT INTO tournament_tables (id, tournament_id, table_number, max_seats) VALUES ($1, $2, $3, $4), ($5, $2, $6, $4)",
-        from_table_id, tournament_id, 1, 9,
-        to_table_id, 2
+        "INSERT INTO club_tables (id, club_id, table_number, max_seats) VALUES ($1, $2, $3, $4)",
+        to_club_table_id,
+        club_id,
+        2,
+        9
+    )
+    .execute(&app_state.db)
+    .await
+    .expect("Failed to create second club table");
+
+    sqlx::query!(
+        "INSERT INTO tournament_table_assignments (tournament_id, club_table_id) VALUES ($1, $2), ($1, $3)",
+        tournament_id,
+        from_club_table_id,
+        to_club_table_id
     )
     .execute(&app_state.db)
     .await
@@ -334,9 +368,9 @@ async fn test_move_player() {
 
     // First assign player to a seat
     sqlx::query!(
-        "INSERT INTO table_seat_assignments (tournament_id, table_id, user_id, seat_number, stack_size) VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO table_seat_assignments (tournament_id, club_table_id, user_id, seat_number, stack_size) VALUES ($1, $2, $3, $4, $5)",
         tournament_id,
-        from_table_id,
+        from_club_table_id,
         player_id,
         1,
         15000
@@ -352,7 +386,7 @@ async fn test_move_player() {
                 seatNumber
                 stackSize
                 userId
-                tableId
+                clubTableId
                 tournamentId
                 isCurrent
                 assignedAt
@@ -364,7 +398,7 @@ async fn test_move_player() {
         "input": {
             "tournamentId": tournament_id.to_string(),
             "userId": player_id.to_string(),
-            "newTableId": to_table_id.to_string(),
+            "newClubTableId": to_club_table_id.to_string(),
             "newSeatNumber": 3
         }
     }));
@@ -382,7 +416,7 @@ async fn test_move_player() {
 
     assert_eq!(assignment["seatNumber"], 3);
     assert_eq!(assignment["userId"], player_id.to_string());
-    assert_eq!(assignment["tableId"], to_table_id.to_string());
+    assert_eq!(assignment["clubTableId"], to_club_table_id.to_string());
 }
 
 #[tokio::test]
@@ -400,22 +434,32 @@ async fn test_update_stack_size() {
     let tournament_id = create_test_tournament(&app_state, club_id, "Stack Test Tournament").await;
 
     // Create table and initial assignment
-    let table_id = Uuid::new_v4();
+    let club_table_id = Uuid::new_v4();
+    // Create club table and assign to tournament
     sqlx::query!(
-        "INSERT INTO tournament_tables (id, tournament_id, table_number, max_seats) VALUES ($1, $2, $3, $4)",
-        table_id,
-        tournament_id,
+        "INSERT INTO club_tables (id, club_id, table_number, max_seats) VALUES ($1, $2, $3, $4)",
+        club_table_id,
+        club_id,
         1,
         9
+    )
+    .execute(&app_state.db)
+    .await
+    .expect("Failed to create club table");
+
+    sqlx::query!(
+        "INSERT INTO tournament_table_assignments (tournament_id, club_table_id) VALUES ($1, $2)",
+        tournament_id,
+        club_table_id
     )
     .execute(&app_state.db)
     .await
     .expect("Failed to create test table");
 
     sqlx::query!(
-        "INSERT INTO table_seat_assignments (tournament_id, table_id, user_id, seat_number, stack_size) VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO table_seat_assignments (tournament_id, club_table_id, user_id, seat_number, stack_size) VALUES ($1, $2, $3, $4, $5)",
         tournament_id,
-        table_id,
+        club_table_id,
         player_id,
         1,
         20000
@@ -431,7 +475,7 @@ async fn test_update_stack_size() {
                 seatNumber
                 stackSize
                 userId
-                tableId
+                clubTableId
                 tournamentId
                 isCurrent
                 assignedAt
@@ -483,7 +527,7 @@ async fn test_balance_tables() {
                 seatNumber
                 stackSize
                 userId
-                tableId
+                clubTableId
                 tournamentId
                 isCurrent
                 assignedAt
@@ -527,14 +571,14 @@ async fn test_get_seat_assignments() {
     let tournament_id = create_test_tournament(&app_state, club_id, "Query Test Tournament").await;
 
     let query = r#"
-        query GetSeatAssignments($tableId: ID!) {
-            tableSeatAssignments(tableId: $tableId) {
+        query GetSeatAssignments($clubTableId: ID!) {
+            tableSeatAssignments(clubTableId: $clubTableId) {
                 assignment {
                     id
                     seatNumber
                     stackSize
                     userId
-                    tableId
+                    clubTableId
                     tournamentId
                 }
                 player {
@@ -547,20 +591,30 @@ async fn test_get_seat_assignments() {
     "#;
 
     // Create a test table first
-    let table_id = Uuid::new_v4();
+    let club_table_id = Uuid::new_v4();
+    // Create club table and assign to tournament
     sqlx::query!(
-        "INSERT INTO tournament_tables (id, tournament_id, table_number, max_seats) VALUES ($1, $2, $3, $4)",
-        table_id,
-        tournament_id,
+        "INSERT INTO club_tables (id, club_id, table_number, max_seats) VALUES ($1, $2, $3, $4)",
+        club_table_id,
+        club_id,
         1,
         9
+    )
+    .execute(&app_state.db)
+    .await
+    .expect("Failed to create club table");
+
+    sqlx::query!(
+        "INSERT INTO tournament_table_assignments (tournament_id, club_table_id) VALUES ($1, $2)",
+        tournament_id,
+        club_table_id
     )
     .execute(&app_state.db)
     .await
     .expect("Failed to create test table");
 
     let variables = Variables::from_json(json!({
-        "tableId": table_id.to_string()
+        "clubTableId": club_table_id.to_string()
     }));
 
     let response = execute_graphql(&schema, query, Some(variables), None).await;
@@ -587,24 +641,34 @@ async fn test_seat_assignment_filtering() {
     let tournament_id = create_test_tournament(&app_state, club_id, "Filter Test Tournament").await;
 
     // Create a table and assignment for testing
-    let table_id = Uuid::new_v4();
+    let club_table_id = Uuid::new_v4();
     let (player_id, _) = create_test_user(&app_state, "filterplayer@test.com", "player").await;
 
+    // Create club table and assign to tournament
     sqlx::query!(
-        "INSERT INTO tournament_tables (id, tournament_id, table_number, max_seats) VALUES ($1, $2, $3, $4)",
-        table_id,
-        tournament_id,
+        "INSERT INTO club_tables (id, club_id, table_number, max_seats) VALUES ($1, $2, $3, $4)",
+        club_table_id,
+        club_id,
         1,
         9
+    )
+    .execute(&app_state.db)
+    .await
+    .expect("Failed to create club table");
+
+    sqlx::query!(
+        "INSERT INTO tournament_table_assignments (tournament_id, club_table_id) VALUES ($1, $2)",
+        tournament_id,
+        club_table_id
     )
     .execute(&app_state.db)
     .await
     .expect("Failed to create test table");
 
     sqlx::query!(
-        "INSERT INTO table_seat_assignments (tournament_id, table_id, user_id, seat_number, stack_size) VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO table_seat_assignments (tournament_id, club_table_id, user_id, seat_number, stack_size) VALUES ($1, $2, $3, $4, $5)",
         tournament_id,
-        table_id,
+        club_table_id,
         player_id,
         1,
         20000
@@ -615,13 +679,13 @@ async fn test_seat_assignment_filtering() {
 
     // Test filtering by table ID
     let query = r#"
-        query GetSeatAssignments($tableId: ID!) {
-            tableSeatAssignments(tableId: $tableId) {
+        query GetSeatAssignments($clubTableId: ID!) {
+            tableSeatAssignments(clubTableId: $clubTableId) {
                 assignment {
                     id
                     seatNumber
                     userId
-                    tableId
+                    clubTableId
                 }
                 player {
                     id
@@ -631,7 +695,7 @@ async fn test_seat_assignment_filtering() {
     "#;
 
     let variables = Variables::from_json(json!({
-        "tableId": table_id.to_string()
+        "clubTableId": club_table_id.to_string()
     }));
 
     let response = execute_graphql(&schema, query, Some(variables), None).await;
@@ -648,8 +712,8 @@ async fn test_seat_assignment_filtering() {
     // Should find our test assignment
     if !assignments.is_empty() {
         assert_eq!(
-            assignments[0]["assignment"]["tableId"],
-            table_id.to_string()
+            assignments[0]["assignment"]["clubTableId"],
+            club_table_id.to_string()
         );
         assert_eq!(assignments[0]["player"]["id"], player_id.to_string());
     }

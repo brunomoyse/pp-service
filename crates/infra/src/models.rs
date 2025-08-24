@@ -140,10 +140,35 @@ pub struct TournamentTableRow {
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct ClubTableRow {
+    pub id: Uuid,
+    pub club_id: Uuid,
+    pub table_number: i32,
+    pub max_seats: i32,
+    pub table_name: Option<String>,
+    pub location: Option<String>,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct TournamentTableAssignmentRow {
+    pub id: Uuid,
+    pub tournament_id: Uuid,
+    pub club_table_id: Uuid,
+    pub is_active: bool,
+    pub assigned_at: DateTime<Utc>,
+    pub deactivated_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct TableSeatAssignmentRow {
     pub id: Uuid,
     pub tournament_id: Uuid,
-    pub table_id: Uuid,
+    pub club_table_id: Uuid,
     pub user_id: Uuid,
     pub seat_number: i32,
     pub stack_size: Option<i32>,
