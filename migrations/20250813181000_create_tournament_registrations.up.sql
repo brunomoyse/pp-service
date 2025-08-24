@@ -3,7 +3,7 @@ CREATE TABLE tournament_registrations (
     tournament_id   UUID NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
     user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     registration_time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    status          TEXT NOT NULL DEFAULT 'registered' CHECK (status IN ('registered', 'waitlisted', 'cancelled', 'no_show')),
+    status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'waitlisted', 'cancelled', 'no_show')),
     notes           TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),

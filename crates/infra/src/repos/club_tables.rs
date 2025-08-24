@@ -10,16 +10,12 @@ pub struct CreateClubTable {
     pub club_id: Uuid,
     pub table_number: i32,
     pub max_seats: i32,
-    pub table_name: Option<String>,
-    pub location: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct UpdateClubTable {
     pub max_seats: Option<i32>,
     pub is_active: Option<bool>,
-    pub table_name: Option<String>,
-    pub location: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -36,16 +32,14 @@ impl ClubTableRepo {
     pub async fn create(&self, data: CreateClubTable) -> SqlxResult<ClubTableRow> {
         sqlx::query_as::<_, ClubTableRow>(
             r#"
-            INSERT INTO club_tables (club_id, table_number, max_seats, table_name, location)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, club_id, table_number, max_seats, table_name, location, is_active, created_at, updated_at
-            "#
+            INSERT INTO club_tables (club_id, table_number, max_seats)
+            VALUES ($1, $2, $3)
+            RETURNING id, club_id, table_number, max_seats, is_active, created_at, updated_at
+            "#,
         )
         .bind(data.club_id)
         .bind(data.table_number)
         .bind(data.max_seats)
-        .bind(data.table_name)
-        .bind(data.location)
         .fetch_one(&self.pool)
         .await
     }
@@ -54,10 +48,10 @@ impl ClubTableRepo {
     pub async fn get_by_id(&self, id: Uuid) -> SqlxResult<Option<ClubTableRow>> {
         sqlx::query_as::<_, ClubTableRow>(
             r#"
-            SELECT id, club_id, table_number, max_seats, table_name, location, is_active, created_at, updated_at
+            SELECT id, club_id, table_number, max_seats, is_active, created_at, updated_at
             FROM club_tables
             WHERE id = $1
-            "#
+            "#,
         )
         .bind(id)
         .fetch_optional(&self.pool)
@@ -68,11 +62,11 @@ impl ClubTableRepo {
     pub async fn get_by_club(&self, club_id: Uuid) -> SqlxResult<Vec<ClubTableRow>> {
         sqlx::query_as::<_, ClubTableRow>(
             r#"
-            SELECT id, club_id, table_number, max_seats, table_name, location, is_active, created_at, updated_at
+            SELECT id, club_id, table_number, max_seats, is_active, created_at, updated_at
             FROM club_tables
             WHERE club_id = $1
             ORDER BY table_number ASC
-            "#
+            "#,
         )
         .bind(club_id)
         .fetch_all(&self.pool)
@@ -83,11 +77,11 @@ impl ClubTableRepo {
     pub async fn get_active_by_club(&self, club_id: Uuid) -> SqlxResult<Vec<ClubTableRow>> {
         sqlx::query_as::<_, ClubTableRow>(
             r#"
-            SELECT id, club_id, table_number, max_seats, table_name, location, is_active, created_at, updated_at
+            SELECT id, club_id, table_number, max_seats, is_active, created_at, updated_at
             FROM club_tables
             WHERE club_id = $1 AND is_active = true
             ORDER BY table_number ASC
-            "#
+            "#,
         )
         .bind(club_id)
         .fetch_all(&self.pool)
@@ -98,7 +92,7 @@ impl ClubTableRepo {
     pub async fn get_available_by_club(&self, club_id: Uuid) -> SqlxResult<Vec<ClubTableRow>> {
         sqlx::query_as::<_, ClubTableRow>(
             r#"
-            SELECT ct.id, ct.club_id, ct.table_number, ct.max_seats, ct.table_name, ct.location, ct.is_active, ct.created_at, ct.updated_at
+            SELECT ct.id, ct.club_id, ct.table_number, ct.max_seats, ct.is_active, ct.created_at, ct.updated_at
             FROM club_tables ct
             LEFT JOIN tournament_table_assignments tta ON ct.id = tta.club_table_id 
                 AND tta.is_active = true
@@ -129,18 +123,14 @@ impl ClubTableRepo {
             UPDATE club_tables
             SET max_seats = COALESCE($2, max_seats),
                 is_active = COALESCE($3, is_active),
-                table_name = COALESCE($4, table_name),
-                location = COALESCE($5, location),
                 updated_at = NOW()
             WHERE id = $1
-            RETURNING id, club_id, table_number, max_seats, table_name, location, is_active, created_at, updated_at
-            "#
+            RETURNING id, club_id, table_number, max_seats, is_active, created_at, updated_at
+            "#,
         )
         .bind(id)
         .bind(data.max_seats)
         .bind(data.is_active)
-        .bind(data.table_name)
-        .bind(data.location)
         .fetch_optional(&self.pool)
         .await
     }
@@ -207,7 +197,7 @@ impl ClubTableRepo {
     ) -> SqlxResult<Vec<ClubTableRow>> {
         sqlx::query_as::<_, ClubTableRow>(
             r#"
-            SELECT ct.id, ct.club_id, ct.table_number, ct.max_seats, ct.table_name, ct.location, ct.is_active, ct.created_at, ct.updated_at
+            SELECT ct.id, ct.club_id, ct.table_number, ct.max_seats, ct.is_active, ct.created_at, ct.updated_at
             FROM club_tables ct
             INNER JOIN tournament_table_assignments tta ON ct.id = tta.club_table_id
             WHERE tta.tournament_id = $1 AND tta.is_active = true

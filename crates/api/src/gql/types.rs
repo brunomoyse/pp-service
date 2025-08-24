@@ -201,22 +201,6 @@ pub struct Tournament {
 }
 
 #[derive(SimpleObject, Clone)]
-pub struct TournamentState {
-    pub id: ID,
-    pub tournament_id: ID,
-    pub current_level: Option<i32>,
-    pub players_remaining: Option<i32>,
-    pub break_until: Option<DateTime<Utc>>,
-    pub current_small_blind: Option<i32>,
-    pub current_big_blind: Option<i32>,
-    pub current_ante: Option<i32>,
-    pub level_started_at: Option<DateTime<Utc>>,
-    pub level_duration_minutes: Option<i32>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(SimpleObject, Clone)]
 pub struct Club {
     pub id: ID,
     pub name: String,
@@ -224,6 +208,7 @@ pub struct Club {
 }
 
 #[derive(SimpleObject, Clone, serde::Serialize)]
+#[graphql(complex)]
 pub struct User {
     pub id: ID,
     pub email: String,
@@ -236,12 +221,13 @@ pub struct User {
 }
 
 #[derive(SimpleObject, Clone)]
+#[graphql(complex)]
 pub struct TournamentRegistration {
     pub id: ID,
     pub tournament_id: ID,
     pub user_id: ID,
     pub registration_time: DateTime<Utc>,
-    pub status: String,
+    pub status: RegistrationStatus,
     pub notes: Option<String>,
 }
 
@@ -356,7 +342,6 @@ pub struct TournamentTable {
     pub table_number: i32,
     pub max_seats: i32,
     pub is_active: bool,
-    pub table_name: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -366,8 +351,6 @@ pub struct ClubTable {
     pub club_id: ID,
     pub table_number: i32,
     pub max_seats: i32,
-    pub table_name: Option<String>,
-    pub location: Option<String>,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -405,6 +388,66 @@ pub struct TournamentSeatingChart {
     pub tournament: Tournament,
     pub tables: Vec<TableWithSeats>,
     pub unassigned_players: Vec<User>,
+}
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum RegistrationStatus {
+    /// Player has registered but not yet checked in
+    #[graphql(name = "REGISTERED")]
+    Registered,
+
+    /// Player has checked in and is ready to be seated
+    #[graphql(name = "CHECKED_IN")]
+    CheckedIn,
+
+    /// Player is seated and actively playing
+    #[graphql(name = "SEATED")]
+    Seated,
+
+    /// Player was eliminated/busted from tournament
+    #[graphql(name = "BUSTED")]
+    Busted,
+
+    /// Player was placed on waiting list (tournament full)
+    #[graphql(name = "WAITLISTED")]
+    Waitlisted,
+
+    /// Player cancelled their registration
+    #[graphql(name = "CANCELLED")]
+    Cancelled,
+
+    /// Player didn't show up for check-in
+    #[graphql(name = "NO_SHOW")]
+    NoShow,
+}
+
+impl From<String> for RegistrationStatus {
+    fn from(status: String) -> Self {
+        match status.as_str() {
+            "registered" => RegistrationStatus::Registered,
+            "checked_in" => RegistrationStatus::CheckedIn,
+            "seated" => RegistrationStatus::Seated,
+            "busted" => RegistrationStatus::Busted,
+            "waitlisted" => RegistrationStatus::Waitlisted,
+            "cancelled" => RegistrationStatus::Cancelled,
+            "no_show" => RegistrationStatus::NoShow,
+            _ => RegistrationStatus::Registered, // Default fallback
+        }
+    }
+}
+
+impl From<RegistrationStatus> for String {
+    fn from(status: RegistrationStatus) -> Self {
+        match status {
+            RegistrationStatus::Registered => "registered".to_string(),
+            RegistrationStatus::CheckedIn => "checked_in".to_string(),
+            RegistrationStatus::Seated => "seated".to_string(),
+            RegistrationStatus::Busted => "busted".to_string(),
+            RegistrationStatus::Waitlisted => "waitlisted".to_string(),
+            RegistrationStatus::Cancelled => "cancelled".to_string(),
+            RegistrationStatus::NoShow => "no_show".to_string(),
+        }
+    }
 }
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq)]
@@ -469,13 +512,6 @@ pub struct TournamentClock {
     pub ante: Option<i32>,
     pub is_break: Option<bool>,
     pub level_duration_minutes: Option<i32>,
-}
-
-#[derive(SimpleObject, Clone)]
-pub struct TournamentComplete {
-    pub tournament: Tournament,
-    pub live_state: Option<TournamentState>,
-    pub total_registered: i32,
 }
 
 #[derive(SimpleObject, Clone)]
@@ -573,7 +609,6 @@ pub struct CreateTournamentTableInput {
     pub tournament_id: ID,
     pub table_number: i32,
     pub max_seats: Option<i32>,
-    pub table_name: Option<String>,
 }
 
 #[derive(InputObject)]
@@ -615,22 +650,23 @@ pub struct UpdateTournamentStatusInput {
 }
 
 #[derive(InputObject)]
-pub struct UpdateTournamentStateInput {
-    pub tournament_id: ID,
-    pub current_level: Option<i32>,
-    pub players_remaining: Option<i32>,
-    pub break_until: Option<DateTime<Utc>>,
-    pub current_small_blind: Option<i32>,
-    pub current_big_blind: Option<i32>,
-    pub current_ante: Option<i32>,
-    pub level_started_at: Option<DateTime<Utc>>,
-    pub level_duration_minutes: Option<i32>,
-}
-
-#[derive(InputObject)]
 pub struct BalanceTablesInput {
     pub tournament_id: ID,
     pub target_players_per_table: Option<i32>,
+}
+
+#[derive(InputObject)]
+pub struct CheckInPlayerInput {
+    pub tournament_id: ID,
+    pub user_id: ID,
+}
+
+#[derive(InputObject)]
+pub struct UpdateRegistrationStatusInput {
+    pub tournament_id: ID,
+    pub user_id: ID,
+    pub status: RegistrationStatus,
+    pub notes: Option<String>,
 }
 
 #[derive(SimpleObject, Clone)]
@@ -732,6 +768,156 @@ impl Tournament {
                 city: row.city,
             }),
             None => Err(Error::new("Club not found")),
+        }
+    }
+
+    async fn structure(
+        &self,
+        ctx: &Context<'_>,
+    ) -> async_graphql::Result<Vec<TournamentStructure>> {
+        use crate::state::AppState;
+        use infra::repos::TournamentClockRepo;
+
+        let state = ctx.data::<AppState>()?;
+        let clock_repo = TournamentClockRepo::new(state.db.clone());
+
+        let tournament_id = uuid::Uuid::parse_str(self.id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+
+        let structures = clock_repo.get_all_structures(tournament_id).await?;
+
+        Ok(structures
+            .into_iter()
+            .map(|structure| TournamentStructure {
+                id: structure.id.into(),
+                tournament_id: structure.tournament_id.into(),
+                level_number: structure.level_number,
+                small_blind: structure.small_blind,
+                big_blind: structure.big_blind,
+                ante: structure.ante,
+                duration_minutes: structure.duration_minutes,
+                is_break: structure.is_break,
+                break_duration_minutes: structure.break_duration_minutes,
+            })
+            .collect())
+    }
+
+    async fn clock(&self, ctx: &Context<'_>) -> async_graphql::Result<Option<TournamentClock>> {
+        use crate::state::AppState;
+        use infra::repos::{ClockStatus as InfraClockStatus, TournamentClockRepo};
+        use std::str::FromStr;
+
+        let state = ctx.data::<AppState>()?;
+        let clock_repo = TournamentClockRepo::new(state.db.clone());
+
+        let tournament_id = uuid::Uuid::parse_str(self.id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+
+        let clock = clock_repo.get_clock(tournament_id).await?;
+
+        Ok(clock.map(|clock_row| TournamentClock {
+            id: clock_row.id.into(),
+            tournament_id: clock_row.tournament_id.into(),
+            status: InfraClockStatus::from_str(&clock_row.clock_status)
+                .unwrap_or(InfraClockStatus::Stopped)
+                .into(),
+            current_level: clock_row.current_level,
+            time_remaining_seconds: None, // This would need calculation
+            level_started_at: clock_row.level_started_at,
+            level_end_time: clock_row.level_end_time,
+            total_pause_duration_seconds: clock_row.total_pause_duration.microseconds / 1_000_000,
+            auto_advance: clock_row.auto_advance,
+            current_structure: None, // These would require additional queries
+            next_structure: None,
+            small_blind: None,
+            big_blind: None,
+            ante: None,
+            is_break: None,
+            level_duration_minutes: None,
+        }))
+    }
+
+    async fn registrations(
+        &self,
+        ctx: &Context<'_>,
+    ) -> async_graphql::Result<Vec<TournamentRegistration>> {
+        use crate::state::AppState;
+        use infra::repos::TournamentRegistrationRepo;
+
+        let state = ctx.data::<AppState>()?;
+        let registration_repo = TournamentRegistrationRepo::new(state.db.clone());
+
+        let tournament_id = uuid::Uuid::parse_str(self.id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+
+        let registrations = registration_repo.get_by_tournament(tournament_id).await?;
+
+        Ok(registrations
+            .into_iter()
+            .map(|registration| TournamentRegistration {
+                id: registration.id.into(),
+                tournament_id: registration.tournament_id.into(),
+                user_id: registration.user_id.into(),
+                registration_time: registration.registration_time,
+                status: registration.status.into(),
+                notes: registration.notes,
+            })
+            .collect())
+    }
+}
+
+#[ComplexObject]
+impl TournamentRegistration {
+    async fn user(&self, ctx: &Context<'_>) -> async_graphql::Result<Option<User>> {
+        use crate::state::AppState;
+        use infra::repos::UserRepo;
+
+        let state = ctx.data::<AppState>()?;
+        let user_repo = UserRepo::new(state.db.clone());
+
+        let user_id = uuid::Uuid::parse_str(self.user_id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
+
+        let user_row = user_repo.get_by_id(user_id).await?;
+
+        Ok(user_row.map(|user| User {
+            id: user.id.into(),
+            email: user.email,
+            username: user.username,
+            first_name: user.first_name,
+            last_name: user.last_name,
+            phone: user.phone,
+            is_active: user.is_active,
+            role: Role::from(user.role),
+        }))
+    }
+}
+
+#[ComplexObject]
+impl User {
+    async fn managed_club(&self, ctx: &Context<'_>) -> async_graphql::Result<Option<Club>> {
+        use crate::state::AppState;
+        use infra::repos::{ClubManagerRepo, ClubRepo};
+
+        let state = ctx.data::<AppState>()?;
+        let club_manager_repo = ClubManagerRepo::new(state.db.clone());
+        let club_repo = ClubRepo::new(state.db.clone());
+
+        let user_id = uuid::Uuid::parse_str(self.id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
+
+        let managed_clubs = club_manager_repo.get_manager_clubs(user_id).await?;
+
+        // Get the first managed club if any
+        if let Some(club_info) = managed_clubs.into_iter().next() {
+            let club_row = club_repo.get(club_info.club_id).await?;
+            Ok(club_row.map(|club| Club {
+                id: club.id.into(),
+                name: club.name,
+                city: club.city,
+            }))
+        } else {
+            Ok(None)
         }
     }
 }

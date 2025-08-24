@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO tournament_registrations (tournament_id, user_id, status) \n           VALUES ($1, $2, 'registered')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "17094484474960bc3b363a1171cc64f2875390a0e7ee6ea9ec66132354ec109e"
+}

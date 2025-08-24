@@ -7,9 +7,8 @@ use super::types::{
     EnterTournamentResultsResponse, MovePlayerInput, OAuthCallbackInput, OAuthClient,
     OAuthUrlResponse, PlayerDeal, PlayerDealInput, PlayerPositionInput, PlayerRegistrationEvent,
     RegisterForTournamentInput, Role, SeatAssignment, SeatingChangeEvent, SeatingEventType,
-    Tournament, TournamentPlayer, TournamentRegistration, TournamentResult, TournamentState,
-    TournamentTable, UpdateStackSizeInput, UpdateTournamentStateInput, UpdateTournamentStatusInput,
-    User, UserLoginInput, UserRegistrationInput,
+    Tournament, TournamentPlayer, TournamentRegistration, TournamentResult, TournamentTable,
+    UpdateStackSizeInput, UpdateTournamentStatusInput, User, UserLoginInput, UserRegistrationInput,
 };
 use crate::auth::{
     custom_oauth::CustomOAuthService, password::PasswordService, permissions::require_admin_if,
@@ -21,7 +20,7 @@ use infra::repos::{
     ClubTableRepo, CreatePlayerDeal, CreateSeatAssignment, CreateTournamentRegistration,
     CreateTournamentResult, PayoutTemplateRepo, PlayerDealRepo, TableSeatAssignmentRepo,
     TournamentLiveStatus, TournamentRegistrationRepo, TournamentRepo, TournamentResultRepo,
-    UpdateSeatAssignment, UpdateTournamentState, UserRepo,
+    UpdateSeatAssignment, UserRepo,
 };
 use rand::{distributions::Alphanumeric, Rng};
 use serde_json;
@@ -182,7 +181,7 @@ impl MutationRoot {
             tournament_id: row.tournament_id.into(),
             user_id: row.user_id.into(),
             registration_time: row.registration_time,
-            status: row.status.clone(),
+            status: row.status.clone().into(),
             notes: row.notes.clone(),
         };
 
@@ -656,7 +655,6 @@ impl MutationRoot {
             table_number: club_table.table_number,
             max_seats: club_table.max_seats,
             is_active: club_table.is_active,
-            table_name: club_table.table_name,
             created_at: club_table.created_at,
         })
     }
@@ -1006,54 +1004,6 @@ impl MutationRoot {
             live_status: tournament_row.live_status.into(),
             created_at: tournament_row.created_at,
             updated_at: tournament_row.updated_at,
-        })
-    }
-
-    /// Update tournament state (live data like current level, blinds, etc.) - managers only
-    async fn update_tournament_state(
-        &self,
-        ctx: &Context<'_>,
-        input: UpdateTournamentStateInput,
-    ) -> Result<TournamentState> {
-        use crate::auth::permissions::require_role;
-
-        // Require manager role
-        let _manager = require_role(ctx, Role::Manager).await?;
-
-        let state = ctx.data::<AppState>()?;
-        let tournament_repo = TournamentRepo::new(state.db.clone());
-
-        let tournament_id = Uuid::parse_str(input.tournament_id.as_str())
-            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
-
-        let update_data = UpdateTournamentState {
-            current_level: input.current_level,
-            players_remaining: input.players_remaining,
-            break_until: input.break_until,
-            current_small_blind: input.current_small_blind,
-            current_big_blind: input.current_big_blind,
-            current_ante: input.current_ante,
-            level_started_at: input.level_started_at,
-            level_duration_minutes: input.level_duration_minutes,
-        };
-
-        let state_row = tournament_repo
-            .upsert_state(tournament_id, update_data)
-            .await?;
-
-        Ok(TournamentState {
-            id: state_row.id.into(),
-            tournament_id: state_row.tournament_id.into(),
-            current_level: state_row.current_level,
-            players_remaining: state_row.players_remaining,
-            break_until: state_row.break_until,
-            current_small_blind: state_row.current_small_blind,
-            current_big_blind: state_row.current_big_blind,
-            current_ante: state_row.current_ante,
-            level_started_at: state_row.level_started_at,
-            level_duration_minutes: state_row.level_duration_minutes,
-            created_at: state_row.created_at,
-            updated_at: state_row.updated_at,
         })
     }
 

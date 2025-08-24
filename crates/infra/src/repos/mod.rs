@@ -27,7 +27,5 @@ pub use tournament_results::{
     CreateTournamentResult, LeaderboardEntry, LeaderboardPeriod, TournamentResultRepo,
     UserStatistics,
 };
-pub use tournaments::{
-    TournamentFilter, TournamentLiveStatus, TournamentRepo, UpdateTournamentState,
-};
+pub use tournaments::{TournamentFilter, TournamentLiveStatus, TournamentRepo};
 pub use users::{UserFilter, UserRepo};

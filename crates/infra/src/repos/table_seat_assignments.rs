@@ -382,7 +382,7 @@ impl TableSeatAssignmentRepo {
             LEFT JOIN table_seat_assignments tsa ON u.id = tsa.user_id 
                 AND tsa.tournament_id = $1 AND tsa.is_current = true
             WHERE tr.tournament_id = $1 
-              AND tr.status = 'registered'
+              AND tr.status IN ('registered', 'checked_in', 'seated')
               AND tsa.id IS NULL
             ORDER BY tr.registration_time ASC
             "#,

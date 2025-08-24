@@ -35,14 +35,10 @@ async fn test_club_tables_system() {
     let table1 = &tables[0]; // Table 1
     assert_eq!(table1.table_number, 1);
     assert_eq!(table1.max_seats, 9);
-    assert_eq!(table1.table_name, Some("Main Table 1".to_string()));
-    assert_eq!(table1.location, Some("Center room".to_string()));
 
     let final_table = &tables[3]; // Table 4 - Final Table
     assert_eq!(final_table.table_number, 4);
     assert_eq!(final_table.max_seats, 6);
-    assert_eq!(final_table.table_name, Some("Final Table".to_string()));
-    assert_eq!(final_table.location, Some("VIP area".to_string()));
 
     // Test get available tables (should return all 4 since none are assigned)
     let available_tables = club_table_repo

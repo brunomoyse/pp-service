@@ -47,22 +47,6 @@ impl TournamentRow {
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
-pub struct TournamentStateRow {
-    pub id: Uuid,
-    pub tournament_id: Uuid,
-    pub current_level: Option<i32>,
-    pub players_remaining: Option<i32>,
-    pub break_until: Option<DateTime<Utc>>,
-    pub current_small_blind: Option<i32>,
-    pub current_big_blind: Option<i32>,
-    pub current_ante: Option<i32>,
-    pub level_started_at: Option<DateTime<Utc>>,
-    pub level_duration_minutes: Option<i32>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct UserRow {
     pub id: Uuid,
     pub email: String,
@@ -145,8 +129,6 @@ pub struct ClubTableRow {
     pub club_id: Uuid,
     pub table_number: i32,
     pub max_seats: i32,
-    pub table_name: Option<String>,
-    pub location: Option<String>,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

@@ -99,33 +99,6 @@ impl QueryRoot {
             .collect())
     }
 
-    async fn tournament_state(
-        &self,
-        ctx: &Context<'_>,
-        tournament_id: uuid::Uuid,
-    ) -> Result<Option<crate::gql::types::TournamentState>> {
-        let state = ctx.data::<AppState>()?;
-        let repo = TournamentRepo::new(state.db.clone());
-
-        match repo.get_state(tournament_id).await? {
-            Some(state_row) => Ok(Some(crate::gql::types::TournamentState {
-                id: state_row.id.into(),
-                tournament_id: state_row.tournament_id.into(),
-                current_level: state_row.current_level,
-                players_remaining: state_row.players_remaining,
-                break_until: state_row.break_until,
-                current_small_blind: state_row.current_small_blind,
-                current_big_blind: state_row.current_big_blind,
-                current_ante: state_row.current_ante,
-                level_started_at: state_row.level_started_at,
-                level_duration_minutes: state_row.level_duration_minutes,
-                created_at: state_row.created_at,
-                updated_at: state_row.updated_at,
-            })),
-            None => Ok(None),
-        }
-    }
-
     async fn users(
         &self,
         ctx: &Context<'_>,
@@ -176,7 +149,7 @@ impl QueryRoot {
                     tournament_id: registration.tournament_id.into(),
                     user_id: registration.user_id.into(),
                     registration_time: registration.registration_time,
-                    status: registration.status,
+                    status: registration.status.into(),
                     notes: registration.notes,
                 };
 
@@ -261,7 +234,7 @@ impl QueryRoot {
                 tournament_id: r.tournament_id.into(),
                 user_id: r.user_id.into(),
                 registration_time: r.registration_time,
-                status: r.status,
+                status: r.status.into(),
                 notes: r.notes,
             })
             .collect())
@@ -414,7 +387,6 @@ impl QueryRoot {
                 table_number: table_row.table_number,
                 max_seats: table_row.max_seats,
                 is_active: table_row.is_active,
-                table_name: table_row.table_name,
                 created_at: table_row.created_at,
             };
 
@@ -501,7 +473,6 @@ impl QueryRoot {
                 table_number: table_row.table_number,
                 max_seats: table_row.max_seats,
                 is_active: table_row.is_active,
-                table_name: table_row.table_name,
                 created_at: table_row.created_at,
             })
             .collect())
@@ -525,8 +496,6 @@ impl QueryRoot {
                 club_id: table_row.club_id.into(),
                 table_number: table_row.table_number,
                 max_seats: table_row.max_seats,
-                table_name: table_row.table_name,
-                location: table_row.location,
                 is_active: table_row.is_active,
                 created_at: table_row.created_at,
                 updated_at: table_row.updated_at,
@@ -579,24 +548,22 @@ impl QueryRoot {
             .collect())
     }
 
-    /// Get seating history for a tournament (useful for tracking moves)
-    /// Get complete tournament data - static info, live state, players, and seating
-    async fn tournament_complete(
+    /// Get a single tournament by ID
+    async fn tournament(
         &self,
         ctx: &Context<'_>,
-        tournament_id: uuid::Uuid,
-    ) -> Result<crate::gql::types::TournamentComplete> {
+        id: uuid::Uuid,
+    ) -> Result<Option<crate::gql::types::Tournament>> {
         let state = ctx.data::<AppState>()?;
         let tournament_repo = TournamentRepo::new(state.db.clone());
-        let registration_repo = TournamentRegistrationRepo::new(state.db.clone());
 
-        // Get tournament with all static data
-        let tournament_row = tournament_repo
-            .get(tournament_id)
-            .await?
-            .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
+        // Get tournament
+        let tournament_row = match tournament_repo.get(id).await? {
+            Some(row) => row,
+            None => return Ok(None),
+        };
 
-        let tournament = crate::gql::types::Tournament {
+        Ok(Some(crate::gql::types::Tournament {
             id: tournament_row.id.into(),
             title: tournament_row.name.clone(),
             description: tournament_row.description.clone(),
@@ -609,36 +576,7 @@ impl QueryRoot {
             live_status: tournament_row.live_status.into(),
             created_at: tournament_row.created_at,
             updated_at: tournament_row.updated_at,
-        };
-
-        // Get live state
-        let live_state = tournament_repo
-            .get_state(tournament_id)
-            .await?
-            .map(|state_row| crate::gql::types::TournamentState {
-                id: state_row.id.into(),
-                tournament_id: state_row.tournament_id.into(),
-                current_level: state_row.current_level,
-                players_remaining: state_row.players_remaining,
-                break_until: state_row.break_until,
-                current_small_blind: state_row.current_small_blind,
-                current_big_blind: state_row.current_big_blind,
-                current_ante: state_row.current_ante,
-                level_started_at: state_row.level_started_at,
-                level_duration_minutes: state_row.level_duration_minutes,
-                created_at: state_row.created_at,
-                updated_at: state_row.updated_at,
-            });
-
-        // Get registrations count
-        let registrations = registration_repo.get_by_tournament(tournament_id).await?;
-        let total_registered = registrations.len() as i32;
-
-        Ok(crate::gql::types::TournamentComplete {
-            tournament,
-            live_state,
-            total_registered,
-        })
+        }))
     }
 
     async fn tournament_seating_history(

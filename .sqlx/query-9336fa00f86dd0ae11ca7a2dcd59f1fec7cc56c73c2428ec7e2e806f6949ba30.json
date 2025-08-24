@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO tournament_clocks (tournament_id, clock_status, current_level, auto_advance) \n           VALUES ($1, 'stopped', 1, true) \n           ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9336fa00f86dd0ae11ca7a2dcd59f1fec7cc56c73c2428ec7e2e806f6949ba30"
+}

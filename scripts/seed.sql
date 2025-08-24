@@ -21,41 +21,36 @@ INSERT INTO clubs (id, name, city, country) VALUES
     ('dddddddd-dddd-dddd-dddd-dddddddddddd', 'Pokah Room Antwerp', 'Antwerp', 'BE');
 
 -- Insert users (mix of players and managers) using Belgian poker player names
-INSERT INTO users (id, email, username, first_name, last_name, phone, role, is_active) VALUES
+INSERT INTO users (id, email, username, first_name, last_name, phone, role, is_active, password_hash) VALUES
     -- Club Managers
-    ('ffffffff-ffff-ffff-ffff-ffffffffffff', 'manager1@phenix.be', null, 'Jean', 'Dupont', '+32477123456', 'manager', true),
-    ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'manager2@family.be', null, 'Marie', 'Martin', '+32477234567', 'manager', true),
-    ('10101010-1010-1010-1010-101010101010', 'manager3@liege.be', null, 'Pierre', 'Leroy', '+32477345678', 'manager', true),
-    ('20202020-2020-2020-2020-202020202020', 'manager4@brussels.be', 'brussels_mgr', 'Sophie', 'Bernard', '+32477456789', 'manager', true),
+    ('ffffffff-ffff-ffff-ffff-ffffffffffff', 'contact@brunomoyse.be', null, 'Bruno', 'Moyse', '+32477123456', 'manager', true, '$2b$12$/5HEs8VNRQjb9olil8qV2.7FpVXROsv4ZRhqhG6qlhGiTG8A/GK86'),
     -- Global Admin
-    ('f0f0f0f0-f0f0-f0f0-f0f0-f0f0f0f0f0f0', 'admin@pocketpair.be', 'super_admin', 'Admin', 'Global', '+32477999999', 'admin', true),
+    ('f0f0f0f0-f0f0-f0f0-f0f0-f0f0f0f0f0f0', 'admin@pocketpair.be', 'super_admin', 'Admin', 'Global', '+32477999999', 'admin', true, '$2b$12$/5HEs8VNRQjb9olil8qV2.7FpVXROsv4ZRhqhG6qlhGiTG8A/GK86'),
     -- Belgian Players (using specific Belgian poker player names)
-    ('30303030-3030-3030-3030-303030303030', 'damien@email.com', 'ace_killer', 'Damien', 'Hupé', '+32477567890', 'player', true),
-    ('40404040-4040-4040-4040-404040404040', 'rico@email.com', 'poker_king', 'Rico', 'Chevalot', '+32477678901', 'player', true),
-    ('50505050-5050-5050-5050-505050505050', 'aliosha@email.com', 'bluff_master', 'Aliosha', 'Staes', '+32477789012', 'player', true),
-    ('60606060-6060-6060-6060-606060606060', 'rami@email.com', 'lucky_rami', 'Rami', 'Awad', '+32477890123', 'player', true),
-    ('70707070-7070-7070-7070-707070707070', 'jeanmarie@email.com', 'card_shark', 'Jean-Marie', 'Vandeborne', '+32477901234', 'player', true),
-    ('80808080-8080-8080-8080-808080808080', 'guillaume@email.com', 'river_master', 'Guillaume', 'Gillet', '+32478012345', 'player', true),
-    ('90909090-9090-9090-9090-909090909090', 'manu@email.com', 'all_in_manu', 'Manu', 'Lecomte', '+32478123456', 'player', true),
-    ('a0a0a0a0-a0a0-a0a0-a0a0-a0a0a0a0a0a0', 'fabien@email.com', 'tight_tiger', 'Fabien', 'Perrot', '+32478234567', 'player', true),
-    ('b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0', 'luca@email.com', 'fold_expert', 'Luca', 'Pecoraro', '+32478345678', 'player', true),
-    ('c0c0c0c0-c0c0-c0c0-c0c0-c0c0c0c0c0c0', 'david@email.com', 'nuts_hunter', 'David', 'Opdebeek', '+32478456789', 'player', true),
-    ('d0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0', 'danny@email.com', 'pocket_rockets', 'Danny', 'Covyn', '+32478567890', 'player', true),
-    ('e0e0e0e0-e0e0-e0e0-e0e0-e0e0e0e0e0e0', 'sebastien@email.com', 'LE BANQUIER', 'Sébastien', 'Hetzel', '+32478678901', 'player', true);
+    ('30303030-3030-3030-3030-303030303030', 'damien@email.com', 'ace_killer', 'Damien', 'Hupé', '+32477567890', 'player', true, null),
+    ('40404040-4040-4040-4040-404040404040', 'rico@email.com', 'poker_king', 'Rico', 'Chevalot', '+32477678901', 'player', true, null),
+    ('50505050-5050-5050-5050-505050505050', 'aliosha@email.com', 'bluff_master', 'Aliosha', 'Staes', '+32477789012', 'player', true, null),
+    ('60606060-6060-6060-6060-606060606060', 'rami@email.com', 'lucky_rami', 'Rami', 'Awad', '+32477890123', 'player', true, null),
+    ('70707070-7070-7070-7070-707070707070', 'jeanmarie@email.com', 'card_shark', 'Jean-Marie', 'Vandeborne', '+32477901234', 'player', true, null),
+    ('80808080-8080-8080-8080-808080808080', 'guillaume@email.com', 'river_master', 'Guillaume', 'Gillet', '+32478012345', 'player', true, null),
+    ('90909090-9090-9090-9090-909090909090', 'manu@email.com', 'all_in_manu', 'Manu', 'Lecomte', '+32478123456', 'player', true, null),
+    ('a0a0a0a0-a0a0-a0a0-a0a0-a0a0a0a0a0a0', 'fabien@email.com', 'tight_tiger', 'Fabien', 'Perrot', '+32478234567', 'player', true, null),
+    ('b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0', 'luca@email.com', 'fold_expert', 'Luca', 'Pecoraro', '+32478345678', 'player', true, null),
+    ('c0c0c0c0-c0c0-c0c0-c0c0-c0c0c0c0c0c0', 'david@email.com', 'nuts_hunter', 'David', 'Opdebeek', '+32478456789', 'player', true, null),
+    ('d0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0', 'danny@email.com', 'pocket_rockets', 'Danny', 'Covyn', '+32478567890', 'player', true, null),
+    ('e0e0e0e0-e0e0-e0e0-e0e0-e0e0e0e0e0e0', 'sebastien@email.com', 'LE BANQUIER', 'Sébastien', 'Hetzel', '+32478678901', 'player', true, null);
 
 -- Assign managers to clubs
 INSERT INTO club_managers (id, club_id, user_id, assigned_by, notes) VALUES
     (gen_random_uuid(), '66666666-6666-6666-6666-666666666666', 'ffffffff-ffff-ffff-ffff-ffffffffffff', null, 'Manager of Poker One'),
-    (gen_random_uuid(), 'cccccccc-cccc-cccc-cccc-cccccccccccc', '10101010-1010-1010-1010-101010101010', null, 'Manager of Liège Poker Club'),
-    (gen_random_uuid(), 'dddddddd-dddd-dddd-dddd-dddddddddddd', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', null, 'Manager of Pokah Room Antwerp');
 
 -- Insert club tables (physical tables at each club)
-INSERT INTO club_tables (id, club_id, table_number, max_seats, table_name, location) VALUES
+INSERT INTO club_tables (id, club_id, table_number, max_seats) VALUES
     -- Poker One tables (Charleroi)
-    ('11111111-1111-1111-1111-111111111111', '66666666-6666-6666-6666-666666666666', 1, 9, 'Main Table 1', 'Center room'),
-    ('11111111-1111-1111-1111-111111111112', '66666666-6666-6666-6666-666666666666', 2, 9, 'Main Table 2', 'Center room'),
-    ('11111111-1111-1111-1111-111111111113', '66666666-6666-6666-6666-666666666666', 3, 8, 'Side Table 3', 'Near bar'),
-    ('11111111-1111-1111-1111-111111111114', '66666666-6666-6666-6666-666666666666', 4, 6, 'Final Table', 'VIP area');
+    ('11111111-1111-1111-1111-111111111111', '66666666-6666-6666-6666-666666666666', 1, 9),
+    ('11111111-1111-1111-1111-111111111112', '66666666-6666-6666-6666-666666666666', 2, 9),
+    ('11111111-1111-1111-1111-111111111113', '66666666-6666-6666-6666-666666666666', 3, 8),
+    ('11111111-1111-1111-1111-111111111114', '66666666-6666-6666-6666-666666666666', 4, 6);
 
 -- Insert tags
 INSERT INTO tags (id, slug, label) VALUES
@@ -115,7 +110,7 @@ INSERT INTO tournaments (id, club_id, name, description, start_time, end_time, b
 
 -- Register ALL players in ALL tournaments (12 players × 21 tournaments = 252 registrations)
 INSERT INTO tournament_registrations (tournament_id, user_id, status)
-SELECT t.id, u.id, 'registered'
+SELECT t.id, u.id, 'pending'
 FROM tournaments t
 CROSS JOIN (
     SELECT id FROM users 
@@ -164,15 +159,6 @@ INSERT INTO tournament_results (tournament_id, user_id, final_position, prize_ce
 ('30023333-3333-3333-3333-333333333333', '70707070-7070-7070-7070-707070707070', 1, 90000),  -- €900 (Wednesday Wonder - €30 buy-in)
 ('30023333-3333-3333-3333-333333333333', 'd0d0d0d0-d0d0-d0d0-d0d0-d0d0d0d0d0d0', 2, 54000),  -- €540
 ('30023333-3333-3333-3333-333333333333', '40404040-4040-4040-4040-404040404040', 3, 36000);  -- €360
-
--- Insert tournament state for live tournaments only
-INSERT INTO tournament_state (tournament_id, current_level, players_remaining, current_small_blind, current_big_blind, current_ante, level_started_at, level_duration_minutes) VALUES
-    -- Poker One - Thursday Live Event (Level 5)
-    ('10004444-4444-4444-4444-444444444444', 5, 18, 200, 400, 50, NOW() - INTERVAL '15 minutes', 20),
-    -- Liège - Thursday Live Action (Level 3)
-    ('20014444-4444-4444-4444-444444444444', 3, 24, 100, 200, 25, NOW() - INTERVAL '8 minutes', 20),
-    -- Antwerp - Thursday Thunder (Level 2)
-    ('30024444-4444-4444-4444-444444444444', 2, 22, 50, 100, 0, NOW() - INTERVAL '12 minutes', 20);
 
 -- Link tournaments to tags randomly
 WITH tournament_tag_pairs AS (

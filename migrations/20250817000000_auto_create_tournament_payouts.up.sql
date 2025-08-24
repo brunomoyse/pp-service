@@ -40,7 +40,7 @@ BEGIN
         SELECT COUNT(*) INTO v_player_count
         FROM tournament_registrations
         WHERE tournament_id = NEW.id
-        AND status = 'registered';
+        AND status = 'pending';
         
         -- Skip if no players
         IF v_player_count = 0 THEN
@@ -128,7 +128,7 @@ WITH tournament_counts AS (
         COUNT(tr.id) AS player_count,
         t.buy_in_cents * COUNT(tr.id) AS total_prize_pool
     FROM tournaments t
-    INNER JOIN tournament_registrations tr ON tr.tournament_id = t.id AND tr.status = 'registered'
+    INNER JOIN tournament_registrations tr ON tr.tournament_id = t.id AND tr.status = 'pending'
     WHERE t.live_status = 'in_progress'
     AND NOT EXISTS (SELECT 1 FROM tournament_payouts tp WHERE tp.tournament_id = t.id)
     GROUP BY t.id, t.buy_in_cents

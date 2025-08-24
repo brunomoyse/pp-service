@@ -1,8 +1,4 @@
-use crate::{
-    db::Db,
-    models::{TournamentRow, TournamentStateRow},
-    pagination::LimitOffset,
-};
+use crate::{db::Db, models::TournamentRow, pagination::LimitOffset};
 use chrono::{DateTime, Utc};
 use sqlx::Result as SqlxResult;
 use std::str::FromStr;
@@ -64,18 +60,6 @@ impl FromStr for TournamentLiveStatus {
             _ => Err(format!("Unknown tournament live status: {}", s)),
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct UpdateTournamentState {
-    pub current_level: Option<i32>,
-    pub players_remaining: Option<i32>,
-    pub break_until: Option<DateTime<Utc>>,
-    pub current_small_blind: Option<i32>,
-    pub current_big_blind: Option<i32>,
-    pub current_ante: Option<i32>,
-    pub level_started_at: Option<DateTime<Utc>>,
-    pub level_duration_minutes: Option<i32>,
 }
 
 #[derive(Clone)]
@@ -161,67 +145,6 @@ impl TournamentRepo {
         .bind(id)
         .bind(live_status.as_str())
         .fetch_optional(&self.pool)
-        .await
-    }
-
-    /// Get tournament state
-    pub async fn get_state(&self, tournament_id: Uuid) -> SqlxResult<Option<TournamentStateRow>> {
-        sqlx::query_as::<_, TournamentStateRow>(
-            r#"
-            SELECT id, tournament_id, current_level, players_remaining,
-                   break_until, current_small_blind, current_big_blind,
-                   current_ante, level_started_at, level_duration_minutes,
-                   created_at, updated_at
-            FROM tournament_state
-            WHERE tournament_id = $1
-            "#,
-        )
-        .bind(tournament_id)
-        .fetch_optional(&self.pool)
-        .await
-    }
-
-    /// Create or update tournament state
-    pub async fn upsert_state(
-        &self,
-        tournament_id: Uuid,
-        data: UpdateTournamentState,
-    ) -> SqlxResult<TournamentStateRow> {
-        sqlx::query_as::<_, TournamentStateRow>(
-            r#"
-            INSERT INTO tournament_state (
-                tournament_id, current_level, players_remaining, break_until,
-                current_small_blind, current_big_blind, current_ante,
-                level_started_at, level_duration_minutes
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            ON CONFLICT (tournament_id)
-            DO UPDATE SET
-                current_level = COALESCE($2, tournament_state.current_level),
-                players_remaining = COALESCE($3, tournament_state.players_remaining),
-                break_until = $4,
-                current_small_blind = COALESCE($5, tournament_state.current_small_blind),
-                current_big_blind = COALESCE($6, tournament_state.current_big_blind),
-                current_ante = COALESCE($7, tournament_state.current_ante),
-                level_started_at = COALESCE($8, tournament_state.level_started_at),
-                level_duration_minutes = COALESCE($9, tournament_state.level_duration_minutes),
-                updated_at = NOW()
-            RETURNING id, tournament_id, current_level, players_remaining,
-                     break_until, current_small_blind, current_big_blind,
-                     current_ante, level_started_at, level_duration_minutes,
-                     created_at, updated_at
-            "#,
-        )
-        .bind(tournament_id)
-        .bind(data.current_level)
-        .bind(data.players_remaining)
-        .bind(data.break_until)
-        .bind(data.current_small_blind)
-        .bind(data.current_big_blind)
-        .bind(data.current_ante)
-        .bind(data.level_started_at)
-        .bind(data.level_duration_minutes)
-        .fetch_one(&self.pool)
         .await
     }
 
