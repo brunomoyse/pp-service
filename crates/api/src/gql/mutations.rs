@@ -362,80 +362,85 @@ impl MutationRoot {
                     _ => unreachable!(),
                 };
 
-                // Find available seat on target table
+                // Find all available seats and pick one randomly
+                let mut available_seats = Vec::new();
                 for seat_num in 1..=target_table.max_seats {
                     if assignment_repo
                         .is_seat_available(target_table.id, seat_num)
                         .await?
                     {
-                        // Assign player to this seat
-                        let create_data = CreateSeatAssignment {
-                            tournament_id,
-                            club_table_id: target_table.id,
-                            user_id,
-                            seat_number: seat_num,
-                            stack_size: None, // Will be set when tournament starts
-                            assigned_by: Some(manager_id),
-                            notes: Some(format!(
-                                "Auto-assigned on check-in using {:?} strategy",
-                                strategy
-                            )),
-                        };
-
-                        let assignment_row = assignment_repo.create(create_data).await?;
-
-                        seat_assignment = Some(SeatAssignment {
-                            id: assignment_row.id.into(),
-                            tournament_id: assignment_row.tournament_id.into(),
-                            club_table_id: assignment_row.club_table_id.into(),
-                            user_id: assignment_row.user_id.into(),
-                            seat_number: assignment_row.seat_number,
-                            stack_size: assignment_row.stack_size,
-                            is_current: assignment_row.is_current,
-                            assigned_at: assignment_row.assigned_at,
-                            unassigned_at: None,
-                            assigned_by: Some(manager_id.into()),
-                            notes: Some(format!(
-                                "Auto-assigned on check-in using {:?} strategy",
-                                strategy
-                            )),
-                        });
-
-                        message = format!(
-                            "Player checked in and assigned to Table {}, Seat {}",
-                            target_table.table_number, seat_num
-                        );
-
-                        // Emit seating event
-                        if let Some(user_row) = user_repo.get_by_id(user_id).await? {
-                            let club_id =
-                                get_club_id_for_tournament(&state.db, tournament_id).await?;
-                            let event = SeatingChangeEvent {
-                                event_type: SeatingEventType::PlayerAssigned,
-                                tournament_id: tournament_id.into(),
-                                club_id: club_id.into(),
-                                affected_assignment: seat_assignment.clone(),
-                                affected_player: Some(User {
-                                    id: user_row.id.into(),
-                                    email: user_row.email,
-                                    username: user_row.username,
-                                    first_name: user_row.first_name,
-                                    last_name: user_row.last_name,
-                                    phone: user_row.phone,
-                                    is_active: user_row.is_active,
-                                    role: Role::from(user_row.role),
-                                }),
-                                message: message.clone(),
-                                timestamp: chrono::Utc::now(),
-                            };
-                            publish_seating_event(event);
-                        }
-
-                        break;
+                        available_seats.push(seat_num);
                     }
                 }
 
-                if seat_assignment.is_none() {
+                if !available_seats.is_empty() {
+                    // Pick a random seat from available ones
+                    let random_index = rand::random::<usize>() % available_seats.len();
+                    let seat_num = available_seats[random_index];
+
+                    // Assign player to this randomly selected seat
+                    let create_data = CreateSeatAssignment {
+                        tournament_id,
+                        club_table_id: target_table.id,
+                        user_id,
+                        seat_number: seat_num,
+                        stack_size: None, // Will be set when tournament starts
+                        assigned_by: Some(manager_id),
+                        notes: Some(format!(
+                            "Auto-assigned on check-in using {:?} strategy",
+                            strategy
+                        )),
+                    };
+
+                    let assignment_row = assignment_repo.create(create_data).await?;
+
+                    seat_assignment = Some(SeatAssignment {
+                        id: assignment_row.id.into(),
+                        tournament_id: assignment_row.tournament_id.into(),
+                        club_table_id: assignment_row.club_table_id.into(),
+                        user_id: assignment_row.user_id.into(),
+                        seat_number: assignment_row.seat_number,
+                        stack_size: assignment_row.stack_size,
+                        is_current: assignment_row.is_current,
+                        assigned_at: assignment_row.assigned_at,
+                        unassigned_at: None,
+                        assigned_by: Some(manager_id.into()),
+                        notes: Some(format!(
+                            "Auto-assigned on check-in using {:?} strategy",
+                            strategy
+                        )),
+                    });
+
+                    message = format!(
+                        "Player checked in and assigned to Table {}, Seat {}",
+                        target_table.table_number, seat_num
+                    );
+
+                    // Emit seating event
+                    if let Some(user_row) = user_repo.get_by_id(user_id).await? {
+                        let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
+                        let event = SeatingChangeEvent {
+                            event_type: SeatingEventType::PlayerAssigned,
+                            tournament_id: tournament_id.into(),
+                            club_id: club_id.into(),
+                            affected_assignment: seat_assignment.clone(),
+                            affected_player: Some(User {
+                                id: user_row.id.into(),
+                                email: user_row.email,
+                                username: user_row.username,
+                                first_name: user_row.first_name,
+                                last_name: user_row.last_name,
+                                phone: user_row.phone,
+                                is_active: user_row.is_active,
+                                role: Role::from(user_row.role),
+                            }),
+                            message: message.clone(),
+                            timestamp: chrono::Utc::now(),
+                        };
+                        publish_seating_event(event);
+                    }
+                } else {
+                    // No available seats
                     message =
                         "Player checked in but no seats available for auto-assignment".to_string();
                 }
