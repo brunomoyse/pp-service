@@ -2,13 +2,15 @@ use async_graphql::{Context, InputObject, Object, Result, ID};
 
 use super::subscriptions::{publish_registration_event, publish_seating_event};
 use super::types::{
-    AssignPlayerToSeatInput, AssignTableToTournamentInput, AuthPayload, BalanceTablesInput,
-    CreateOAuthClientInput, CreateOAuthClientResponse, DealType, EnterTournamentResultsInput,
+    AssignPlayerToSeatInput, AssignTableToTournamentInput, AssignmentStrategy, AuthPayload,
+    BalanceTablesInput, CheckInPlayerInput, CheckInResponse, CreateOAuthClientInput,
+    CreateOAuthClientResponse, DealType, EnterTournamentResultsInput,
     EnterTournamentResultsResponse, MovePlayerInput, OAuthCallbackInput, OAuthClient,
     OAuthUrlResponse, PlayerDeal, PlayerDealInput, PlayerPositionInput, PlayerRegistrationEvent,
-    RegisterForTournamentInput, Role, SeatAssignment, SeatingChangeEvent, SeatingEventType,
-    Tournament, TournamentPlayer, TournamentRegistration, TournamentResult, TournamentTable,
-    UpdateStackSizeInput, UpdateTournamentStatusInput, User, UserLoginInput, UserRegistrationInput,
+    RegisterForTournamentInput, RegistrationStatus, Role, SeatAssignment, SeatingChangeEvent,
+    SeatingEventType, Tournament, TournamentPlayer, TournamentRegistration, TournamentResult,
+    TournamentTable, UpdateStackSizeInput, UpdateTournamentStatusInput, User, UserLoginInput,
+    UserRegistrationInput,
 };
 use crate::auth::{
     custom_oauth::CustomOAuthService, password::PasswordService, permissions::require_admin_if,
@@ -25,6 +27,37 @@ use infra::repos::{
 use rand::{distributions::Alphanumeric, Rng};
 use serde_json;
 use uuid::Uuid;
+
+// Helper function to check if tables need rebalancing
+fn needs_rebalancing(table_counts: &std::collections::HashMap<Uuid, usize>) -> bool {
+    if table_counts.is_empty() {
+        return false;
+    }
+
+    let min_count = *table_counts.values().min().unwrap_or(&0);
+    let max_count = *table_counts.values().max().unwrap_or(&0);
+
+    // Rebalance if difference is more than 2 players between tables
+    // OR if any table has less than 4 players (unless it's the only table)
+    (max_count - min_count > 2) || (min_count < 4 && table_counts.len() > 1)
+}
+
+// Helper function to calculate optimal table distribution
+fn calculate_optimal_distribution(total_players: usize, total_tables: usize) -> Vec<usize> {
+    if total_tables == 0 {
+        return vec![];
+    }
+
+    let base_count = total_players / total_tables;
+    let remainder = total_players % total_tables;
+
+    let mut distribution = vec![base_count; total_tables];
+    for item in distribution.iter_mut().take(remainder) {
+        *item += 1;
+    }
+
+    distribution
+}
 
 // Helper function to get club_id from tournament_id for events
 async fn get_club_id_for_tournament(db: &infra::db::Db, tournament_id: Uuid) -> Result<Uuid> {
@@ -213,6 +246,216 @@ impl MutationRoot {
         }
 
         Ok(tournament_registration)
+    }
+
+    /// Check in a player for a tournament with optional auto-assignment
+    async fn check_in_player(
+        &self,
+        ctx: &Context<'_>,
+        input: CheckInPlayerInput,
+    ) -> Result<CheckInResponse> {
+        use crate::auth::permissions::require_role;
+
+        // Require manager role for check-in
+        let manager = require_role(ctx, Role::Manager).await?;
+
+        let state = ctx.data::<AppState>()?;
+        let registration_repo = TournamentRegistrationRepo::new(state.db.clone());
+        let user_repo = UserRepo::new(state.db.clone());
+        let club_table_repo = ClubTableRepo::new(state.db.clone());
+        let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
+
+        let tournament_id = Uuid::parse_str(input.tournament_id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+        let user_id = Uuid::parse_str(input.user_id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
+        let manager_id = Uuid::parse_str(manager.id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid manager ID: {}", e)))?;
+
+        // Get the registration
+        let registration = registration_repo
+            .get_by_tournament_and_user(tournament_id, user_id)
+            .await?
+            .ok_or_else(|| {
+                async_graphql::Error::new("Player not registered for this tournament")
+            })?;
+
+        // Check current status
+        let current_status: RegistrationStatus = registration.status.clone().into();
+        if current_status != RegistrationStatus::Registered {
+            return Err(async_graphql::Error::new(format!(
+                "Player cannot be checked in from status: {:?}",
+                current_status
+            )));
+        }
+
+        // Update status to CHECKED_IN
+        sqlx::query!(
+            "UPDATE tournament_registrations SET status = 'checked_in', updated_at = NOW() 
+             WHERE tournament_id = $1 AND user_id = $2",
+            tournament_id,
+            user_id
+        )
+        .execute(&state.db)
+        .await?;
+
+        // Get updated registration
+        let updated_registration = registration_repo
+            .get_by_tournament_and_user(tournament_id, user_id)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Failed to get updated registration"))?;
+
+        // Auto-assign to table if requested
+        let auto_assign = input.auto_assign.unwrap_or(true);
+        let strategy = input
+            .assignment_strategy
+            .unwrap_or(AssignmentStrategy::Balanced);
+
+        let mut seat_assignment = None;
+        let mut message = String::from("Player checked in successfully");
+
+        if auto_assign && strategy != AssignmentStrategy::Manual {
+            // Get tournament tables
+            let tables = club_table_repo
+                .get_assigned_to_tournament(tournament_id)
+                .await?;
+
+            if !tables.is_empty() {
+                // Get current assignments to find best table
+                let current_assignments = assignment_repo
+                    .get_current_for_tournament(tournament_id)
+                    .await?;
+
+                // Count players per table
+                let mut table_counts: std::collections::HashMap<Uuid, usize> =
+                    std::collections::HashMap::new();
+                for assignment in &current_assignments {
+                    *table_counts.entry(assignment.club_table_id).or_insert(0) += 1;
+                }
+
+                // Find best table based on strategy
+                let target_table = match strategy {
+                    AssignmentStrategy::Balanced => {
+                        // Find table with minimum players
+                        tables
+                            .iter()
+                            .min_by_key(|table| table_counts.get(&table.id).unwrap_or(&0))
+                            .ok_or_else(|| async_graphql::Error::new("No tables available"))?
+                    }
+                    AssignmentStrategy::Random => {
+                        // Random table selection
+                        use rand::seq::SliceRandom;
+                        tables
+                            .choose(&mut rand::thread_rng())
+                            .ok_or_else(|| async_graphql::Error::new("No tables available"))?
+                    }
+                    AssignmentStrategy::Sequential => {
+                        // Fill tables in order, find first non-full table
+                        tables
+                            .iter()
+                            .find(|table| {
+                                let count = table_counts.get(&table.id).unwrap_or(&0);
+                                *count < table.max_seats as usize
+                            })
+                            .ok_or_else(|| async_graphql::Error::new("All tables are full"))?
+                    }
+                    _ => unreachable!(),
+                };
+
+                // Find available seat on target table
+                for seat_num in 1..=target_table.max_seats {
+                    if assignment_repo
+                        .is_seat_available(target_table.id, seat_num)
+                        .await?
+                    {
+                        // Assign player to this seat
+                        let create_data = CreateSeatAssignment {
+                            tournament_id,
+                            club_table_id: target_table.id,
+                            user_id,
+                            seat_number: seat_num,
+                            stack_size: None, // Will be set when tournament starts
+                            assigned_by: Some(manager_id),
+                            notes: Some(format!(
+                                "Auto-assigned on check-in using {:?} strategy",
+                                strategy
+                            )),
+                        };
+
+                        let assignment_row = assignment_repo.create(create_data).await?;
+
+                        seat_assignment = Some(SeatAssignment {
+                            id: assignment_row.id.into(),
+                            tournament_id: assignment_row.tournament_id.into(),
+                            club_table_id: assignment_row.club_table_id.into(),
+                            user_id: assignment_row.user_id.into(),
+                            seat_number: assignment_row.seat_number,
+                            stack_size: assignment_row.stack_size,
+                            is_current: assignment_row.is_current,
+                            assigned_at: assignment_row.assigned_at,
+                            unassigned_at: None,
+                            assigned_by: Some(manager_id.into()),
+                            notes: Some(format!(
+                                "Auto-assigned on check-in using {:?} strategy",
+                                strategy
+                            )),
+                        });
+
+                        message = format!(
+                            "Player checked in and assigned to Table {}, Seat {}",
+                            target_table.table_number, seat_num
+                        );
+
+                        // Emit seating event
+                        if let Some(user_row) = user_repo.get_by_id(user_id).await? {
+                            let club_id =
+                                get_club_id_for_tournament(&state.db, tournament_id).await?;
+                            let event = SeatingChangeEvent {
+                                event_type: SeatingEventType::PlayerAssigned,
+                                tournament_id: tournament_id.into(),
+                                club_id: club_id.into(),
+                                affected_assignment: seat_assignment.clone(),
+                                affected_player: Some(User {
+                                    id: user_row.id.into(),
+                                    email: user_row.email,
+                                    username: user_row.username,
+                                    first_name: user_row.first_name,
+                                    last_name: user_row.last_name,
+                                    phone: user_row.phone,
+                                    is_active: user_row.is_active,
+                                    role: Role::from(user_row.role),
+                                }),
+                                message: message.clone(),
+                                timestamp: chrono::Utc::now(),
+                            };
+                            publish_seating_event(event);
+                        }
+
+                        break;
+                    }
+                }
+
+                if seat_assignment.is_none() {
+                    message =
+                        "Player checked in but no seats available for auto-assignment".to_string();
+                }
+            } else {
+                message = "Player checked in but no tables assigned to tournament yet".to_string();
+            }
+        }
+
+        Ok(CheckInResponse {
+            registration: TournamentRegistration {
+                id: updated_registration.id.into(),
+                tournament_id: updated_registration.tournament_id.into(),
+                user_id: updated_registration.user_id.into(),
+                registration_time: updated_registration.registration_time,
+                status: updated_registration.status.into(),
+                notes: updated_registration.notes,
+            },
+            seat_assignment,
+            message,
+        })
     }
 
     /// Get OAuth authorization URL
@@ -1040,7 +1283,7 @@ impl MutationRoot {
             .get_current_for_tournament(tournament_id)
             .await?;
 
-        // Group players by table
+        // Group players by table and count
         let mut table_players: std::collections::HashMap<uuid::Uuid, Vec<_>> =
             std::collections::HashMap::new();
         for assignment in assignments {
@@ -1050,13 +1293,28 @@ impl MutationRoot {
                 .push(assignment);
         }
 
-        // Calculate target players per table
-        let total_players = table_players.values().map(|v| v.len()).sum::<usize>();
+        // Count players per table
+        let mut table_counts: std::collections::HashMap<Uuid, usize> =
+            std::collections::HashMap::new();
+        for (table_id, players) in &table_players {
+            table_counts.insert(*table_id, players.len());
+        }
+
+        // Check if rebalancing is needed
+        if !needs_rebalancing(&table_counts) {
+            return Ok(Vec::new()); // Tables are already balanced
+        }
+
+        // Calculate optimal distribution
+        let total_players = table_counts.values().sum::<usize>();
+        let _optimal_distribution = calculate_optimal_distribution(total_players, tables.len());
+
+        // For backward compatibility, keep target_per_table calculation
         let target_per_table = input
             .target_players_per_table
             .unwrap_or(((total_players as f64) / (tables.len() as f64)).ceil() as i32);
 
-        // Simple balancing: move excess players from over-populated tables to under-populated ones
+        // Create a plan for rebalancing
         let mut moves = Vec::new();
 
         // Find tables that need players and tables that have excess

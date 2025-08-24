@@ -352,6 +352,7 @@ pub struct ClubTable {
     pub table_number: i32,
     pub max_seats: i32,
     pub is_active: bool,
+    pub is_assigned: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -655,10 +656,31 @@ pub struct BalanceTablesInput {
     pub target_players_per_table: Option<i32>,
 }
 
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
+pub enum AssignmentStrategy {
+    /// Balanced distribution - fills tables evenly
+    #[graphql(name = "BALANCED")]
+    Balanced,
+
+    /// Random assignment for fairness
+    #[graphql(name = "RANDOM")]
+    Random,
+
+    /// Sequential - fills tables in order
+    #[graphql(name = "SEQUENTIAL")]
+    Sequential,
+
+    /// Manual - no auto-assignment
+    #[graphql(name = "MANUAL")]
+    Manual,
+}
+
 #[derive(InputObject)]
 pub struct CheckInPlayerInput {
     pub tournament_id: ID,
     pub user_id: ID,
+    pub assignment_strategy: Option<AssignmentStrategy>,
+    pub auto_assign: Option<bool>, // Default true
 }
 
 #[derive(InputObject)]
@@ -667,6 +689,13 @@ pub struct UpdateRegistrationStatusInput {
     pub user_id: ID,
     pub status: RegistrationStatus,
     pub notes: Option<String>,
+}
+
+#[derive(SimpleObject)]
+pub struct CheckInResponse {
+    pub registration: TournamentRegistration,
+    pub seat_assignment: Option<SeatAssignment>,
+    pub message: String,
 }
 
 #[derive(SimpleObject, Clone)]

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT DISTINCT tta.club_table_id\n            FROM tournament_table_assignments tta\n            JOIN tournaments t ON tta.tournament_id = t.id \n            WHERE t.club_id = $1 \n            AND t.live_status IN ('not_started', 'registration_open', 'late_registration', 'in_progress', 'break', 'final_table')\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "club_table_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "54cdcfb42ae82feba782a538bf532f0c7e1b044a37bbf214288cbb8f323e173d"
+}

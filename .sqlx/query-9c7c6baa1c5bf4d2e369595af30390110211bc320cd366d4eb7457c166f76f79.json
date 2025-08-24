@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE tournament_registrations SET status = 'checked_in', updated_at = NOW() \n             WHERE tournament_id = $1 AND user_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9c7c6baa1c5bf4d2e369595af30390110211bc320cd366d4eb7457c166f76f79"
+}

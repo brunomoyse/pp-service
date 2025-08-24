@@ -171,6 +171,40 @@ impl QueryRoot {
             }
         }
 
+        // Sort players by: 1) status (registered first), 2) last name, 3) first name
+        players.sort_by(|a, b| {
+            use crate::gql::types::RegistrationStatus;
+            use std::cmp::Ordering;
+
+            // First, sort by status - registered players first
+            let status_order = |status: &RegistrationStatus| -> u8 {
+                match status {
+                    RegistrationStatus::Registered => 0,
+                    RegistrationStatus::CheckedIn => 1,
+                    RegistrationStatus::Seated => 2,
+                    RegistrationStatus::Waitlisted => 3,
+                    RegistrationStatus::Cancelled => 4,
+                    RegistrationStatus::NoShow => 5,
+                    RegistrationStatus::Busted => 6,
+                }
+            };
+
+            let status_cmp =
+                status_order(&a.registration.status).cmp(&status_order(&b.registration.status));
+            if status_cmp != Ordering::Equal {
+                return status_cmp;
+            }
+
+            // Then sort by last name
+            let last_name_cmp = a.user.last_name.cmp(&b.user.last_name);
+            if last_name_cmp != Ordering::Equal {
+                return last_name_cmp;
+            }
+
+            // Finally sort by first name
+            a.user.first_name.cmp(&b.user.first_name)
+        });
+
         Ok(players)
     }
 
@@ -489,6 +523,22 @@ impl QueryRoot {
 
         let table_rows = club_table_repo.get_by_club(club_id).await?;
 
+        // Get all table assignments for this club to check which tables are assigned
+        let assigned_table_ids: std::collections::HashSet<uuid::Uuid> = sqlx::query_scalar!(
+            r#"
+            SELECT DISTINCT tta.club_table_id
+            FROM tournament_table_assignments tta
+            JOIN tournaments t ON tta.tournament_id = t.id 
+            WHERE t.club_id = $1 
+            AND t.live_status IN ('not_started', 'registration_open', 'late_registration', 'in_progress', 'break', 'final_table')
+            "#,
+            club_id
+        )
+        .fetch_all(&state.db)
+        .await?
+        .into_iter()
+        .collect();
+
         Ok(table_rows
             .into_iter()
             .map(|table_row| crate::gql::types::ClubTable {
@@ -497,6 +547,7 @@ impl QueryRoot {
                 table_number: table_row.table_number,
                 max_seats: table_row.max_seats,
                 is_active: table_row.is_active,
+                is_assigned: assigned_table_ids.contains(&table_row.id),
                 created_at: table_row.created_at,
                 updated_at: table_row.updated_at,
             })
