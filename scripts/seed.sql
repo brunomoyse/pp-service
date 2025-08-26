@@ -42,7 +42,7 @@ INSERT INTO users (id, email, username, first_name, last_name, phone, role, is_a
 
 -- Assign managers to clubs
 INSERT INTO club_managers (id, club_id, user_id, assigned_by, notes) VALUES
-    (gen_random_uuid(), '66666666-6666-6666-6666-666666666666', 'ffffffff-ffff-ffff-ffff-ffffffffffff', null, 'Manager of Poker One'),
+    (gen_random_uuid(), '66666666-6666-6666-6666-666666666666', 'ffffffff-ffff-ffff-ffff-ffffffffffff', null, 'Manager of Poker One');
 
 -- Insert club tables (physical tables at each club)
 INSERT INTO club_tables (id, club_id, table_number, max_seats) VALUES
@@ -110,7 +110,7 @@ INSERT INTO tournaments (id, club_id, name, description, start_time, end_time, b
 
 -- Register ALL players in ALL tournaments (12 players × 21 tournaments = 252 registrations)
 INSERT INTO tournament_registrations (tournament_id, user_id, status)
-SELECT t.id, u.id, 'pending'
+SELECT t.id, u.id, 'registered'
 FROM tournaments t
 CROSS JOIN (
     SELECT id FROM users 
