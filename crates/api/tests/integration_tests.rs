@@ -89,7 +89,7 @@ async fn test_tournament_live_status_specific_values() {
     // Query for tournaments with specific filters to get both finished and in_progress
     let query = r#"
         query {
-            tournaments(limit: 20) {
+            tournaments(limit: 100) {
                 id
                 title
                 liveStatus

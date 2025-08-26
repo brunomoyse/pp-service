@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO club_tables (id, club_id, table_number, max_seats) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "422e7c6ce8f016989c37bb17e09840a4dca0cfef805146c250a3027399d12fe5"
+}

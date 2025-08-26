@@ -13,19 +13,47 @@ async fn test_club_tables_system() {
 
     let club_table_repo = ClubTableRepo::new(pool.clone());
 
-    // Test that we can retrieve Poker One club tables
-    let poker_one_club_id = uuid::Uuid::parse_str("66666666-6666-6666-6666-666666666666").unwrap();
+    // Create test club and tables directly
+    let poker_one_club_id = uuid::Uuid::new_v4();
 
-    // Get all tables for Poker One club
+    // Create test club
+    sqlx::query!(
+        "INSERT INTO clubs (id, name, city) VALUES ($1, $2, $3)",
+        poker_one_club_id,
+        "Test Poker Club",
+        "Test City"
+    )
+    .execute(&pool)
+    .await
+    .expect("Should be able to create test club");
+
+    // Create 4 test tables
+    for i in 1..=4 {
+        let table_id = uuid::Uuid::new_v4();
+        let max_seats = if i == 4 { 6 } else { 9 }; // Table 4 is the final table with 6 seats
+
+        sqlx::query!(
+            "INSERT INTO club_tables (id, club_id, table_number, max_seats) VALUES ($1, $2, $3, $4)",
+            table_id,
+            poker_one_club_id,
+            i as i32,
+            max_seats
+        )
+        .execute(&pool)
+        .await
+        .expect("Should be able to create test table");
+    }
+
+    // Get all tables for test club
     let tables = club_table_repo
         .get_by_club(poker_one_club_id)
         .await
         .expect("Should be able to get club tables");
 
-    println!("Found {} tables for Poker One club", tables.len());
+    println!("Found {} tables for test club", tables.len());
 
-    // Verify we have the 4 tables we created in the seeder
-    assert_eq!(tables.len(), 4, "Should have 4 tables for Poker One");
+    // Verify we have the 4 tables we created
+    assert_eq!(tables.len(), 4, "Should have 4 tables for test club");
 
     // Verify table numbers are 1, 2, 3, 4
     let table_numbers: Vec<i32> = tables.iter().map(|t| t.table_number).collect();
@@ -50,8 +78,26 @@ async fn test_club_tables_system() {
 
     println!("✅ Club tables system test passed!");
 
-    // Test table assignment to a tournament
-    let tournament_id = uuid::Uuid::parse_str("10004444-4444-4444-4444-444444444444").unwrap(); // Thursday Live Event
+    // Create test tournament for assignment test
+    let tournament_id = uuid::Uuid::new_v4();
+    sqlx::query!(
+        r#"INSERT INTO tournaments (
+            id, name, description, club_id, start_time, end_time, 
+            buy_in_cents, seat_cap, live_status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'not_started'::tournament_live_status)"#,
+        tournament_id,
+        "Test Tournament",
+        "Test tournament description",
+        poker_one_club_id,
+        chrono::Utc::now(),
+        chrono::Utc::now() + chrono::Duration::hours(4),
+        5000i32,
+        100i32
+    )
+    .execute(&pool)
+    .await
+    .expect("Should be able to create test tournament");
+
     let table1_id = tables[0].id;
 
     // Assign table 1 to the tournament
