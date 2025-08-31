@@ -12,7 +12,7 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}   # we'll lowercase it
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-and-push:
@@ -32,8 +32,13 @@ jobs:
       - name: Normalize image name (lowercase for GHCR)
         run: echo "IMAGE_NAME_LC=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          install: true
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -55,14 +60,13 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
 
-      - name: Build and push (linux/amd64 only)
-        # add: env: { BUILDKIT_PROGRESS: plain } if you want verbose logs
+      - name: Build and push (multi-arch)
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile.prod
           push: true
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ github.ref_name }}
@@ -72,15 +76,15 @@ jobs:
       - name: Summary
         run: |
           {
-            echo "## 🚀 Docker Image Built (amd64)"
+            echo "## 🚀 Docker Image Built (amd64 + arm64)"
             echo
             echo "**Image:** \`${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}\`"
             echo
             echo "**Tags:**"
             echo '${{ steps.meta.outputs.tags }}' | tr ' ' '\n' | sed 's/^/- `/' | sed 's/$/`/'
             echo
-            echo "**Pull:**"
+            echo "**Multi-arch Inspect:**"
             echo '```bash'
-            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}:latest"
+            echo "docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LC }}:latest"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
