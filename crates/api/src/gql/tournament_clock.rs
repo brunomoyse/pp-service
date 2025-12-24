@@ -1,11 +1,9 @@
-use async_graphql::{Context, Object, Result, Subscription, ID};
+use async_graphql::{Context, Object, Result, ID};
 use chrono::Utc;
-use futures_util::Stream;
 use std::str::FromStr;
-use std::time::Duration as StdDuration;
-use tokio::time::interval;
 use uuid::Uuid;
 
+use crate::gql::subscriptions::publish_clock_update;
 use crate::gql::types::{ClockStatus, Role, TournamentClock, TournamentStructure};
 use crate::{auth::permissions::require_role, AppState};
 use infra::repos::{ClockStatus as InfraClockStatus, TournamentClockRepo};
@@ -228,7 +226,7 @@ impl TournamentClockMutation {
         // Show full duration of first level when clock is created (stopped state)
         let time_remaining_seconds = structure.as_ref().map(|s| (s.duration_minutes as i64) * 60);
 
-        Ok(TournamentClock {
+        let clock = TournamentClock {
             id: clock_row.id.into(),
             tournament_id: clock_row.tournament_id.into(),
             status: InfraClockStatus::from_str(&clock_row.clock_status)
@@ -259,7 +257,12 @@ impl TournamentClockMutation {
             ante: structure.as_ref().map(|s| s.ante),
             is_break: structure.as_ref().map(|s| s.is_break),
             level_duration_minutes: structure.as_ref().map(|s| s.duration_minutes),
-        })
+        };
+
+        // Publish to subscription channel
+        publish_clock_update(tournament_id, clock.clone());
+
+        Ok(clock)
     }
 
     /// Start tournament clock
@@ -288,14 +291,19 @@ impl TournamentClockMutation {
             None
         };
 
-        Ok(create_tournament_clock(
+        let clock = create_tournament_clock(
             &clock_row,
             structure.as_ref(),
             next_structure,
             time_remaining,
             0,
             ClockStatus::Running,
-        ))
+        );
+
+        // Publish to subscription channel
+        publish_clock_update(tournament_id, clock.clone());
+
+        Ok(clock)
     }
 
     /// Pause tournament clock
@@ -328,14 +336,19 @@ impl TournamentClockMutation {
 
         let total_pause_seconds = clock_row.total_pause_duration.microseconds / 1_000_000;
 
-        Ok(create_tournament_clock(
+        let clock = create_tournament_clock(
             &clock_row,
             structure.as_ref(),
             next_structure,
             time_remaining,
             total_pause_seconds,
             ClockStatus::Paused,
-        ))
+        );
+
+        // Publish to subscription channel
+        publish_clock_update(tournament_id, clock.clone());
+
+        Ok(clock)
     }
 
     /// Resume tournament clock
@@ -366,14 +379,19 @@ impl TournamentClockMutation {
 
         let total_pause_seconds = clock_row.total_pause_duration.microseconds / 1_000_000;
 
-        Ok(create_tournament_clock(
+        let clock = create_tournament_clock(
             &clock_row,
             structure.as_ref(),
             next_structure,
             time_remaining,
             total_pause_seconds,
             ClockStatus::Running,
-        ))
+        );
+
+        // Publish to subscription channel
+        publish_clock_update(tournament_id, clock.clone());
+
+        Ok(clock)
     }
 
     /// Manually advance to next level
@@ -421,14 +439,19 @@ impl TournamentClockMutation {
         // Convert PgInterval to seconds for total pause duration
         let total_pause_seconds = clock_row.total_pause_duration.microseconds / 1_000_000;
 
-        Ok(create_tournament_clock(
+        let clock = create_tournament_clock(
             &clock_row,
             structure.as_ref(),
             next_structure,
             time_remaining,
             total_pause_seconds,
             status,
-        ))
+        );
+
+        // Publish to subscription channel
+        publish_clock_update(tournament_id, clock.clone());
+
+        Ok(clock)
     }
 
     /// Manually revert to previous level
@@ -471,135 +494,18 @@ impl TournamentClockMutation {
         // Convert PgInterval to seconds for total pause duration
         let total_pause_seconds = clock_row.total_pause_duration.microseconds / 1_000_000;
 
-        Ok(create_tournament_clock(
+        let clock = create_tournament_clock(
             &clock_row,
             structure.as_ref(),
             next_structure,
             time_remaining,
             total_pause_seconds,
             status,
-        ))
-    }
-}
+        );
 
-pub struct TournamentClockSubscription;
+        // Publish to subscription channel
+        publish_clock_update(tournament_id, clock.clone());
 
-#[Subscription]
-impl TournamentClockSubscription {
-    /// Subscribe to tournament clock updates
-    pub async fn tournament_clock_updates(
-        &self,
-        ctx: &Context<'_>,
-        tournament_id: ID,
-    ) -> Result<impl Stream<Item = TournamentClock>> {
-        let state = ctx.data::<AppState>()?;
-        let repo = TournamentClockRepo::new(state.db.clone());
-        let tournament_id: Uuid = tournament_id.parse()?;
-
-        // Create a stream that emits every second
-        let mut interval = interval(StdDuration::from_secs(1));
-
-        Ok(async_stream::stream! {
-            loop {
-                interval.tick().await;
-
-                // Get current clock state
-                if let Ok(Some(clock_row)) = repo.get_clock(tournament_id).await {
-                    if let Ok(structure) = repo.get_current_structure(tournament_id).await {
-                        let clock_status = InfraClockStatus::from_str(&clock_row.clock_status).ok()
-                            .unwrap_or(InfraClockStatus::Stopped);
-
-                        // Calculate time remaining
-                        let time_remaining = match clock_status {
-                            InfraClockStatus::Running => {
-                                if let Some(end_time) = clock_row.level_end_time {
-                                    let remaining = end_time - Utc::now();
-                                    Some(remaining.num_seconds().max(0))
-                                } else {
-                                    None
-                                }
-                            },
-                            InfraClockStatus::Paused => {
-                                if let (Some(end_time), Some(pause_start)) = (clock_row.level_end_time, clock_row.pause_started_at) {
-                                    let remaining = end_time - pause_start;
-                                    Some(remaining.num_seconds().max(0))
-                                } else {
-                                    None
-                                }
-                            },
-                            InfraClockStatus::Stopped => {
-                                // Show full duration of current level when stopped
-                                // If we can't get current level, try to get level 1 as fallback
-                                if let Ok(all_structures) = repo.get_all_structures(tournament_id).await {
-                                    if let Some(current_struct) = all_structures.iter().find(|s| s.level_number == clock_row.current_level) {
-                                        Some((current_struct.duration_minutes as i64) * 60)
-                                    } else if let Some(first_struct) = all_structures.iter().find(|s| s.level_number == 1) {
-                                        Some((first_struct.duration_minutes as i64) * 60)
-                                    } else {
-                                        Some((structure.duration_minutes as i64) * 60)
-                                    }
-                                } else {
-                                    Some((structure.duration_minutes as i64) * 60)
-                                }
-                            }
-                        };
-
-                        // Get next level preview
-                        let next_level_preview = repo.get_all_structures(tournament_id).await
-                            .ok()
-                            .and_then(|structures| {
-                                structures.into_iter()
-                                    .find(|s| s.level_number == clock_row.current_level + 1)
-                                    .map(|s| TournamentStructure {
-                                        id: s.id.into(),
-                                        tournament_id: s.tournament_id.into(),
-                                        level_number: s.level_number,
-                                        small_blind: s.small_blind,
-                                        big_blind: s.big_blind,
-                                        ante: s.ante,
-                                        duration_minutes: s.duration_minutes,
-                                        is_break: s.is_break,
-                                        break_duration_minutes: s.break_duration_minutes,
-                                    })
-                            });
-
-                        // Convert PgInterval to seconds for total pause duration
-                        let total_pause_seconds = clock_row.total_pause_duration.microseconds / 1_000_000;
-
-                        let update = TournamentClock {
-                            id: clock_row.id.into(),
-                            tournament_id: tournament_id.into(),
-                            status: clock_status.into(),
-                            current_level: clock_row.current_level,
-                            time_remaining_seconds: time_remaining,
-                            level_started_at: clock_row.level_started_at,
-                            level_end_time: clock_row.level_end_time,
-                            total_pause_duration_seconds: total_pause_seconds,
-                            auto_advance: clock_row.auto_advance,
-                            current_structure: Some(TournamentStructure {
-                                id: structure.id.into(),
-                                tournament_id: structure.tournament_id.into(),
-                                level_number: structure.level_number,
-                                small_blind: structure.small_blind,
-                                big_blind: structure.big_blind,
-                                ante: structure.ante,
-                                duration_minutes: structure.duration_minutes,
-                                is_break: structure.is_break,
-                                break_duration_minutes: structure.break_duration_minutes,
-                            }),
-                            next_structure: next_level_preview,
-                            // Additional fields from ClockUpdate
-                            small_blind: Some(structure.small_blind),
-                            big_blind: Some(structure.big_blind),
-                            ante: Some(structure.ante),
-                            is_break: Some(structure.is_break),
-                            level_duration_minutes: Some(structure.duration_minutes),
-                        };
-
-                        yield update;
-                    }
-                }
-            }
-        })
+        Ok(clock)
     }
 }

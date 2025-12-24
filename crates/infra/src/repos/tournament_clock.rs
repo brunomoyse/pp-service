@@ -82,8 +82,6 @@ impl TournamentClockRepo {
         .fetch_one(&self.pool)
         .await?;
 
-        // Note: tournament_state table was removed - clock state is now tracked in tournament_clocks table only
-
         Ok(clock)
     }
 
@@ -127,6 +125,7 @@ impl TournamentClockRepo {
         )
         .await?;
 
+
         Ok(clock)
     }
 
@@ -160,6 +159,7 @@ impl TournamentClockRepo {
             serde_json::json!({}),
         )
         .await?;
+
 
         Ok(clock)
     }
@@ -196,6 +196,7 @@ impl TournamentClockRepo {
             serde_json::json!({}),
         )
         .await?;
+
 
         Ok(clock)
     }
@@ -261,6 +262,7 @@ impl TournamentClockRepo {
             serde_json::json!({}),
         )
         .await?;
+
 
         Ok(clock)
     }
@@ -330,6 +332,7 @@ impl TournamentClockRepo {
             serde_json::json!({}),
         )
         .await?;
+
 
         Ok(clock)
     }
