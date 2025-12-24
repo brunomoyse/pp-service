@@ -1,11 +1,14 @@
 use async_graphql::{Context, Result, Subscription};
 use futures_util::Stream;
 use once_cell::sync::Lazy;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::{errors::BroadcastStreamRecvError, BroadcastStream};
+use uuid::Uuid;
 
-use crate::gql::types::{PlayerRegistrationEvent, SeatingChangeEvent};
+use crate::auth::jwt::Claims;
+use crate::gql::types::{PlayerRegistrationEvent, SeatingChangeEvent, UserNotification};
 
 static REGISTRATION_BROADCASTER: Lazy<Arc<Mutex<broadcast::Sender<PlayerRegistrationEvent>>>> =
     Lazy::new(|| {
@@ -18,6 +21,10 @@ static SEATING_BROADCASTER: Lazy<Arc<Mutex<broadcast::Sender<SeatingChangeEvent>
         let (tx, _) = broadcast::channel(1000);
         Arc::new(Mutex::new(tx))
     });
+
+/// Per-user notification channels - only sends to the specific user
+static USER_NOTIFICATION_CHANNELS: Lazy<Arc<Mutex<HashMap<Uuid, broadcast::Sender<UserNotification>>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 pub struct SubscriptionRoot;
 
@@ -88,6 +95,30 @@ impl SubscriptionRoot {
             },
         ))
     }
+
+    /// Subscribe to user-specific notifications (requires authentication)
+    async fn user_notifications(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<impl Stream<Item = Result<UserNotification, BroadcastStreamRecvError>>> {
+        // Get authenticated user
+        let claims = ctx.data::<Claims>()?;
+        let user_id = Uuid::parse_str(&claims.sub)
+            .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
+
+        // Get or create channel for this user
+        let receiver = {
+            let mut channels = USER_NOTIFICATION_CHANNELS.lock().unwrap();
+            let sender = channels.entry(user_id).or_insert_with(|| {
+                let (tx, _) = broadcast::channel(100);
+                tx
+            });
+            sender.subscribe()
+        };
+
+        // No filtering needed - this channel is already user-specific
+        Ok(BroadcastStream::new(receiver))
+    }
 }
 
 pub fn publish_registration_event(event: PlayerRegistrationEvent) {
@@ -99,5 +130,24 @@ pub fn publish_registration_event(event: PlayerRegistrationEvent) {
 pub fn publish_seating_event(event: SeatingChangeEvent) {
     if let Ok(sender) = SEATING_BROADCASTER.lock() {
         let _ = sender.send(event);
+    }
+}
+
+/// Publish notification to a specific user's channel
+/// Only the target user receives it - no broadcasting to all subscribers
+pub fn publish_user_notification(notification: UserNotification) {
+    // Parse user_id from the notification
+    let user_id = match Uuid::parse_str(notification.user_id.as_str()) {
+        Ok(id) => id,
+        Err(_) => return, // Invalid user_id, skip
+    };
+
+    // Send only to this user's channel if they have one
+    if let Ok(channels) = USER_NOTIFICATION_CHANNELS.lock() {
+        if let Some(sender) = channels.get(&user_id) {
+            let _ = sender.send(notification);
+        }
+        // If user has no channel (not subscribed), notification is simply not delivered
+        // This is fine - real-time only, no persistence
     }
 }

@@ -1,16 +1,17 @@
 use async_graphql::{Context, InputObject, Object, Result, ID};
+use chrono::Utc;
 
-use super::subscriptions::{publish_registration_event, publish_seating_event};
+use super::subscriptions::{publish_registration_event, publish_seating_event, publish_user_notification};
 use super::types::{
     AddTournamentEntryInput, AssignPlayerToSeatInput, AssignTableToTournamentInput,
     AssignmentStrategy, AuthPayload, BalanceTablesInput, CheckInPlayerInput, CheckInResponse,
     CreateOAuthClientInput, CreateOAuthClientResponse, DealType, EnterTournamentResultsInput,
-    EnterTournamentResultsResponse, EntryType, MovePlayerInput, OAuthCallbackInput, OAuthClient,
+    EnterTournamentResultsResponse, EntryType, MovePlayerInput, NotificationType, OAuthCallbackInput, OAuthClient,
     OAuthUrlResponse, PlayerDeal, PlayerDealInput, PlayerPositionInput, PlayerRegistrationEvent,
     RegisterForTournamentInput, RegistrationStatus, Role, SeatAssignment, SeatingChangeEvent,
     SeatingEventType, Tournament, TournamentEntry, TournamentPlayer, TournamentRegistration,
     TournamentResult, TournamentTable, UpdateStackSizeInput, UpdateTournamentStatusInput, User,
-    UserLoginInput, UserRegistrationInput,
+    UserLoginInput, UserNotification, UserRegistrationInput,
 };
 use crate::auth::{
     custom_oauth::CustomOAuthService, password::PasswordService, permissions::require_admin_if,
@@ -244,6 +245,23 @@ impl MutationRoot {
             };
 
             publish_registration_event(event);
+        }
+
+        // Get tournament name for notification message
+        let tournament_repo = TournamentRepo::new(state.db.clone());
+        if let Ok(Some(tournament)) = tournament_repo.get(tournament_id).await {
+            // Publish registration confirmed notification to the user
+            let notification = UserNotification {
+                id: ID::from(Uuid::new_v4().to_string()),
+                user_id: ID::from(user_id.to_string()),
+                notification_type: NotificationType::RegistrationConfirmed,
+                title: "Registration Confirmed".to_string(),
+                message: format!("You are registered for {}", tournament.name),
+                tournament_id: Some(ID::from(tournament_id.to_string())),
+                created_at: Utc::now(),
+            };
+
+            publish_user_notification(notification);
         }
 
         Ok(tournament_registration)
@@ -1239,6 +1257,34 @@ impl MutationRoot {
             timestamp: chrono::Utc::now(),
         };
         publish_seating_event(event);
+
+        // Notify all registered players about the status change
+        let registration_repo = TournamentRegistrationRepo::new(state.db.clone());
+        if let Ok(registrations) = registration_repo.get_by_tournament(tournament_id).await {
+            let status_label = match input.live_status {
+                crate::gql::types::TournamentLiveStatus::NotStarted => "not started",
+                crate::gql::types::TournamentLiveStatus::RegistrationOpen => "open for registration",
+                crate::gql::types::TournamentLiveStatus::LateRegistration => "in late registration",
+                crate::gql::types::TournamentLiveStatus::InProgress => "in progress",
+                crate::gql::types::TournamentLiveStatus::Break => "on break",
+                crate::gql::types::TournamentLiveStatus::FinalTable => "at the final table",
+                crate::gql::types::TournamentLiveStatus::Finished => "finished",
+            };
+
+            for reg in registrations {
+                let notification = UserNotification {
+                    id: ID::from(Uuid::new_v4().to_string()),
+                    user_id: ID::from(reg.user_id.to_string()),
+                    notification_type: NotificationType::TournamentStatusChanged,
+                    title: "Tournament Update".to_string(),
+                    message: format!("{} is now {}", tournament_row.name, status_label),
+                    tournament_id: Some(ID::from(tournament_id.to_string())),
+                    created_at: Utc::now(),
+                };
+
+                publish_user_notification(notification);
+            }
+        }
 
         Ok(Tournament {
             id: tournament_row.id.into(),

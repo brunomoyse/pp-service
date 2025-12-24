@@ -1,10 +1,11 @@
-use sqlx::PgPool;
+use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use api::app::build_router;
 use api::gql::build_schema;
-use api::services::spawn_clock_service;
+use api::metrics;
+use api::services::{spawn_clock_service, spawn_notification_service};
 use api::state::AppState;
 
 #[tokio::main]
@@ -16,10 +17,26 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    // Initialize metrics BEFORE anything else
+    metrics::init_metrics()?;
+    tracing::info!("Metrics server listening on :9090/metrics");
+
     dotenvy::dotenv().ok();
 
-    let pool = PgPool::connect(&std::env::var("DATABASE_URL")?).await?;
-    tracing::info!("Connected to Postgres");
+    // Configure connection pool with appropriate limits
+    let max_connections: u32 = std::env::var("DATABASE_MAX_CONNECTIONS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(30);
+
+    let pool = PgPoolOptions::new()
+        .max_connections(max_connections)
+        .acquire_timeout(std::time::Duration::from_secs(3))
+        .idle_timeout(Some(std::time::Duration::from_secs(600))) // 10 minutes
+        .max_lifetime(Some(std::time::Duration::from_secs(1800))) // 30 minutes
+        .connect(&std::env::var("DATABASE_URL")?)
+        .await?;
+    tracing::info!("Connected to Postgres with max {} connections", max_connections);
 
     // Run database migrations automatically on startup (can be disabled with SKIP_MIGRATIONS=true)
     let skip_migrations = std::env::var("SKIP_MIGRATIONS")
@@ -34,6 +51,13 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("Database migrations completed successfully");
     }
 
+    // Spawn database pool monitoring task
+    let pool_clone = pool.clone();
+    tokio::spawn(async move {
+        metrics::monitor_db_pool(pool_clone).await;
+    });
+    tracing::info!("Database pool monitoring started");
+
     let state = AppState::new(pool)?;
 
     // Build GraphQL schema from the gql module
@@ -42,6 +66,10 @@ async fn main() -> anyhow::Result<()> {
     // Start the background clock service for auto-advancing tournament levels
     let _clock_handle = spawn_clock_service(state.clone());
     tracing::info!("Tournament clock service started");
+
+    // Start the background notification service for "tournament starting soon" alerts
+    let _notification_handle = spawn_notification_service(state.clone());
+    tracing::info!("Notification service started");
 
     let app = build_router(state, schema);
 

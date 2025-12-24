@@ -181,4 +181,26 @@ impl TournamentRepo {
         .fetch_all(&self.pool)
         .await
     }
+
+    /// Get tournaments starting within the specified number of minutes
+    /// Used for "tournament starting soon" notifications
+    pub async fn get_tournaments_starting_soon(
+        &self,
+        within_minutes: i32,
+    ) -> SqlxResult<Vec<TournamentRow>> {
+        sqlx::query_as::<_, TournamentRow>(
+            r#"
+            SELECT id, club_id, name, description, start_time, end_time,
+                   buy_in_cents, seat_cap, live_status, created_at, updated_at
+            FROM tournaments
+            WHERE live_status IN ('not_started', 'registration_open')
+              AND start_time > NOW()
+              AND start_time <= NOW() + ($1 || ' minutes')::INTERVAL
+            ORDER BY start_time ASC
+            "#,
+        )
+        .bind(within_minutes)
+        .fetch_all(&self.pool)
+        .await
+    }
 }
