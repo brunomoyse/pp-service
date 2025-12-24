@@ -801,6 +801,27 @@ pub enum SeatingEventType {
 }
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
+pub enum NotificationType {
+    #[graphql(name = "TOURNAMENT_STARTING_SOON")]
+    TournamentStartingSoon,
+    #[graphql(name = "REGISTRATION_CONFIRMED")]
+    RegistrationConfirmed,
+    #[graphql(name = "TOURNAMENT_STATUS_CHANGED")]
+    TournamentStatusChanged,
+}
+
+#[derive(SimpleObject, Clone, Debug)]
+pub struct UserNotification {
+    pub id: ID,
+    pub user_id: ID,
+    pub notification_type: NotificationType,
+    pub title: String,
+    pub message: String,
+    pub tournament_id: Option<ID>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
 pub enum LeaderboardPeriod {
     #[graphql(name = "ALL_TIME")]
     AllTime,
