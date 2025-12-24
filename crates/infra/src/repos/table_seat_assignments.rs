@@ -408,4 +408,21 @@ impl TableSeatAssignmentRepo {
 
         Ok(result.0 == 0)
     }
+
+    /// Get all occupied seat numbers for a table (batch query instead of N individual checks)
+    pub async fn get_occupied_seats(&self, club_table_id: Uuid) -> SqlxResult<Vec<i32>> {
+        let rows: Vec<(i32,)> = sqlx::query_as(
+            r#"
+            SELECT seat_number
+            FROM table_seat_assignments
+            WHERE club_table_id = $1 AND is_current = true
+            ORDER BY seat_number
+            "#,
+        )
+        .bind(club_table_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|(seat,)| seat).collect())
+    }
 }

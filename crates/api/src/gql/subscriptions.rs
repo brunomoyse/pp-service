@@ -1,8 +1,9 @@
 use async_graphql::{Context, Result, Subscription};
 use futures_util::Stream;
 use once_cell::sync::Lazy;
+use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::{errors::BroadcastStreamRecvError, BroadcastStream};
 use uuid::Uuid;
@@ -54,22 +55,16 @@ impl SubscriptionChannels {
             .or_insert_with(TournamentChannels::new)
     }
 
-    fn get_or_create_user(
-        &mut self,
-        user_id: Uuid,
-    ) -> &broadcast::Sender<UserNotification> {
-        self.users.entry(user_id).or_insert_with(|| {
-            broadcast::channel(100).0
-        })
+    fn get_or_create_user(&mut self, user_id: Uuid) -> &broadcast::Sender<UserNotification> {
+        self.users
+            .entry(user_id)
+            .or_insert_with(|| broadcast::channel(100).0)
     }
 
-    fn get_or_create_club(
-        &mut self,
-        club_id: Uuid,
-    ) -> &broadcast::Sender<SeatingChangeEvent> {
-        self.clubs.entry(club_id).or_insert_with(|| {
-            broadcast::channel(100).0
-        })
+    fn get_or_create_club(&mut self, club_id: Uuid) -> &broadcast::Sender<SeatingChangeEvent> {
+        self.clubs
+            .entry(club_id)
+            .or_insert_with(|| broadcast::channel(100).0)
     }
 }
 
@@ -89,7 +84,7 @@ impl SubscriptionRoot {
             .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
 
         let receiver = {
-            let mut channels = CHANNELS.lock().unwrap();
+            let mut channels = CHANNELS.lock();
             let tournament = channels.get_or_create_tournament(tournament_uuid);
             tournament.clock.subscribe()
         };
@@ -106,7 +101,7 @@ impl SubscriptionRoot {
             .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
 
         let receiver = {
-            let mut channels = CHANNELS.lock().unwrap();
+            let mut channels = CHANNELS.lock();
             let tournament = channels.get_or_create_tournament(tournament_uuid);
             tournament.registrations.subscribe()
         };
@@ -123,7 +118,7 @@ impl SubscriptionRoot {
             .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
 
         let receiver = {
-            let mut channels = CHANNELS.lock().unwrap();
+            let mut channels = CHANNELS.lock();
             let tournament = channels.get_or_create_tournament(tournament_uuid);
             tournament.seating.subscribe()
         };
@@ -146,7 +141,7 @@ impl SubscriptionRoot {
             .map_err(|e| async_graphql::Error::new(format!("Invalid club ID: {}", e)))?;
 
         let receiver = {
-            let mut channels = CHANNELS.lock().unwrap();
+            let mut channels = CHANNELS.lock();
             let club_sender = channels.get_or_create_club(club_uuid);
             club_sender.subscribe()
         };
@@ -164,7 +159,7 @@ impl SubscriptionRoot {
             .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
 
         let receiver = {
-            let mut channels = CHANNELS.lock().unwrap();
+            let mut channels = CHANNELS.lock();
             let user_sender = channels.get_or_create_user(user_id);
             user_sender.subscribe()
         };
@@ -184,10 +179,9 @@ pub fn publish_registration_event(event: PlayerRegistrationEvent) {
         Err(_) => return,
     };
 
-    if let Ok(mut channels) = CHANNELS.lock() {
-        let tournament = channels.get_or_create_tournament(tournament_id);
-        let _ = tournament.registrations.send(event);
-    }
+    let mut channels = CHANNELS.lock();
+    let tournament = channels.get_or_create_tournament(tournament_id);
+    let _ = tournament.registrations.send(event);
 }
 
 /// Publish a seating event to a tournament's channel and the club's channel
@@ -202,23 +196,21 @@ pub fn publish_seating_event(event: SeatingChangeEvent) {
         Err(_) => return,
     };
 
-    if let Ok(mut channels) = CHANNELS.lock() {
-        // Send to tournament channel
-        let tournament = channels.get_or_create_tournament(tournament_id);
-        let _ = tournament.seating.send(event.clone());
+    let mut channels = CHANNELS.lock();
+    // Send to tournament channel
+    let tournament = channels.get_or_create_tournament(tournament_id);
+    let _ = tournament.seating.send(event.clone());
 
-        // Also send to club channel (for managers watching all club tournaments)
-        let club_sender = channels.get_or_create_club(club_id);
-        let _ = club_sender.send(event);
-    }
+    // Also send to club channel (for managers watching all club tournaments)
+    let club_sender = channels.get_or_create_club(club_id);
+    let _ = club_sender.send(event);
 }
 
 /// Publish a clock update to a tournament's channel
 pub fn publish_clock_update(tournament_id: Uuid, clock: TournamentClock) {
-    if let Ok(mut channels) = CHANNELS.lock() {
-        let tournament = channels.get_or_create_tournament(tournament_id);
-        let _ = tournament.clock.send(clock);
-    }
+    let mut channels = CHANNELS.lock();
+    let tournament = channels.get_or_create_tournament(tournament_id);
+    let _ = tournament.clock.send(clock);
 }
 
 /// Publish a notification to a specific user's channel
@@ -228,8 +220,7 @@ pub fn publish_user_notification(notification: UserNotification) {
         Err(_) => return,
     };
 
-    if let Ok(mut channels) = CHANNELS.lock() {
-        let user_sender = channels.get_or_create_user(user_id);
-        let _ = user_sender.send(notification);
-    }
+    let mut channels = CHANNELS.lock();
+    let user_sender = channels.get_or_create_user(user_id);
+    let _ = user_sender.send(notification);
 }

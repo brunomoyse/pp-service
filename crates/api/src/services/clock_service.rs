@@ -1,13 +1,12 @@
 use chrono::Utc;
 use std::str::FromStr;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::time::{interval, Interval};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::gql::subscriptions::publish_clock_update;
 use crate::gql::types::{ClockStatus, TournamentClock, TournamentStructure};
-use crate::metrics::clock_service;
 use crate::AppState;
 use infra::repos::{ClockStatus as InfraClockStatus, TournamentClockRepo};
 
@@ -39,20 +38,14 @@ impl ClockService {
 
     /// Process all tournaments and advance levels if needed
     async fn process_tournaments(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let start = Instant::now();
         let repo = TournamentClockRepo::new(self.state.db.clone());
 
         // Get tournaments that need level advancement
         let tournament_ids = repo.get_tournaments_to_advance().await?;
 
-        // Track metrics
-        clock_service::track_tournaments_checked();
-        clock_service::set_tournaments_needing_advance(tournament_ids.len());
-
         for tournament_id in tournament_ids {
             match repo.advance_level(tournament_id, true, None).await {
                 Ok(clock_row) => {
-                    clock_service::track_auto_advance(true);
                     info!("Auto-advanced level for tournament {}", tournament_id);
 
                     // Publish clock update to subscribers
@@ -63,8 +56,6 @@ impl ClockService {
                     }
                 }
                 Err(e) => {
-                    clock_service::track_auto_advance(false);
-                    clock_service::track_error("advance_failed");
                     warn!(
                         "Failed to auto-advance level for tournament {}: {}",
                         tournament_id, e
@@ -72,11 +63,6 @@ impl ClockService {
                 }
             }
         }
-
-        // Track tick duration
-        let duration = start.elapsed().as_secs_f64();
-        clock_service::track_tick_duration(duration);
-        clock_service::update_last_tick_timestamp(Utc::now().timestamp());
 
         Ok(())
     }
@@ -90,25 +76,22 @@ impl ClockService {
     ) -> Result<Option<TournamentClock>, Box<dyn std::error::Error + Send + Sync>> {
         let structure = repo.get_current_structure(tournament_id).await.ok();
 
+        // Use get_next_structure() instead of fetching all structures
         let next_structure = repo
-            .get_all_structures(tournament_id)
+            .get_next_structure(tournament_id, clock_row.current_level)
             .await
             .ok()
-            .and_then(|structures| {
-                structures
-                    .into_iter()
-                    .find(|s| s.level_number == clock_row.current_level + 1)
-                    .map(|s| TournamentStructure {
-                        id: s.id.into(),
-                        tournament_id: s.tournament_id.into(),
-                        level_number: s.level_number,
-                        small_blind: s.small_blind,
-                        big_blind: s.big_blind,
-                        ante: s.ante,
-                        duration_minutes: s.duration_minutes,
-                        is_break: s.is_break,
-                        break_duration_minutes: s.break_duration_minutes,
-                    })
+            .flatten()
+            .map(|s| TournamentStructure {
+                id: s.id.into(),
+                tournament_id: s.tournament_id.into(),
+                level_number: s.level_number,
+                small_blind: s.small_blind,
+                big_blind: s.big_blind,
+                ante: s.ante,
+                duration_minutes: s.duration_minutes,
+                is_break: s.is_break,
+                break_duration_minutes: s.break_duration_minutes,
             });
 
         let clock_status = InfraClockStatus::from_str(&clock_row.clock_status)

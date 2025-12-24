@@ -1,17 +1,22 @@
-use async_graphql::{Context, InputObject, Object, Result, ID};
+use async_graphql::{dataloader::DataLoader, Context, InputObject, Object, Result, ID};
 use chrono::Utc;
 
-use super::subscriptions::{publish_registration_event, publish_seating_event, publish_user_notification};
+use super::loaders::UserLoader;
+
+use super::subscriptions::{
+    publish_registration_event, publish_seating_event, publish_user_notification,
+};
 use super::types::{
     AddTournamentEntryInput, AssignPlayerToSeatInput, AssignTableToTournamentInput,
     AssignmentStrategy, AuthPayload, BalanceTablesInput, CheckInPlayerInput, CheckInResponse,
     CreateOAuthClientInput, CreateOAuthClientResponse, DealType, EnterTournamentResultsInput,
-    EnterTournamentResultsResponse, EntryType, MovePlayerInput, NotificationType, OAuthCallbackInput, OAuthClient,
-    OAuthUrlResponse, PlayerDeal, PlayerDealInput, PlayerPositionInput, PlayerRegistrationEvent,
-    RegisterForTournamentInput, RegistrationStatus, Role, SeatAssignment, SeatingChangeEvent,
+    EnterTournamentResultsResponse, EntryType, MovePlayerInput, NotificationType,
+    OAuthCallbackInput, OAuthClient, OAuthUrlResponse, PlayerDeal, PlayerDealInput,
+    PlayerPositionInput, PlayerRegistrationEvent, RegisterForTournamentInput,
+    RegistrationEventType, RegistrationStatus, Role, SeatAssignment, SeatingChangeEvent,
     SeatingEventType, Tournament, TournamentEntry, TournamentPlayer, TournamentRegistration,
     TournamentResult, TournamentTable, UpdateStackSizeInput, UpdateTournamentStatusInput, User,
-    UserLoginInput, UserNotification, UserRegistrationInput,
+    UserLoginInput, UserNotification, UserRegistrationInput, TITLE_REGISTRATION_CONFIRMED,
 };
 use crate::auth::{
     custom_oauth::CustomOAuthService, password::PasswordService, permissions::require_admin_if,
@@ -22,9 +27,8 @@ use infra::models::TournamentRow;
 use infra::repos::{
     ClubTableRepo, CreatePlayerDeal, CreateSeatAssignment, CreateTournamentEntry,
     CreateTournamentRegistration, CreateTournamentResult, PayoutTemplateRepo, PlayerDealRepo,
-    TableSeatAssignmentRepo, TournamentEntryRepo, TournamentLiveStatus,
-    TournamentRegistrationRepo, TournamentRepo, TournamentResultRepo, UpdateSeatAssignment,
-    UserRepo,
+    TableSeatAssignmentRepo, TournamentEntryRepo, TournamentLiveStatus, TournamentRegistrationRepo,
+    TournamentRepo, TournamentResultRepo, UpdateSeatAssignment, UserRepo,
 };
 use rand::{distributions::Alphanumeric, Rng};
 use serde_json;
@@ -241,7 +245,7 @@ impl MutationRoot {
             let event = PlayerRegistrationEvent {
                 tournament_id: tournament_id.into(),
                 player,
-                event_type: "player_registered".to_string(),
+                event_type: RegistrationEventType::PlayerRegistered,
             };
 
             publish_registration_event(event);
@@ -255,7 +259,7 @@ impl MutationRoot {
                 id: ID::from(Uuid::new_v4().to_string()),
                 user_id: ID::from(user_id.to_string()),
                 notification_type: NotificationType::RegistrationConfirmed,
-                title: "Registration Confirmed".to_string(),
+                title: TITLE_REGISTRATION_CONFIRMED.to_string(),
                 message: format!("You are registered for {}", tournament.name),
                 tournament_id: Some(ID::from(tournament_id.to_string())),
                 created_at: Utc::now(),
@@ -280,7 +284,6 @@ impl MutationRoot {
 
         let state = ctx.data::<AppState>()?;
         let registration_repo = TournamentRegistrationRepo::new(state.db.clone());
-        let user_repo = UserRepo::new(state.db.clone());
         let club_table_repo = ClubTableRepo::new(state.db.clone());
         let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
 
@@ -381,16 +384,15 @@ impl MutationRoot {
                     _ => unreachable!(),
                 };
 
-                // Find all available seats and pick one randomly
-                let mut available_seats = Vec::new();
-                for seat_num in 1..=target_table.max_seats {
-                    if assignment_repo
-                        .is_seat_available(target_table.id, seat_num)
-                        .await?
-                    {
-                        available_seats.push(seat_num);
-                    }
-                }
+                // Get all occupied seats in one query and find available ones
+                let occupied_seats: std::collections::HashSet<i32> = assignment_repo
+                    .get_occupied_seats(target_table.id)
+                    .await?
+                    .into_iter()
+                    .collect();
+                let available_seats: Vec<i32> = (1..=target_table.max_seats)
+                    .filter(|seat| !occupied_seats.contains(seat))
+                    .collect();
 
                 if !available_seats.is_empty() {
                     // Pick a random seat from available ones
@@ -436,7 +438,12 @@ impl MutationRoot {
                     );
 
                     // Emit seating event
-                    if let Some(user_row) = user_repo.get_by_id(user_id).await? {
+                    let user_loader = ctx.data::<DataLoader<UserLoader>>()?;
+                    if let Some(user_row) = user_loader
+                        .load_one(user_id)
+                        .await
+                        .map_err(|e| async_graphql::Error::new(e.to_string()))?
+                    {
                         let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
                         let event = SeatingChangeEvent {
                             event_type: SeatingEventType::PlayerAssigned,
@@ -1263,7 +1270,9 @@ impl MutationRoot {
         if let Ok(registrations) = registration_repo.get_by_tournament(tournament_id).await {
             let status_label = match input.live_status {
                 crate::gql::types::TournamentLiveStatus::NotStarted => "not started",
-                crate::gql::types::TournamentLiveStatus::RegistrationOpen => "open for registration",
+                crate::gql::types::TournamentLiveStatus::RegistrationOpen => {
+                    "open for registration"
+                }
                 crate::gql::types::TournamentLiveStatus::LateRegistration => "in late registration",
                 crate::gql::types::TournamentLiveStatus::InProgress => "in progress",
                 crate::gql::types::TournamentLiveStatus::Break => "on break",
@@ -1399,53 +1408,57 @@ impl MutationRoot {
                     .map(|v| v.len())
                     .unwrap_or(0);
                 if current_count < target_per_table as usize {
-                    // Find an available seat
-                    for seat_num in 1..=target_table.max_seats {
-                        let is_available = assignment_repo
-                            .is_seat_available(target_table.id, seat_num)
+                    // Get all occupied seats in one query instead of checking each seat
+                    let occupied_seats: std::collections::HashSet<i32> = assignment_repo
+                        .get_occupied_seats(target_table.id)
+                        .await?
+                        .into_iter()
+                        .collect();
+
+                    // Find the first available seat
+                    let available_seat =
+                        (1..=target_table.max_seats).find(|seat| !occupied_seats.contains(seat));
+
+                    if let Some(seat_num) = available_seat {
+                        // Move the player
+                        let new_assignment = assignment_repo
+                            .move_player(
+                                tournament_id,
+                                player.user_id,
+                                target_table.id,
+                                seat_num,
+                                Some(manager_id),
+                                Some("Balanced by system".to_string()),
+                            )
                             .await?;
-                        if is_available {
-                            // Move the player
-                            let new_assignment = assignment_repo
-                                .move_player(
-                                    tournament_id,
-                                    player.user_id,
-                                    target_table.id,
-                                    seat_num,
-                                    Some(manager_id),
-                                    Some("Balanced by system".to_string()),
-                                )
-                                .await?;
 
-                            let assignment_for_response = SeatAssignment {
-                                id: new_assignment.id.into(),
-                                tournament_id: new_assignment.tournament_id.into(),
-                                club_table_id: new_assignment.club_table_id.into(),
-                                user_id: new_assignment.user_id.into(),
-                                seat_number: new_assignment.seat_number,
-                                stack_size: new_assignment.stack_size,
-                                is_current: new_assignment.is_current,
-                                assigned_at: new_assignment.assigned_at,
-                                unassigned_at: None, // Field not yet implemented in database
-                                assigned_by: None,   // Field not yet implemented in database
-                                notes: None,         // Field not yet implemented in database
-                            };
+                        let assignment_for_response = SeatAssignment {
+                            id: new_assignment.id.into(),
+                            tournament_id: new_assignment.tournament_id.into(),
+                            club_table_id: new_assignment.club_table_id.into(),
+                            user_id: new_assignment.user_id.into(),
+                            seat_number: new_assignment.seat_number,
+                            stack_size: new_assignment.stack_size,
+                            is_current: new_assignment.is_current,
+                            assigned_at: new_assignment.assigned_at,
+                            unassigned_at: None, // Field not yet implemented in database
+                            assigned_by: None,   // Field not yet implemented in database
+                            notes: None,         // Field not yet implemented in database
+                        };
 
-                            moves.push(assignment_for_response);
+                        moves.push(assignment_for_response);
 
-                            // Update our tracking
-                            table_players
-                                .entry(target_table.id)
-                                .or_default()
-                                .push(new_assignment);
+                        // Update our tracking
+                        table_players
+                            .entry(target_table.id)
+                            .or_default()
+                            .push(new_assignment);
 
-                            // Check if this table is now full
-                            if table_players.get(&target_table.id).unwrap().len()
-                                >= target_per_table as usize
-                            {
-                                need_players.remove(0);
-                            }
-                            break;
+                        // Check if this table is now full
+                        if table_players.get(&target_table.id).unwrap().len()
+                            >= target_per_table as usize
+                        {
+                            need_players.remove(0);
                         }
                     }
                 }
