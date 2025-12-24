@@ -8,92 +8,150 @@ use tokio_stream::wrappers::{errors::BroadcastStreamRecvError, BroadcastStream};
 use uuid::Uuid;
 
 use crate::auth::jwt::Claims;
-use crate::gql::types::{PlayerRegistrationEvent, SeatingChangeEvent, UserNotification};
+use crate::gql::types::{
+    PlayerRegistrationEvent, Role, SeatingChangeEvent, TournamentClock, UserNotification,
+};
 
-static REGISTRATION_BROADCASTER: Lazy<Arc<Mutex<broadcast::Sender<PlayerRegistrationEvent>>>> =
-    Lazy::new(|| {
-        let (tx, _) = broadcast::channel(1000);
-        Arc::new(Mutex::new(tx))
-    });
+/// Per-tournament channels for real-time updates
+struct TournamentChannels {
+    registrations: broadcast::Sender<PlayerRegistrationEvent>,
+    seating: broadcast::Sender<SeatingChangeEvent>,
+    clock: broadcast::Sender<TournamentClock>,
+}
 
-static SEATING_BROADCASTER: Lazy<Arc<Mutex<broadcast::Sender<SeatingChangeEvent>>>> =
-    Lazy::new(|| {
-        let (tx, _) = broadcast::channel(1000);
-        Arc::new(Mutex::new(tx))
-    });
+impl TournamentChannels {
+    fn new() -> Self {
+        Self {
+            registrations: broadcast::channel(100).0,
+            seating: broadcast::channel(100).0,
+            clock: broadcast::channel(100).0,
+        }
+    }
+}
 
-/// Per-user notification channels - only sends to the specific user
-static USER_NOTIFICATION_CHANNELS: Lazy<Arc<Mutex<HashMap<Uuid, broadcast::Sender<UserNotification>>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+/// All subscription channels
+struct SubscriptionChannels {
+    /// Per-tournament channels (registrations, seating, clock)
+    tournaments: HashMap<Uuid, TournamentChannels>,
+    /// Per-user notification channels
+    users: HashMap<Uuid, broadcast::Sender<UserNotification>>,
+    /// Per-club seating channels (for managers watching all club tournaments)
+    clubs: HashMap<Uuid, broadcast::Sender<SeatingChangeEvent>>,
+}
+
+impl SubscriptionChannels {
+    fn new() -> Self {
+        Self {
+            tournaments: HashMap::new(),
+            users: HashMap::new(),
+            clubs: HashMap::new(),
+        }
+    }
+
+    fn get_or_create_tournament(&mut self, tournament_id: Uuid) -> &TournamentChannels {
+        self.tournaments
+            .entry(tournament_id)
+            .or_insert_with(TournamentChannels::new)
+    }
+
+    fn get_or_create_user(
+        &mut self,
+        user_id: Uuid,
+    ) -> &broadcast::Sender<UserNotification> {
+        self.users.entry(user_id).or_insert_with(|| {
+            broadcast::channel(100).0
+        })
+    }
+
+    fn get_or_create_club(
+        &mut self,
+        club_id: Uuid,
+    ) -> &broadcast::Sender<SeatingChangeEvent> {
+        self.clubs.entry(club_id).or_insert_with(|| {
+            broadcast::channel(100).0
+        })
+    }
+}
+
+static CHANNELS: Lazy<Arc<Mutex<SubscriptionChannels>>> =
+    Lazy::new(|| Arc::new(Mutex::new(SubscriptionChannels::new())));
 
 pub struct SubscriptionRoot;
 
 #[Subscription]
 impl SubscriptionRoot {
-    /// Subscribe to tournament clock updates
+    /// Subscribe to tournament clock updates for a specific tournament
     async fn tournament_clock_updates(
         &self,
-        ctx: &Context<'_>,
         tournament_id: async_graphql::ID,
-    ) -> Result<impl Stream<Item = crate::gql::types::TournamentClock>, async_graphql::Error> {
-        let subscription = crate::gql::tournament_clock::TournamentClockSubscription;
-        subscription
-            .tournament_clock_updates(ctx, tournament_id)
-            .await
+    ) -> Result<impl Stream<Item = Result<TournamentClock, BroadcastStreamRecvError>>> {
+        let tournament_uuid = Uuid::parse_str(tournament_id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+
+        let receiver = {
+            let mut channels = CHANNELS.lock().unwrap();
+            let tournament = channels.get_or_create_tournament(tournament_uuid);
+            tournament.clock.subscribe()
+        };
+
+        Ok(BroadcastStream::new(receiver))
     }
 
-    /// Subscribe to player registration events for all tournaments
+    /// Subscribe to player registration events for a specific tournament
     async fn tournament_registrations(
         &self,
-    ) -> impl Stream<Item = Result<PlayerRegistrationEvent, BroadcastStreamRecvError>> {
-        let receiver = REGISTRATION_BROADCASTER.lock().unwrap().subscribe();
-        BroadcastStream::new(receiver)
+        tournament_id: async_graphql::ID,
+    ) -> Result<impl Stream<Item = Result<PlayerRegistrationEvent, BroadcastStreamRecvError>>> {
+        let tournament_uuid = Uuid::parse_str(tournament_id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+
+        let receiver = {
+            let mut channels = CHANNELS.lock().unwrap();
+            let tournament = channels.get_or_create_tournament(tournament_uuid);
+            tournament.registrations.subscribe()
+        };
+
+        Ok(BroadcastStream::new(receiver))
     }
 
     /// Subscribe to seating changes for a specific tournament
     async fn tournament_seating_changes(
         &self,
         tournament_id: async_graphql::ID,
-    ) -> impl Stream<Item = Result<SeatingChangeEvent, BroadcastStreamRecvError>> {
-        let receiver = SEATING_BROADCASTER.lock().unwrap().subscribe();
-        let tournament_id_filter = tournament_id.to_string();
+    ) -> Result<impl Stream<Item = Result<SeatingChangeEvent, BroadcastStreamRecvError>>> {
+        let tournament_uuid = Uuid::parse_str(tournament_id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
 
-        tokio_stream::StreamExt::filter(BroadcastStream::new(receiver), move |event| {
-            match event {
-                Ok(seating_event) => seating_event.tournament_id.as_str() == tournament_id_filter,
-                Err(_) => true, // Let errors through
-            }
-        })
+        let receiver = {
+            let mut channels = CHANNELS.lock().unwrap();
+            let tournament = channels.get_or_create_tournament(tournament_uuid);
+            tournament.seating.subscribe()
+        };
+
+        Ok(BroadcastStream::new(receiver))
     }
 
-    /// Subscribe to seating changes for all tournaments in manager's club (managers only)
+    /// Subscribe to seating changes for all tournaments in a club (managers only)
     async fn club_seating_changes(
         &self,
         ctx: &Context<'_>,
         club_id: async_graphql::ID,
     ) -> Result<impl Stream<Item = Result<SeatingChangeEvent, BroadcastStreamRecvError>>> {
         use crate::auth::permissions::require_role;
-        use crate::gql::types::Role;
 
         // Require manager role
         let _manager = require_role(ctx, Role::Manager).await?;
 
-        // TODO: Verify manager belongs to this club (would need club_user relationship)
-        // For now, we trust the manager can only manage their own club
+        let club_uuid = Uuid::parse_str(club_id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid club ID: {}", e)))?;
 
-        let receiver = SEATING_BROADCASTER.lock().unwrap().subscribe();
-        let club_id_filter = club_id.to_string();
+        let receiver = {
+            let mut channels = CHANNELS.lock().unwrap();
+            let club_sender = channels.get_or_create_club(club_uuid);
+            club_sender.subscribe()
+        };
 
-        // Filter events by club_id
-        Ok(tokio_stream::StreamExt::filter(
-            BroadcastStream::new(receiver),
-            move |event| {
-                match event {
-                    Ok(seating_event) => seating_event.club_id.as_str() == club_id_filter,
-                    Err(_) => true, // Let errors through
-                }
-            },
-        ))
+        Ok(BroadcastStream::new(receiver))
     }
 
     /// Subscribe to user-specific notifications (requires authentication)
@@ -101,53 +159,77 @@ impl SubscriptionRoot {
         &self,
         ctx: &Context<'_>,
     ) -> Result<impl Stream<Item = Result<UserNotification, BroadcastStreamRecvError>>> {
-        // Get authenticated user
         let claims = ctx.data::<Claims>()?;
         let user_id = Uuid::parse_str(&claims.sub)
             .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
 
-        // Get or create channel for this user
         let receiver = {
-            let mut channels = USER_NOTIFICATION_CHANNELS.lock().unwrap();
-            let sender = channels.entry(user_id).or_insert_with(|| {
-                let (tx, _) = broadcast::channel(100);
-                tx
-            });
-            sender.subscribe()
+            let mut channels = CHANNELS.lock().unwrap();
+            let user_sender = channels.get_or_create_user(user_id);
+            user_sender.subscribe()
         };
 
-        // No filtering needed - this channel is already user-specific
         Ok(BroadcastStream::new(receiver))
     }
 }
 
+// ============================================================================
+// Publish functions - send events to specific channels
+// ============================================================================
+
+/// Publish a registration event to a tournament's channel
 pub fn publish_registration_event(event: PlayerRegistrationEvent) {
-    if let Ok(sender) = REGISTRATION_BROADCASTER.lock() {
-        let _ = sender.send(event);
-    }
-}
-
-pub fn publish_seating_event(event: SeatingChangeEvent) {
-    if let Ok(sender) = SEATING_BROADCASTER.lock() {
-        let _ = sender.send(event);
-    }
-}
-
-/// Publish notification to a specific user's channel
-/// Only the target user receives it - no broadcasting to all subscribers
-pub fn publish_user_notification(notification: UserNotification) {
-    // Parse user_id from the notification
-    let user_id = match Uuid::parse_str(notification.user_id.as_str()) {
+    let tournament_id = match Uuid::parse_str(event.tournament_id.as_str()) {
         Ok(id) => id,
-        Err(_) => return, // Invalid user_id, skip
+        Err(_) => return,
     };
 
-    // Send only to this user's channel if they have one
-    if let Ok(channels) = USER_NOTIFICATION_CHANNELS.lock() {
-        if let Some(sender) = channels.get(&user_id) {
-            let _ = sender.send(notification);
-        }
-        // If user has no channel (not subscribed), notification is simply not delivered
-        // This is fine - real-time only, no persistence
+    if let Ok(mut channels) = CHANNELS.lock() {
+        let tournament = channels.get_or_create_tournament(tournament_id);
+        let _ = tournament.registrations.send(event);
+    }
+}
+
+/// Publish a seating event to a tournament's channel and the club's channel
+pub fn publish_seating_event(event: SeatingChangeEvent) {
+    let tournament_id = match Uuid::parse_str(event.tournament_id.as_str()) {
+        Ok(id) => id,
+        Err(_) => return,
+    };
+
+    let club_id = match Uuid::parse_str(event.club_id.as_str()) {
+        Ok(id) => id,
+        Err(_) => return,
+    };
+
+    if let Ok(mut channels) = CHANNELS.lock() {
+        // Send to tournament channel
+        let tournament = channels.get_or_create_tournament(tournament_id);
+        let _ = tournament.seating.send(event.clone());
+
+        // Also send to club channel (for managers watching all club tournaments)
+        let club_sender = channels.get_or_create_club(club_id);
+        let _ = club_sender.send(event);
+    }
+}
+
+/// Publish a clock update to a tournament's channel
+pub fn publish_clock_update(tournament_id: Uuid, clock: TournamentClock) {
+    if let Ok(mut channels) = CHANNELS.lock() {
+        let tournament = channels.get_or_create_tournament(tournament_id);
+        let _ = tournament.clock.send(clock);
+    }
+}
+
+/// Publish a notification to a specific user's channel
+pub fn publish_user_notification(notification: UserNotification) {
+    let user_id = match Uuid::parse_str(notification.user_id.as_str()) {
+        Ok(id) => id,
+        Err(_) => return,
+    };
+
+    if let Ok(mut channels) = CHANNELS.lock() {
+        let user_sender = channels.get_or_create_user(user_id);
+        let _ = user_sender.send(notification);
     }
 }
