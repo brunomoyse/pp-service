@@ -2,15 +2,15 @@ use async_graphql::{Context, InputObject, Object, Result, ID};
 
 use super::subscriptions::{publish_registration_event, publish_seating_event};
 use super::types::{
-    AssignPlayerToSeatInput, AssignTableToTournamentInput, AssignmentStrategy, AuthPayload,
-    BalanceTablesInput, CheckInPlayerInput, CheckInResponse, CreateOAuthClientInput,
-    CreateOAuthClientResponse, DealType, EnterTournamentResultsInput,
-    EnterTournamentResultsResponse, MovePlayerInput, OAuthCallbackInput, OAuthClient,
+    AddTournamentEntryInput, AssignPlayerToSeatInput, AssignTableToTournamentInput,
+    AssignmentStrategy, AuthPayload, BalanceTablesInput, CheckInPlayerInput, CheckInResponse,
+    CreateOAuthClientInput, CreateOAuthClientResponse, DealType, EnterTournamentResultsInput,
+    EnterTournamentResultsResponse, EntryType, MovePlayerInput, OAuthCallbackInput, OAuthClient,
     OAuthUrlResponse, PlayerDeal, PlayerDealInput, PlayerPositionInput, PlayerRegistrationEvent,
     RegisterForTournamentInput, RegistrationStatus, Role, SeatAssignment, SeatingChangeEvent,
-    SeatingEventType, Tournament, TournamentPlayer, TournamentRegistration, TournamentResult,
-    TournamentTable, UpdateStackSizeInput, UpdateTournamentStatusInput, User, UserLoginInput,
-    UserRegistrationInput,
+    SeatingEventType, Tournament, TournamentEntry, TournamentPlayer, TournamentRegistration,
+    TournamentResult, TournamentTable, UpdateStackSizeInput, UpdateTournamentStatusInput, User,
+    UserLoginInput, UserRegistrationInput,
 };
 use crate::auth::{
     custom_oauth::CustomOAuthService, password::PasswordService, permissions::require_admin_if,
@@ -19,10 +19,11 @@ use crate::auth::{
 use crate::state::AppState;
 use infra::models::TournamentRow;
 use infra::repos::{
-    ClubTableRepo, CreatePlayerDeal, CreateSeatAssignment, CreateTournamentRegistration,
-    CreateTournamentResult, PayoutTemplateRepo, PlayerDealRepo, TableSeatAssignmentRepo,
-    TournamentLiveStatus, TournamentRegistrationRepo, TournamentRepo, TournamentResultRepo,
-    UpdateSeatAssignment, UserRepo,
+    ClubTableRepo, CreatePlayerDeal, CreateSeatAssignment, CreateTournamentEntry,
+    CreateTournamentRegistration, CreateTournamentResult, PayoutTemplateRepo, PlayerDealRepo,
+    TableSeatAssignmentRepo, TournamentEntryRepo, TournamentLiveStatus,
+    TournamentRegistrationRepo, TournamentRepo, TournamentResultRepo, UpdateSeatAssignment,
+    UserRepo,
 };
 use rand::{distributions::Alphanumeric, Rng};
 use serde_json;
@@ -1509,6 +1510,93 @@ impl MutationRoot {
                 "Player not currently assigned to a seat",
             ))
         }
+    }
+
+    /// Add a tournament entry (initial buy-in, rebuy, re-entry, or add-on)
+    /// Requires club manager permission for the tournament's club
+    async fn add_tournament_entry(
+        &self,
+        ctx: &Context<'_>,
+        input: AddTournamentEntryInput,
+    ) -> Result<TournamentEntry> {
+        use crate::auth::permissions::require_club_manager;
+
+        let state = ctx.data::<AppState>()?;
+        let tournament_id = Uuid::parse_str(input.tournament_id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+        let user_id = Uuid::parse_str(input.user_id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
+
+        // Get club ID for the tournament to verify permissions
+        let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
+
+        // Require manager role for this specific club
+        let manager = require_club_manager(ctx, club_id).await?;
+        let manager_id = Uuid::parse_str(manager.id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid manager ID: {}", e)))?;
+
+        let tournament_repo = TournamentRepo::new(state.db.clone());
+        let entry_repo = TournamentEntryRepo::new(state.db.clone());
+
+        // Get tournament to determine default buy-in amount
+        let tournament = tournament_repo
+            .get(tournament_id)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
+
+        // Use provided amount or default to tournament buy_in_cents
+        let amount_cents = input.amount_cents.unwrap_or(tournament.buy_in_cents);
+
+        let create_data = CreateTournamentEntry {
+            tournament_id,
+            user_id,
+            entry_type: String::from(input.entry_type),
+            amount_cents,
+            chips_received: input.chips_received,
+            recorded_by: Some(manager_id),
+            notes: input.notes,
+        };
+
+        let entry_row = entry_repo.create(create_data).await?;
+
+        Ok(TournamentEntry {
+            id: entry_row.id.into(),
+            tournament_id: entry_row.tournament_id.into(),
+            user_id: entry_row.user_id.into(),
+            entry_type: EntryType::from(entry_row.entry_type),
+            amount_cents: entry_row.amount_cents,
+            chips_received: entry_row.chips_received,
+            recorded_by: entry_row.recorded_by.map(|id| id.into()),
+            notes: entry_row.notes,
+            created_at: entry_row.created_at,
+            updated_at: entry_row.updated_at,
+        })
+    }
+
+    /// Delete a tournament entry (for corrections)
+    /// Requires club manager permission for the tournament's club
+    async fn delete_tournament_entry(&self, ctx: &Context<'_>, entry_id: ID) -> Result<bool> {
+        use crate::auth::permissions::require_club_manager;
+
+        let state = ctx.data::<AppState>()?;
+        let entry_id = Uuid::parse_str(entry_id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid entry ID: {}", e)))?;
+
+        let entry_repo = TournamentEntryRepo::new(state.db.clone());
+
+        // Get entry to find tournament_id for permission check
+        let entry = entry_repo
+            .get_by_id(entry_id)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Entry not found"))?;
+
+        // Get club ID for permission check
+        let club_id = get_club_id_for_tournament(&state.db, entry.tournament_id).await?;
+
+        // Require manager role for this specific club
+        let _manager = require_club_manager(ctx, club_id).await?;
+
+        entry_repo.delete(entry_id).await.map_err(|e| e.into())
     }
 }
 

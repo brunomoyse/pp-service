@@ -6,8 +6,8 @@ use infra::{
     pagination::LimitOffset,
     repos::{
         ClubRepo, ClubTableRepo, LeaderboardPeriod, SeatAssignmentFilter, TableSeatAssignmentRepo,
-        TournamentFilter, TournamentPayoutRepo, TournamentRegistrationRepo, TournamentRepo,
-        TournamentResultRepo, UserFilter, UserRepo, UserStatistics,
+        TournamentEntryRepo, TournamentFilter, TournamentPayoutRepo, TournamentRegistrationRepo,
+        TournamentRepo, TournamentResultRepo, UserFilter, UserRepo, UserStatistics,
     },
 };
 
@@ -787,6 +787,61 @@ impl QueryRoot {
             entries,
             total_players,
             period,
+        })
+    }
+
+    /// Get all entries for a tournament
+    async fn tournament_entries(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: async_graphql::ID,
+    ) -> Result<Vec<crate::gql::types::TournamentEntry>> {
+        let state = ctx.data::<AppState>()?;
+        let tournament_id = uuid::Uuid::parse_str(tournament_id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+
+        let entry_repo = TournamentEntryRepo::new(state.db.clone());
+        let entries = entry_repo.get_by_tournament(tournament_id).await?;
+
+        Ok(entries
+            .into_iter()
+            .map(|e| crate::gql::types::TournamentEntry {
+                id: e.id.into(),
+                tournament_id: e.tournament_id.into(),
+                user_id: e.user_id.into(),
+                entry_type: crate::gql::types::EntryType::from(e.entry_type),
+                amount_cents: e.amount_cents,
+                chips_received: e.chips_received,
+                recorded_by: e.recorded_by.map(|id| id.into()),
+                notes: e.notes,
+                created_at: e.created_at,
+                updated_at: e.updated_at,
+            })
+            .collect())
+    }
+
+    /// Get entry statistics for a tournament
+    async fn tournament_entry_stats(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: async_graphql::ID,
+    ) -> Result<crate::gql::types::TournamentEntryStats> {
+        let state = ctx.data::<AppState>()?;
+        let tournament_id = uuid::Uuid::parse_str(tournament_id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+
+        let entry_repo = TournamentEntryRepo::new(state.db.clone());
+        let stats = entry_repo.get_stats(tournament_id).await?;
+
+        Ok(crate::gql::types::TournamentEntryStats {
+            tournament_id: tournament_id.into(),
+            total_entries: stats.total_entries as i32,
+            total_amount_cents: stats.total_amount_cents as i32,
+            unique_players: stats.unique_players as i32,
+            initial_count: stats.initial_count as i32,
+            rebuy_count: stats.rebuy_count as i32,
+            re_entry_count: stats.re_entry_count as i32,
+            addon_count: stats.addon_count as i32,
         })
     }
 }
