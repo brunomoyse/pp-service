@@ -135,7 +135,7 @@ impl TournamentRepo {
         sqlx::query_as::<_, TournamentRow>(
             r#"
             UPDATE tournaments
-            SET live_status = $2,
+            SET live_status = $2::tournament_live_status,
                 updated_at = NOW()
             WHERE id = $1
             RETURNING id, club_id, name, description, start_time, end_time,
@@ -200,6 +200,25 @@ impl TournamentRepo {
             "#,
         )
         .bind(within_minutes)
+        .fetch_all(&self.pool)
+        .await
+    }
+
+    /// Get multiple tournaments by IDs in a single query
+    pub async fn get_by_ids(&self, ids: &[Uuid]) -> SqlxResult<Vec<TournamentRow>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        sqlx::query_as::<_, TournamentRow>(
+            r#"
+            SELECT id, club_id, name, description, start_time, end_time,
+                   buy_in_cents, seat_cap, live_status, created_at, updated_at
+            FROM tournaments
+            WHERE id = ANY($1::uuid[])
+            "#,
+        )
+        .bind(ids)
         .fetch_all(&self.pool)
         .await
     }

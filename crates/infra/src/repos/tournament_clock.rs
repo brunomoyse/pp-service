@@ -125,7 +125,6 @@ impl TournamentClockRepo {
         )
         .await?;
 
-
         Ok(clock)
     }
 
@@ -159,7 +158,6 @@ impl TournamentClockRepo {
             serde_json::json!({}),
         )
         .await?;
-
 
         Ok(clock)
     }
@@ -196,7 +194,6 @@ impl TournamentClockRepo {
             serde_json::json!({}),
         )
         .await?;
-
 
         Ok(clock)
     }
@@ -262,7 +259,6 @@ impl TournamentClockRepo {
             serde_json::json!({}),
         )
         .await?;
-
 
         Ok(clock)
     }
@@ -333,7 +329,6 @@ impl TournamentClockRepo {
         )
         .await?;
 
-
         Ok(clock)
     }
 
@@ -365,14 +360,33 @@ impl TournamentClockRepo {
         tournament_id: Uuid,
     ) -> SqlxResult<Vec<TournamentStructureRow>> {
         sqlx::query_as::<_, TournamentStructureRow>(
-            "SELECT id, tournament_id, level_number, small_blind, big_blind, ante, 
+            "SELECT id, tournament_id, level_number, small_blind, big_blind, ante,
                     duration_minutes, is_break, break_duration_minutes, created_at
-             FROM tournament_structures 
-             WHERE tournament_id = $1 
+             FROM tournament_structures
+             WHERE tournament_id = $1
              ORDER BY level_number ASC",
         )
         .bind(tournament_id)
         .fetch_all(&self.pool)
+        .await
+    }
+
+    /// Get the next structure level directly (avoids fetching all structures)
+    pub async fn get_next_structure(
+        &self,
+        tournament_id: Uuid,
+        current_level: i32,
+    ) -> SqlxResult<Option<TournamentStructureRow>> {
+        sqlx::query_as::<_, TournamentStructureRow>(
+            "SELECT id, tournament_id, level_number, small_blind, big_blind, ante,
+                    duration_minutes, is_break, break_duration_minutes, created_at
+             FROM tournament_structures
+             WHERE tournament_id = $1 AND level_number = $2 + 1
+             LIMIT 1",
+        )
+        .bind(tournament_id)
+        .bind(current_level)
+        .fetch_optional(&self.pool)
         .await
     }
 

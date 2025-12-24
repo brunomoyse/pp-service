@@ -7,7 +7,7 @@ use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::gql::subscriptions::publish_user_notification;
-use crate::gql::types::{NotificationType, UserNotification};
+use crate::gql::types::{NotificationType, UserNotification, TITLE_TOURNAMENT_STARTING};
 use crate::AppState;
 use infra::repos::{TournamentRegistrationRepo, TournamentRepo};
 
@@ -45,7 +45,9 @@ impl NotificationService {
     }
 
     /// Check for tournaments starting soon and notify registered players
-    async fn check_upcoming_tournaments(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn check_upcoming_tournaments(
+        &mut self,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let tournament_repo = TournamentRepo::new(self.state.db.clone());
         let registration_repo = TournamentRegistrationRepo::new(self.state.db.clone());
 
@@ -75,11 +77,8 @@ impl NotificationService {
                     id: ID::from(Uuid::new_v4().to_string()),
                     user_id: ID::from(registration.user_id.to_string()),
                     notification_type: NotificationType::TournamentStartingSoon,
-                    title: "Tournament Starting Soon".to_string(),
-                    message: format!(
-                        "{} is starting in about 15 minutes",
-                        tournament.name
-                    ),
+                    title: TITLE_TOURNAMENT_STARTING.to_string(),
+                    message: format!("{} is starting in about 15 minutes", tournament.name),
                     tournament_id: Some(ID::from(tournament.id.to_string())),
                     created_at: Utc::now(),
                 };
@@ -102,26 +101,34 @@ impl NotificationService {
     async fn cleanup_old_entries(&mut self) {
         let tournament_repo = TournamentRepo::new(self.state.db.clone());
 
-        // Keep only tournaments that still exist and haven't started
-        let mut to_remove = Vec::new();
+        // Collect all tournament IDs to check
+        let ids: Vec<Uuid> = self.notified_tournaments.iter().copied().collect();
 
-        for tournament_id in &self.notified_tournaments {
-            match tournament_repo.get(*tournament_id).await {
-                Ok(Some(tournament)) => {
-                    // Remove if tournament has already started (start_time is in the past)
-                    if tournament.start_time < Utc::now() {
-                        to_remove.push(*tournament_id);
-                    }
-                }
-                Ok(None) => {
-                    // Tournament was deleted
-                    to_remove.push(*tournament_id);
-                }
-                Err(_) => {
-                    // Keep it in case of error, we'll try again later
-                }
-            }
+        if ids.is_empty() {
+            return;
         }
+
+        // Bulk fetch all tournaments in one query instead of N queries
+        let tournaments = match tournament_repo.get_by_ids(&ids).await {
+            Ok(t) => t,
+            Err(_) => return, // Keep entries on error, retry later
+        };
+
+        // Create set of valid tournament IDs that are still upcoming
+        let now = Utc::now();
+        let still_upcoming: HashSet<Uuid> = tournaments
+            .into_iter()
+            .filter(|t| t.start_time >= now)
+            .map(|t| t.id)
+            .collect();
+
+        // Find IDs to remove (not in still_upcoming means either started or deleted)
+        let to_remove: Vec<Uuid> = self
+            .notified_tournaments
+            .iter()
+            .filter(|id| !still_upcoming.contains(id))
+            .copied()
+            .collect();
 
         for id in to_remove {
             self.notified_tournaments.remove(&id);

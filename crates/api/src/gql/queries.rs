@@ -1,6 +1,8 @@
-use async_graphql::{Context, Object, Result};
+use async_graphql::{dataloader::DataLoader, Context, Object, Result};
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
 
+use crate::gql::loaders::{TournamentLoader, UserLoader};
 use crate::state::AppState;
 use infra::{
     pagination::LimitOffset,
@@ -137,31 +139,40 @@ impl QueryRoot {
     ) -> Result<Vec<crate::gql::types::TournamentPlayer>> {
         let state = ctx.data::<AppState>()?;
         let registration_repo = TournamentRegistrationRepo::new(state.db.clone());
-        let user_repo = UserRepo::new(state.db.clone());
 
+        // Fetch all registrations for the tournament
         let registrations = registration_repo.get_by_tournament(tournament_id).await?;
 
+        // Collect all user IDs and batch load them using DataLoader
+        let user_ids: Vec<uuid::Uuid> = registrations.iter().map(|r| r.user_id).collect();
+        let user_loader = ctx.data::<DataLoader<UserLoader>>()?;
+        let users: HashMap<uuid::Uuid, _> = user_loader
+            .load_many(user_ids)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        // Build players by looking up users from the HashMap
         let mut players = Vec::new();
         for registration in registrations {
-            if let Some(user_row) = user_repo.get_by_id(registration.user_id).await? {
+            if let Some(user_row) = users.get(&registration.user_id) {
                 let tournament_registration = crate::gql::types::TournamentRegistration {
                     id: registration.id.into(),
                     tournament_id: registration.tournament_id.into(),
                     user_id: registration.user_id.into(),
                     registration_time: registration.registration_time,
                     status: registration.status.into(),
-                    notes: registration.notes,
+                    notes: registration.notes.clone(),
                 };
 
                 let user = crate::gql::types::User {
                     id: user_row.id.into(),
-                    email: user_row.email,
-                    username: user_row.username,
-                    first_name: user_row.first_name,
-                    last_name: user_row.last_name,
-                    phone: user_row.phone,
+                    email: user_row.email.clone(),
+                    username: user_row.username.clone(),
+                    first_name: user_row.first_name.clone(),
+                    last_name: user_row.last_name.clone(),
+                    phone: user_row.phone.clone(),
                     is_active: user_row.is_active,
-                    role: crate::gql::types::Role::from(user_row.role),
+                    role: crate::gql::types::Role::from(user_row.role.clone()),
                 };
 
                 players.push(crate::gql::types::TournamentPlayer {
@@ -291,14 +302,22 @@ impl QueryRoot {
 
         let state = ctx.data::<AppState>()?;
         let result_repo = TournamentResultRepo::new(state.db.clone());
-        let tournament_repo = TournamentRepo::new(state.db.clone());
 
         let limit = limit.unwrap_or(10).clamp(1, 50);
         let results = result_repo.get_user_recent_results(user_id, limit).await?;
 
+        // Collect all tournament IDs and batch load them using DataLoader
+        let tournament_ids: Vec<uuid::Uuid> = results.iter().map(|r| r.tournament_id).collect();
+        let tournament_loader = ctx.data::<DataLoader<TournamentLoader>>()?;
+        let tournaments: HashMap<uuid::Uuid, _> = tournament_loader
+            .load_many(tournament_ids)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        // Build user results by looking up tournaments from the HashMap
         let mut user_results = Vec::new();
         for result_row in results {
-            if let Some(tournament_row) = tournament_repo.get(result_row.tournament_id).await? {
+            if let Some(tournament_row) = tournaments.get(&result_row.tournament_id) {
                 let tournament_result = crate::gql::types::TournamentResult {
                     id: result_row.id.into(),
                     tournament_id: result_row.tournament_id.into(),
@@ -306,7 +325,7 @@ impl QueryRoot {
                     final_position: result_row.final_position,
                     prize_cents: result_row.prize_cents,
                     points: result_row.points,
-                    notes: result_row.notes,
+                    notes: result_row.notes.clone(),
                     created_at: result_row.created_at,
                 };
 

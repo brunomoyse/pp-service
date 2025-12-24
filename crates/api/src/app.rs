@@ -4,6 +4,7 @@ use async_graphql::{ObjectType, Schema, SubscriptionType};
 use async_graphql_axum::GraphQLSubscription;
 use axum::{
     extract::{Request, State},
+    http::StatusCode,
     middleware,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -56,7 +57,10 @@ where
         .layer(middleware::from_fn_with_state(state, jwt_middleware))
         // Useful default middlewares
         .layer(TraceLayer::new_for_http())
-        .layer(TimeoutLayer::new(Duration::from_secs(30)))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(30),
+        ))
         .layer(CorsLayer::permissive()) // tighten later
 }
 

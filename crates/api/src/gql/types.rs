@@ -5,6 +5,10 @@ use uuid::Uuid;
 
 use crate::gql::loaders::ClubLoader;
 
+// Notification title constants
+pub const TITLE_REGISTRATION_CONFIRMED: &str = "Registration Confirmed";
+pub const TITLE_TOURNAMENT_STARTING: &str = "Tournament Starting Soon";
+
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Role {
     #[graphql(name = "ADMIN")]
@@ -605,11 +609,19 @@ pub struct TournamentPayout {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
+pub enum RegistrationEventType {
+    #[graphql(name = "PLAYER_REGISTERED")]
+    PlayerRegistered,
+    #[graphql(name = "PLAYER_UNREGISTERED")]
+    PlayerUnregistered,
+}
+
 #[derive(SimpleObject, Clone)]
 pub struct PlayerRegistrationEvent {
     pub tournament_id: ID,
     pub player: TournamentPlayer,
-    pub event_type: String,
+    pub event_type: RegistrationEventType,
 }
 
 #[derive(InputObject)]
@@ -990,27 +1002,30 @@ impl Tournament {
 #[ComplexObject]
 impl TournamentRegistration {
     async fn user(&self, ctx: &Context<'_>) -> async_graphql::Result<Option<User>> {
-        use crate::state::AppState;
-        use infra::repos::UserRepo;
+        use crate::gql::loaders::UserLoader;
 
-        let state = ctx.data::<AppState>()?;
-        let user_repo = UserRepo::new(state.db.clone());
+        let user_id = Uuid::parse_str(self.user_id.as_str())
+            .map_err(|e| Error::new(format!("Invalid user ID: {}", e)))?;
 
-        let user_id = uuid::Uuid::parse_str(self.user_id.as_str())
-            .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
+        let loader = ctx.data::<DataLoader<UserLoader>>()?;
 
-        let user_row = user_repo.get_by_id(user_id).await?;
-
-        Ok(user_row.map(|user| User {
-            id: user.id.into(),
-            email: user.email,
-            username: user.username,
-            first_name: user.first_name,
-            last_name: user.last_name,
-            phone: user.phone,
-            is_active: user.is_active,
-            role: Role::from(user.role),
-        }))
+        match loader
+            .load_one(user_id)
+            .await
+            .map_err(|e| Error::new(e.to_string()))?
+        {
+            Some(user) => Ok(Some(User {
+                id: user.id.into(),
+                email: user.email,
+                username: user.username,
+                first_name: user.first_name,
+                last_name: user.last_name,
+                phone: user.phone,
+                is_active: user.is_active,
+                role: Role::from(user.role),
+            })),
+            None => Ok(None),
+        }
     }
 }
 
