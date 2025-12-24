@@ -224,3 +224,17 @@ pub struct TournamentPayoutRow {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct TournamentEntryRow {
+    pub id: Uuid,
+    pub tournament_id: Uuid,
+    pub user_id: Uuid,
+    pub entry_type: String,
+    pub amount_cents: i32,
+    pub chips_received: Option<i32>,
+    pub recorded_by: Option<Uuid>,
+    pub notes: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
