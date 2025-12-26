@@ -4,7 +4,6 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use api::app::build_router;
 use api::gql::build_schema;
-use api::metrics;
 use api::services::{spawn_clock_service, spawn_notification_service};
 use api::state::AppState;
 
@@ -16,10 +15,6 @@ async fn main() -> anyhow::Result<()> {
         ))
         .with(tracing_subscriber::fmt::layer())
         .init();
-
-    // Initialize metrics BEFORE anything else
-    metrics::init_metrics()?;
-    tracing::info!("Metrics server listening on :9090/metrics");
 
     dotenvy::dotenv().ok();
 
@@ -36,7 +31,10 @@ async fn main() -> anyhow::Result<()> {
         .max_lifetime(Some(std::time::Duration::from_secs(1800))) // 30 minutes
         .connect(&std::env::var("DATABASE_URL")?)
         .await?;
-    tracing::info!("Connected to Postgres with max {} connections", max_connections);
+    tracing::info!(
+        "Connected to Postgres with max {} connections",
+        max_connections
+    );
 
     // Run database migrations automatically on startup (can be disabled with SKIP_MIGRATIONS=true)
     let skip_migrations = std::env::var("SKIP_MIGRATIONS")
@@ -50,13 +48,6 @@ async fn main() -> anyhow::Result<()> {
         sqlx::migrate!("../../migrations").run(&pool).await?;
         tracing::info!("Database migrations completed successfully");
     }
-
-    // Spawn database pool monitoring task
-    let pool_clone = pool.clone();
-    tokio::spawn(async move {
-        metrics::monitor_db_pool(pool_clone).await;
-    });
-    tracing::info!("Database pool monitoring started");
 
     let state = AppState::new(pool)?;
 
