@@ -1,7 +1,7 @@
 ########################################
 # Planner stage (generate cargo-chef recipe)
 ########################################
-FROM rust:1.89-alpine3.22 AS planner
+FROM rust:1.92-alpine3.23 AS planner
 WORKDIR /app
 
 # Build deps for musl builds
@@ -16,7 +16,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 ########################################
 # Builder stage (compile with cached deps)
 ########################################
-FROM rust:1.89-alpine3.22 AS builder
+FROM rust:1.92-alpine3.23 AS builder
 WORKDIR /app
 
 # Tools + strip for smaller binary + static SSL libs for musl
@@ -53,7 +53,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 ########################################
 # Runtime stage (minimal image)
 ########################################
-FROM alpine:3.22
+FROM alpine:3.23
 WORKDIR /app
 
 # TLS roots, timezones, and a proper init for signal handling
@@ -71,7 +71,8 @@ USER 10001
 EXPOSE 8080
 ENV RUST_LOG=info
 
-# HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD wget -qO- http://127.0.0.1:8080/health || exit 1
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
+    CMD wget -qO- http://127.0.0.1:8080/health || exit 1
 
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["api"]

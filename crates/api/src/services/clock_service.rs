@@ -49,8 +49,9 @@ impl ClockService {
                     info!("Auto-advanced level for tournament {}", tournament_id);
 
                     // Publish clock update to subscribers
-                    if let Ok(Some(clock)) =
-                        self.build_clock_update(&repo, tournament_id, &clock_row).await
+                    if let Ok(Some(clock)) = self
+                        .build_clock_update(&repo, tournament_id, &clock_row)
+                        .await
                     {
                         publish_clock_update(tournament_id, clock);
                     }

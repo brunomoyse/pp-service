@@ -144,3 +144,27 @@ pub async fn create_club_manager(app_state: &AppState, manager_id: Uuid, club_id
     .await
     .expect("Failed to create club manager relationship");
 }
+
+/// Create test club table and return its ID
+#[allow(dead_code)]
+pub async fn create_test_club_table(
+    app_state: &AppState,
+    club_id: Uuid,
+    table_number: i32,
+    max_seats: i32,
+) -> Uuid {
+    let table_id = Uuid::new_v4();
+
+    sqlx::query!(
+        "INSERT INTO club_tables (id, club_id, table_number, max_seats) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO NOTHING",
+        table_id,
+        club_id,
+        table_number,
+        max_seats
+    )
+    .execute(&app_state.db)
+    .await
+    .expect("Failed to create test club table");
+
+    table_id
+}
