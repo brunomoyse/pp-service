@@ -1,8 +1,8 @@
 use anyhow::Result;
 use base64::{engine::general_purpose, Engine as _};
 use oauth2::{
-    basic::BasicClient, reqwest::async_http_client, AuthUrl, AuthorizationCode, ClientId,
-    ClientSecret, CsrfToken, RedirectUrl, Scope, TokenResponse, TokenUrl,
+    basic::BasicClient, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl,
+    Scope, TokenResponse, TokenUrl,
 };
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
@@ -81,8 +81,29 @@ impl OAuthService {
                 let auth_url = format!("{}/oauth/authorize", self.config.redirect_base_url);
                 Ok((auth_url, csrf_token))
             }
-            _ => {
-                let client = self.create_oauth_client(provider.clone())?;
+            OAuthProvider::Google => {
+                let redirect_url = format!(
+                    "{}/auth/{}/callback",
+                    self.config.redirect_base_url,
+                    provider.as_str()
+                );
+
+                let client = BasicClient::new(ClientId::new(self.config.google_client_id.clone()))
+                    .set_client_secret(ClientSecret::new(self.config.google_client_secret.clone()))
+                    .set_auth_uri(
+                        AuthUrl::new("https://accounts.google.com/o/oauth2/v2/auth".to_string())
+                            .map_err(|e| AppError::Internal(format!("Invalid auth URL: {}", e)))?,
+                    )
+                    .set_token_uri(
+                        TokenUrl::new("https://www.googleapis.com/oauth2/v4/token".to_string())
+                            .map_err(|e| AppError::Internal(format!("Invalid token URL: {}", e)))?,
+                    )
+                    .set_redirect_uri(
+                        RedirectUrl::new(redirect_url).map_err(|e| {
+                            AppError::Internal(format!("Invalid redirect URL: {}", e))
+                        })?,
+                    );
+
                 let (auth_url, csrf_token) = client
                     .authorize_url(CsrfToken::new_random)
                     .add_scope(self.get_scopes(provider))
@@ -107,59 +128,40 @@ impl OAuthService {
                         .to_string(),
                 ))
             }
-            _ => {
-                let client = self.create_oauth_client(provider.clone())?;
+            OAuthProvider::Google => {
+                let redirect_url = format!(
+                    "{}/auth/{}/callback",
+                    self.config.redirect_base_url,
+                    provider.as_str()
+                );
+
+                let client = BasicClient::new(ClientId::new(self.config.google_client_id.clone()))
+                    .set_client_secret(ClientSecret::new(self.config.google_client_secret.clone()))
+                    .set_auth_uri(
+                        AuthUrl::new("https://accounts.google.com/o/oauth2/v2/auth".to_string())
+                            .map_err(|e| AppError::Internal(format!("Invalid auth URL: {}", e)))?,
+                    )
+                    .set_token_uri(
+                        TokenUrl::new("https://www.googleapis.com/oauth2/v4/token".to_string())
+                            .map_err(|e| AppError::Internal(format!("Invalid token URL: {}", e)))?,
+                    )
+                    .set_redirect_uri(
+                        RedirectUrl::new(redirect_url).map_err(|e| {
+                            AppError::Internal(format!("Invalid redirect URL: {}", e))
+                        })?,
+                    );
 
                 let token = client
                     .exchange_code(AuthorizationCode::new(code))
-                    .request_async(async_http_client)
+                    .request_async(&self.http_client)
                     .await
                     .map_err(|e| AppError::Internal(format!("Token exchange failed: {}", e)))?;
 
                 let access_token = token.access_token().secret();
-
-                match provider {
-                    OAuthProvider::Google => {
-                        let user_info = self.get_google_user_info(access_token).await?;
-                        Ok(user_info.into())
-                    }
-                    OAuthProvider::Custom => unreachable!(), // Already handled above
-                }
+                let user_info = self.get_google_user_info(access_token).await?;
+                Ok(user_info.into())
             }
         }
-    }
-
-    fn create_oauth_client(&self, provider: OAuthProvider) -> Result<BasicClient, AppError> {
-        let redirect_url = format!(
-            "{}/auth/{}/callback",
-            self.config.redirect_base_url,
-            provider.as_str()
-        );
-
-        let client = match provider {
-            OAuthProvider::Google => BasicClient::new(
-                ClientId::new(self.config.google_client_id.clone()),
-                Some(ClientSecret::new(self.config.google_client_secret.clone())),
-                AuthUrl::new("https://accounts.google.com/o/oauth2/v2/auth".to_string())
-                    .map_err(|e| AppError::Internal(format!("Invalid auth URL: {}", e)))?,
-                Some(
-                    TokenUrl::new("https://www.googleapis.com/oauth2/v4/token".to_string())
-                        .map_err(|e| AppError::Internal(format!("Invalid token URL: {}", e)))?,
-                ),
-            ),
-            OAuthProvider::Custom => {
-                return Err(AppError::Internal(
-                    "Custom OAuth should not use external OAuth client".to_string(),
-                ));
-            }
-        };
-
-        let client = client.set_redirect_uri(
-            RedirectUrl::new(redirect_url)
-                .map_err(|e| AppError::Internal(format!("Invalid redirect URL: {}", e)))?,
-        );
-
-        Ok(client)
     }
 
     fn get_scopes(&self, provider: OAuthProvider) -> Scope {

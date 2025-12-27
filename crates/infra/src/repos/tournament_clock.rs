@@ -440,21 +440,79 @@ impl TournamentClockRepo {
         Ok(())
     }
 
-    /// Get tournaments that need level advancement
+    /// Get tournaments that need level advancement (only if next level exists)
     pub async fn get_tournaments_to_advance(&self) -> SqlxResult<Vec<Uuid>> {
         let now = Utc::now();
 
         let rows: Vec<(Uuid,)> = sqlx::query_as(
-            "SELECT tournament_id FROM tournament_clocks 
-             WHERE clock_status = 'running' 
-               AND auto_advance = true 
-               AND level_end_time IS NOT NULL 
-               AND level_end_time <= $1",
+            "SELECT tc.tournament_id FROM tournament_clocks tc
+             WHERE tc.clock_status = 'running'
+               AND tc.auto_advance = true
+               AND tc.level_end_time IS NOT NULL
+               AND tc.level_end_time <= $1
+               AND EXISTS (
+                   SELECT 1 FROM tournament_structures ts
+                   WHERE ts.tournament_id = tc.tournament_id
+                     AND ts.level_number = tc.current_level + 1
+               )",
         )
         .bind(now)
         .fetch_all(&self.pool)
         .await?;
 
         Ok(rows.into_iter().map(|(id,)| id).collect())
+    }
+
+    /// Get tournaments at final level that need to be stopped
+    pub async fn get_tournaments_at_final_level(&self) -> SqlxResult<Vec<Uuid>> {
+        let now = Utc::now();
+
+        let rows: Vec<(Uuid,)> = sqlx::query_as(
+            "SELECT tc.tournament_id FROM tournament_clocks tc
+             WHERE tc.clock_status = 'running'
+               AND tc.auto_advance = true
+               AND tc.level_end_time IS NOT NULL
+               AND tc.level_end_time <= $1
+               AND NOT EXISTS (
+                   SELECT 1 FROM tournament_structures ts
+                   WHERE ts.tournament_id = tc.tournament_id
+                     AND ts.level_number = tc.current_level + 1
+               )",
+        )
+        .bind(now)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|(id,)| id).collect())
+    }
+
+    /// Stop clock when tournament reaches final level
+    pub async fn stop_clock_final_level(
+        &self,
+        tournament_id: Uuid,
+    ) -> SqlxResult<TournamentClockRow> {
+        let clock = sqlx::query_as::<_, TournamentClockRow>(
+            "UPDATE tournament_clocks
+             SET clock_status = 'stopped',
+                 auto_advance = false
+             WHERE tournament_id = $1
+             RETURNING id, tournament_id, clock_status, current_level, level_started_at, level_end_time,
+                       pause_started_at, total_pause_duration, auto_advance, created_at, updated_at",
+        )
+        .bind(tournament_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        // Log event
+        self.log_event(
+            tournament_id,
+            "final_level_complete",
+            Some(clock.current_level),
+            None,
+            serde_json::json!({"reason": "No more levels in structure"}),
+        )
+        .await?;
+
+        Ok(clock)
     }
 }
