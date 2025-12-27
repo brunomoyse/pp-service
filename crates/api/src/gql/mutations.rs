@@ -1,4 +1,4 @@
-use async_graphql::{dataloader::DataLoader, Context, InputObject, Object, Result, ID};
+use async_graphql::{dataloader::DataLoader, Context, Object, Result, ID};
 use chrono::Utc;
 
 use super::loaders::UserLoader;
@@ -9,27 +9,30 @@ use super::subscriptions::{
 use super::types::{
     AddTournamentEntryInput, AssignPlayerToSeatInput, AssignTableToTournamentInput,
     AssignmentStrategy, AuthPayload, BalanceTablesInput, CheckInPlayerInput, CheckInResponse,
-    CreateOAuthClientInput, CreateOAuthClientResponse, CreatePlayerInput, DealType,
-    EnterTournamentResultsInput, EnterTournamentResultsResponse, EntryType, MovePlayerInput,
-    NotificationType, OAuthCallbackInput, OAuthClient, OAuthUrlResponse, PlayerDeal,
-    PlayerDealInput, PlayerPositionInput, PlayerRegistrationEvent, RegisterForTournamentInput,
-    RegistrationEventType, RegistrationStatus, Role, SeatAssignment, SeatingChangeEvent,
-    SeatingEventType, Tournament, TournamentEntry, TournamentPlayer, TournamentRegistration,
-    TournamentResult, TournamentTable, UpdatePlayerInput, UpdateStackSizeInput,
-    UpdateTournamentStatusInput, User, UserLoginInput, UserNotification, UserRegistrationInput,
-    TITLE_REGISTRATION_CONFIRMED,
+    CreateOAuthClientInput, CreateOAuthClientResponse, CreatePlayerInput, CreateTournamentInput,
+    DealType, EnterTournamentResultsInput, EnterTournamentResultsResponse, EntryType,
+    MovePlayerInput, NotificationType, OAuthCallbackInput, OAuthClient, OAuthUrlResponse,
+    PlayerDeal, PlayerDealInput, PlayerPositionInput, PlayerRegistrationEvent,
+    RegisterForTournamentInput, RegistrationEventType, RegistrationStatus, Role, SeatAssignment,
+    SeatingChangeEvent, SeatingEventType, Tournament, TournamentEntry, TournamentPlayer,
+    TournamentRegistration, TournamentResult, TournamentTable, UpdatePlayerInput,
+    UpdateStackSizeInput, UpdateTournamentInput, UpdateTournamentStatusInput, User, UserLoginInput,
+    UserNotification, UserRegistrationInput, TITLE_REGISTRATION_CONFIRMED,
 };
 use crate::auth::{
-    custom_oauth::CustomOAuthService, password::PasswordService, permissions::require_admin_if,
+    custom_oauth::CustomOAuthService,
+    password::PasswordService,
+    permissions::{require_admin_if, require_club_manager},
     Claims, OAuthProvider,
 };
 use crate::state::AppState;
 use infra::models::TournamentRow;
 use infra::repos::{
-    ClubTableRepo, CreatePlayerDeal, CreateSeatAssignment, CreateTournamentEntry,
-    CreateTournamentRegistration, CreateTournamentResult, CreateUserData, PayoutTemplateRepo,
-    PlayerDealRepo, TableSeatAssignmentRepo, TournamentEntryRepo, TournamentLiveStatus,
-    TournamentRegistrationRepo, TournamentRepo, TournamentResultRepo, UpdateSeatAssignment,
+    ClubTableRepo, CreatePlayerDeal, CreateSeatAssignment, CreateTournamentData,
+    CreateTournamentEntry, CreateTournamentRegistration, CreateTournamentResult, CreateUserData,
+    PayoutTemplateRepo, PlayerDealRepo, TableSeatAssignmentRepo, TournamentClockRepo,
+    TournamentEntryRepo, TournamentLiveStatus, TournamentRegistrationRepo, TournamentRepo,
+    TournamentResultRepo, TournamentStructureLevel, UpdateSeatAssignment, UpdateTournamentData,
     UpdateUserData, UserRepo,
 };
 use rand::{distr::Alphanumeric, Rng};
@@ -78,12 +81,6 @@ async fn get_club_id_for_tournament(db: &infra::db::Db, tournament_id: Uuid) -> 
 }
 
 pub struct MutationRoot;
-
-#[derive(InputObject)]
-pub struct CreateTournamentInput {
-    pub title: String,
-    pub club_id: ID,
-}
 
 #[Object]
 impl MutationRoot {
@@ -147,30 +144,178 @@ impl MutationRoot {
         mutation.revert_tournament_level(ctx, tournament_id).await
     }
 
-    /// Minimal example mutation creating a tournament (stub).
-    /// Replace with an INSERT via sqlx later.
+    /// Create a new tournament
+    /// Requires club manager permission for the specified club
     async fn create_tournament(
         &self,
         ctx: &Context<'_>,
         input: CreateTournamentInput,
     ) -> Result<Tournament> {
-        let _state = ctx.data::<AppState>()?;
-        // Example: persist with sqlx here using _state.db
+        let state = ctx.data::<AppState>()?;
+        let club_id = Uuid::parse_str(input.club_id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid club ID: {}", e)))?;
+
+        // Require club manager permission
+        let _manager = require_club_manager(ctx, club_id).await?;
+
+        // Validate buy_in_cents is non-negative
+        if input.buy_in_cents < 0 {
+            return Err(async_graphql::Error::new(
+                "Buy-in amount cannot be negative",
+            ));
+        }
+
+        let tournament_repo = TournamentRepo::new(state.db.clone());
+
+        let create_data = CreateTournamentData {
+            club_id,
+            name: input.name,
+            description: input.description,
+            start_time: input.start_time,
+            end_time: input.end_time,
+            buy_in_cents: input.buy_in_cents,
+            seat_cap: input.seat_cap,
+            early_bird_bonus_chips: input.early_bird_bonus_chips,
+        };
+
+        let tournament_row = tournament_repo.create(create_data).await?;
+
+        // If custom structure is provided, replace the auto-generated one
+        if let Some(structure_levels) = input.structure {
+            if !structure_levels.is_empty() {
+                let clock_repo = TournamentClockRepo::new(state.db.clone());
+
+                let levels: Vec<TournamentStructureLevel> = structure_levels
+                    .iter()
+                    .map(|l| TournamentStructureLevel {
+                        level_number: l.level_number,
+                        small_blind: l.small_blind,
+                        big_blind: l.big_blind,
+                        ante: l.ante,
+                        duration_minutes: l.duration_minutes,
+                        is_break: l.is_break,
+                        break_duration_minutes: l.break_duration_minutes,
+                    })
+                    .collect();
+
+                clock_repo
+                    .replace_structures(tournament_row.id, levels)
+                    .await?;
+            }
+        }
 
         Ok(Tournament {
-            id: "new_tournament_id".into(),
-            title: input.title,
-            description: None,
-            club_id: input.club_id,
-            start_time: chrono::Utc::now(),
-            end_time: None,
-            buy_in_cents: 0,
-            seat_cap: None,
-            status: crate::gql::types::TournamentStatus::Upcoming,
-            live_status: crate::gql::types::TournamentLiveStatus::NotStarted,
-            early_bird_bonus_chips: None,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
+            id: tournament_row.id.into(),
+            title: tournament_row.name.clone(),
+            description: tournament_row.description.clone(),
+            club_id: tournament_row.club_id.into(),
+            start_time: tournament_row.start_time,
+            end_time: tournament_row.end_time,
+            buy_in_cents: tournament_row.buy_in_cents,
+            seat_cap: tournament_row.seat_cap,
+            status: tournament_row.calculate_status().into(),
+            live_status: tournament_row.live_status.into(),
+            early_bird_bonus_chips: tournament_row.early_bird_bonus_chips,
+            created_at: tournament_row.created_at,
+            updated_at: tournament_row.updated_at,
+        })
+    }
+
+    /// Update an existing tournament
+    /// Only allowed before tournament is FINISHED
+    /// Requires club manager permission for the tournament's club
+    async fn update_tournament(
+        &self,
+        ctx: &Context<'_>,
+        input: UpdateTournamentInput,
+    ) -> Result<Tournament> {
+        let state = ctx.data::<AppState>()?;
+        let tournament_id = Uuid::parse_str(input.id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+
+        let tournament_repo = TournamentRepo::new(state.db.clone());
+
+        // Get existing tournament to check club_id and status
+        let existing = tournament_repo
+            .get(tournament_id)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
+
+        // Check if tournament is finished
+        if existing.live_status == TournamentLiveStatus::Finished {
+            return Err(async_graphql::Error::new(
+                "Cannot edit a finished tournament",
+            ));
+        }
+
+        // Require club manager permission
+        let _manager = require_club_manager(ctx, existing.club_id).await?;
+
+        // Validate buy_in_cents if provided
+        if let Some(buy_in) = input.buy_in_cents {
+            if buy_in < 0 {
+                return Err(async_graphql::Error::new(
+                    "Buy-in amount cannot be negative",
+                ));
+            }
+        }
+
+        let update_data = UpdateTournamentData {
+            name: input.name,
+            description: input.description,
+            start_time: input.start_time,
+            end_time: input.end_time,
+            buy_in_cents: input.buy_in_cents,
+            seat_cap: input.seat_cap,
+            early_bird_bonus_chips: input.early_bird_bonus_chips,
+        };
+
+        let tournament_row = tournament_repo
+            .update(tournament_id, update_data)
+            .await?
+            .ok_or_else(|| {
+                async_graphql::Error::new("Failed to update tournament or tournament is finished")
+            })?;
+
+        // If structure is provided, update it
+        if let Some(structure_levels) = input.structure {
+            let clock_repo = TournamentClockRepo::new(state.db.clone());
+
+            // Ensure clock exists
+            if clock_repo.get_clock(tournament_id).await?.is_none() {
+                clock_repo.create_clock(tournament_id).await?;
+            }
+
+            let levels: Vec<TournamentStructureLevel> = structure_levels
+                .iter()
+                .map(|l| TournamentStructureLevel {
+                    level_number: l.level_number,
+                    small_blind: l.small_blind,
+                    big_blind: l.big_blind,
+                    ante: l.ante,
+                    duration_minutes: l.duration_minutes,
+                    is_break: l.is_break,
+                    break_duration_minutes: l.break_duration_minutes,
+                })
+                .collect();
+
+            clock_repo.replace_structures(tournament_id, levels).await?;
+        }
+
+        Ok(Tournament {
+            id: tournament_row.id.into(),
+            title: tournament_row.name.clone(),
+            description: tournament_row.description.clone(),
+            club_id: tournament_row.club_id.into(),
+            start_time: tournament_row.start_time,
+            end_time: tournament_row.end_time,
+            buy_in_cents: tournament_row.buy_in_cents,
+            seat_cap: tournament_row.seat_cap,
+            status: tournament_row.calculate_status().into(),
+            live_status: tournament_row.live_status.into(),
+            early_bird_bonus_chips: tournament_row.early_bird_bonus_chips,
+            created_at: tournament_row.created_at,
+            updated_at: tournament_row.updated_at,
         })
     }
 

@@ -8,11 +8,17 @@ use uuid::Uuid;
 use crate::gql::subscriptions::publish_clock_update;
 use crate::gql::types::{ClockStatus, TournamentClock, TournamentStructure};
 use crate::AppState;
-use infra::repos::{ClockStatus as InfraClockStatus, TournamentClockRepo};
+use infra::repos::{ClockStatus as InfraClockStatus, TournamentClockRepo, TournamentRepo};
+
+// Check for stale tournaments every 60 ticks (5 minutes at 5 second intervals)
+const STALE_CHECK_INTERVAL: u64 = 60;
+// Auto-finish tournaments that have been running for more than 24 hours
+const STALE_TOURNAMENT_HOURS: i32 = 24;
 
 pub struct ClockService {
     state: AppState,
     interval: Interval,
+    tick_count: u64,
 }
 
 impl ClockService {
@@ -20,7 +26,11 @@ impl ClockService {
         // Tick every 5 seconds to check for level advances
         let interval = interval(Duration::from_secs(5));
 
-        Self { state, interval }
+        Self {
+            state,
+            interval,
+            tick_count: 0,
+        }
     }
 
     /// Start the background clock service
@@ -29,9 +39,17 @@ impl ClockService {
 
         loop {
             self.interval.tick().await;
+            self.tick_count += 1;
 
             if let Err(e) = self.process_tournaments().await {
                 error!("Error processing tournament clocks: {}", e);
+            }
+
+            // Check for stale tournaments every STALE_CHECK_INTERVAL ticks
+            if self.tick_count.is_multiple_of(STALE_CHECK_INTERVAL) {
+                if let Err(e) = self.process_stale_tournaments().await {
+                    error!("Error processing stale tournaments: {}", e);
+                }
             }
         }
     }
@@ -88,6 +106,42 @@ impl ClockService {
                     warn!(
                         "Failed to stop clock for tournament {} at final level: {}",
                         tournament_id, e
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Check for and auto-finish stale tournaments (running > 24 hours)
+    async fn process_stale_tournaments(
+        &self,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let tournament_repo = TournamentRepo::new(self.state.db.clone());
+
+        let stale_tournaments = tournament_repo
+            .get_stale_tournaments(STALE_TOURNAMENT_HOURS)
+            .await?;
+
+        for tournament in stale_tournaments {
+            match tournament_repo.auto_finish(tournament.id).await {
+                Ok(Some(finished)) => {
+                    warn!(
+                        "Auto-finished stale tournament '{}' (ID: {}) - running for over {} hours",
+                        finished.name, finished.id, STALE_TOURNAMENT_HOURS
+                    );
+                }
+                Ok(None) => {
+                    warn!(
+                        "Failed to auto-finish tournament {} - may have already been finished",
+                        tournament.id
+                    );
+                }
+                Err(e) => {
+                    error!(
+                        "Error auto-finishing stale tournament {}: {}",
+                        tournament.id, e
                     );
                 }
             }

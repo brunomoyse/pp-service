@@ -21,7 +21,7 @@ pub use table_seat_assignments::{
     CreateSeatAssignment, SeatAssignmentFilter, SeatAssignmentWithPlayer, TableSeatAssignmentRepo,
     UpdateSeatAssignment,
 };
-pub use tournament_clock::{ClockStatus, TournamentClockRepo};
+pub use tournament_clock::{ClockStatus, TournamentClockRepo, TournamentStructureLevel};
 pub use tournament_entries::{CreateTournamentEntry, TournamentEntryRepo, TournamentEntryStats};
 pub use tournament_payouts::TournamentPayoutRepo;
 pub use tournament_registrations::{CreateTournamentRegistration, TournamentRegistrationRepo};
@@ -29,5 +29,8 @@ pub use tournament_results::{
     CreateTournamentResult, LeaderboardEntry, LeaderboardPeriod, TournamentResultRepo,
     UserStatistics,
 };
-pub use tournaments::{TournamentFilter, TournamentLiveStatus, TournamentRepo};
+pub use tournaments::{
+    CreateTournamentData, TournamentFilter, TournamentLiveStatus, TournamentRepo,
+    UpdateTournamentData,
+};
 pub use users::{CreateUserData, UpdateUserData, UserFilter, UserRepo};

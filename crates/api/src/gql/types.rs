@@ -1080,3 +1080,41 @@ pub struct UpdatePlayerInput {
     pub username: Option<String>,
     pub phone: Option<String>,
 }
+
+// Tournament management input types
+#[derive(InputObject)]
+pub struct CreateTournamentInput {
+    pub club_id: ID,
+    pub name: String,
+    pub description: Option<String>,
+    pub start_time: DateTime<Utc>,
+    pub end_time: Option<DateTime<Utc>>,
+    pub buy_in_cents: i32,
+    pub seat_cap: Option<i32>,
+    pub early_bird_bonus_chips: Option<i32>,
+    pub structure: Option<Vec<TournamentStructureInput>>,
+}
+
+#[derive(InputObject)]
+pub struct UpdateTournamentInput {
+    pub id: ID,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub start_time: Option<DateTime<Utc>>,
+    pub end_time: Option<DateTime<Utc>>,
+    pub buy_in_cents: Option<i32>,
+    pub seat_cap: Option<i32>,
+    pub early_bird_bonus_chips: Option<i32>,
+    pub structure: Option<Vec<TournamentStructureInput>>,
+}
+
+#[derive(InputObject, Clone)]
+pub struct TournamentStructureInput {
+    pub level_number: i32,
+    pub small_blind: i32,
+    pub big_blind: i32,
+    pub ante: i32,
+    pub duration_minutes: i32,
+    pub is_break: bool,
+    pub break_duration_minutes: Option<i32>,
+}
