@@ -26,7 +26,8 @@ async fn main() -> anyhow::Result<()> {
 
     let pool = PgPoolOptions::new()
         .max_connections(max_connections)
-        .acquire_timeout(std::time::Duration::from_secs(3))
+        .min_connections(5) // Pre-warm pool with 5 connections
+        .acquire_timeout(std::time::Duration::from_secs(10)) // Increased from 3s
         .idle_timeout(Some(std::time::Duration::from_secs(600))) // 10 minutes
         .max_lifetime(Some(std::time::Duration::from_secs(1800))) // 30 minutes
         .connect(&std::env::var("DATABASE_URL")?)
@@ -53,6 +54,9 @@ async fn main() -> anyhow::Result<()> {
 
     // Build GraphQL schema from the gql module
     let schema = build_schema(state.clone());
+
+    // Small delay to let the connection pool warm up before starting background services
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
     // Start the background clock service for auto-advancing tournament levels
     let _clock_handle = spawn_clock_service(state.clone());
