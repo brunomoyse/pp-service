@@ -30,7 +30,7 @@ use infra::repos::{
     TableSeatAssignmentRepo, TournamentEntryRepo, TournamentLiveStatus, TournamentRegistrationRepo,
     TournamentRepo, TournamentResultRepo, UpdateSeatAssignment, UserRepo,
 };
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{distr::Alphanumeric, Rng};
 use serde_json;
 use uuid::Uuid;
 
@@ -366,9 +366,9 @@ impl MutationRoot {
                     }
                     AssignmentStrategy::Random => {
                         // Random table selection
-                        use rand::seq::SliceRandom;
+                        use rand::seq::IndexedRandom;
                         tables
-                            .choose(&mut rand::thread_rng())
+                            .choose(&mut rand::rng())
                             .ok_or_else(|| async_graphql::Error::new("No tables available"))?
                     }
                     AssignmentStrategy::Sequential => {
@@ -396,7 +396,7 @@ impl MutationRoot {
 
                 if !available_seats.is_empty() {
                     // Pick a random seat from available ones
-                    let random_index = rand::random::<usize>() % available_seats.len();
+                    let random_index = rand::rng().random_range(0..available_seats.len());
                     let seat_num = available_seats[random_index];
 
                     // Assign player to this randomly selected seat
@@ -1662,7 +1662,7 @@ impl MutationRoot {
 fn generate_client_id() -> String {
     format!(
         "client_{}",
-        rand::thread_rng()
+        rand::rng()
             .sample_iter(&Alphanumeric)
             .take(16)
             .map(char::from)
@@ -1671,7 +1671,7 @@ fn generate_client_id() -> String {
 }
 
 fn generate_client_secret() -> String {
-    rand::thread_rng()
+    rand::rng()
         .sample_iter(&Alphanumeric)
         .take(32)
         .map(char::from)

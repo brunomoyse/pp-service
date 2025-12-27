@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use rand::{distributions::Alphanumeric, Rng};
+use rand::{distr::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -329,7 +329,7 @@ impl CustomOAuthService {
     }
 
     fn generate_code() -> String {
-        rand::thread_rng()
+        rand::rng()
             .sample_iter(&Alphanumeric)
             .take(32)
             .map(char::from)
@@ -337,7 +337,7 @@ impl CustomOAuthService {
     }
 
     fn generate_token() -> String {
-        rand::thread_rng()
+        rand::rng()
             .sample_iter(&Alphanumeric)
             .take(64)
             .map(char::from)
