@@ -65,6 +65,34 @@ impl ClockService {
             }
         }
 
+        // Handle tournaments at their final level - stop the clock
+        let final_level_tournaments = repo.get_tournaments_at_final_level().await?;
+
+        for tournament_id in final_level_tournaments {
+            match repo.stop_clock_final_level(tournament_id).await {
+                Ok(clock_row) => {
+                    info!(
+                        "Stopped clock for tournament {} - final level complete",
+                        tournament_id
+                    );
+
+                    // Publish clock update to subscribers
+                    if let Ok(Some(clock)) = self
+                        .build_clock_update(&repo, tournament_id, &clock_row)
+                        .await
+                    {
+                        publish_clock_update(tournament_id, clock);
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to stop clock for tournament {} at final level: {}",
+                        tournament_id, e
+                    );
+                }
+            }
+        }
+
         Ok(())
     }
 
