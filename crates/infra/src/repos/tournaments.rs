@@ -76,7 +76,8 @@ impl TournamentRepo {
         sqlx::query_as::<_, TournamentRow>(
             r#"
             SELECT id, club_id, name, description, start_time, end_time,
-                   buy_in_cents, seat_cap, live_status, created_at, updated_at
+                   buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+                   created_at, updated_at
             FROM tournaments
             WHERE id = $1
             "#,
@@ -97,13 +98,14 @@ impl TournamentRepo {
         sqlx::query_as::<_, TournamentRow>(
             r#"
             SELECT id, club_id, name, description, start_time, end_time,
-                   buy_in_cents, seat_cap, live_status, created_at, updated_at
+                   buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+                   created_at, updated_at
             FROM tournaments
             WHERE ($1::uuid IS NULL OR club_id = $1)
               AND ($2::timestamptz IS NULL OR start_time >= $2)
               AND ($3::timestamptz IS NULL OR start_time <= $3)
               AND (
-                $4::text IS NULL 
+                $4::text IS NULL
                 OR ($4 = 'upcoming' AND start_time > NOW())
                 OR ($4 = 'ongoing' AND start_time <= NOW() AND (end_time IS NULL OR end_time > NOW()))
                 OR ($4 = 'ended' AND end_time IS NOT NULL AND end_time <= NOW())
@@ -139,7 +141,8 @@ impl TournamentRepo {
                 updated_at = NOW()
             WHERE id = $1
             RETURNING id, club_id, name, description, start_time, end_time,
-                     buy_in_cents, seat_cap, live_status, created_at, updated_at
+                     buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+                     created_at, updated_at
             "#,
         )
         .bind(id)
@@ -156,7 +159,8 @@ impl TournamentRepo {
         sqlx::query_as::<_, TournamentRow>(
             r#"
             SELECT id, club_id, name, description, start_time, end_time,
-                   buy_in_cents, seat_cap, live_status, created_at, updated_at
+                   buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+                   created_at, updated_at
             FROM tournaments
             WHERE live_status = $1
             ORDER BY start_time ASC
@@ -172,7 +176,8 @@ impl TournamentRepo {
         sqlx::query_as::<_, TournamentRow>(
             r#"
             SELECT id, club_id, name, description, start_time, end_time,
-                   buy_in_cents, seat_cap, live_status, created_at, updated_at
+                   buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+                   created_at, updated_at
             FROM tournaments
             WHERE live_status IN ('in_progress', 'break', 'final_table')
             ORDER BY start_time ASC
@@ -191,7 +196,8 @@ impl TournamentRepo {
         sqlx::query_as::<_, TournamentRow>(
             r#"
             SELECT id, club_id, name, description, start_time, end_time,
-                   buy_in_cents, seat_cap, live_status, created_at, updated_at
+                   buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+                   created_at, updated_at
             FROM tournaments
             WHERE live_status IN ('not_started', 'registration_open')
               AND start_time > NOW()
@@ -213,7 +219,8 @@ impl TournamentRepo {
         sqlx::query_as::<_, TournamentRow>(
             r#"
             SELECT id, club_id, name, description, start_time, end_time,
-                   buy_in_cents, seat_cap, live_status, created_at, updated_at
+                   buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+                   created_at, updated_at
             FROM tournaments
             WHERE id = ANY($1::uuid[])
             "#,

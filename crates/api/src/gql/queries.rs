@@ -94,6 +94,7 @@ impl QueryRoot {
                     seat_cap: r.seat_cap,
                     status,
                     live_status: r.live_status.into(),
+                    early_bird_bonus_chips: r.early_bird_bonus_chips,
                     created_at: r.created_at,
                     updated_at: r.updated_at,
                 }
@@ -341,6 +342,7 @@ impl QueryRoot {
                     seat_cap: tournament_row.seat_cap,
                     status,
                     live_status: tournament_row.live_status.into(),
+                    early_bird_bonus_chips: tournament_row.early_bird_bonus_chips,
                     created_at: tournament_row.created_at,
                     updated_at: tournament_row.updated_at,
                 };
@@ -422,6 +424,7 @@ impl QueryRoot {
             seat_cap: tournament_row.seat_cap,
             status: tournament_row.calculate_status().into(),
             live_status: tournament_row.live_status.into(),
+            early_bird_bonus_chips: tournament_row.early_bird_bonus_chips,
             created_at: tournament_row.created_at,
             updated_at: tournament_row.updated_at,
         };
@@ -644,6 +647,7 @@ impl QueryRoot {
             seat_cap: tournament_row.seat_cap,
             status: tournament_row.calculate_status().into(),
             live_status: tournament_row.live_status.into(),
+            early_bird_bonus_chips: tournament_row.early_bird_bonus_chips,
             created_at: tournament_row.created_at,
             updated_at: tournament_row.updated_at,
         }))

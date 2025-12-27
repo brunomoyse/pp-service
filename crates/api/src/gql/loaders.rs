@@ -127,7 +127,8 @@ impl Loader<Uuid> for TournamentLoader {
             let rows: Vec<TournamentRow> = sqlx::query_as::<_, TournamentRow>(
                 r#"
                 SELECT id, club_id, name, description, start_time, end_time,
-                       buy_in_cents, seat_cap, live_status, created_at, updated_at
+                       buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+                       created_at, updated_at
                 FROM tournaments
                 WHERE id = ANY($1::uuid[])
                 "#,
