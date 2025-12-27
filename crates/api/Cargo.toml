@@ -53,12 +53,12 @@ once_cell = "1"
 parking_lot = "0.12"
 
 # OAuth & Authentication
-oauth2 = "4.4"
-jsonwebtoken = "9"
+oauth2 = "5.0"
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 reqwest = { version = "0.12", features = ["json"] }
 base64 = "0.22"
-rand = "0.8"
-bcrypt = "0.16"
+rand = "0.9"
+bcrypt = "0.17"
 
 # HTTP client for OAuth
 url = "2.5"
