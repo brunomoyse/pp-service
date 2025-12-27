@@ -170,4 +170,65 @@ impl TournamentEntryRepo {
         .await?;
         Ok(result.0)
     }
+
+    /// Apply early bird bonus to a specific player's initial entry
+    /// Returns the updated entry if found, None otherwise
+    pub async fn apply_early_bird_bonus(
+        &self,
+        tournament_id: Uuid,
+        user_id: Uuid,
+        bonus_chips: i32,
+    ) -> Result<Option<TournamentEntryRow>> {
+        let row = sqlx::query_as::<_, TournamentEntryRow>(
+            r#"
+            UPDATE tournament_entries
+            SET chips_received = COALESCE(chips_received, 0) + $3,
+                updated_at = NOW()
+            WHERE tournament_id = $1
+              AND user_id = $2
+              AND entry_type = 'initial'
+            RETURNING id, tournament_id, user_id, entry_type, amount_cents,
+                      chips_received, recorded_by, notes, created_at, updated_at
+            "#,
+        )
+        .bind(tournament_id)
+        .bind(user_id)
+        .bind(bonus_chips)
+        .fetch_optional(&self.db)
+        .await?;
+
+        Ok(row)
+    }
+
+    /// Apply early bird bonus to all checked-in players' initial entries
+    /// Used when tournament transitions to in_progress
+    /// Returns the number of entries updated
+    pub async fn apply_early_bird_bonus_bulk(
+        &self,
+        tournament_id: Uuid,
+        bonus_chips: i32,
+        eligible_user_ids: &[Uuid],
+    ) -> Result<u64> {
+        if eligible_user_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let result = sqlx::query(
+            r#"
+            UPDATE tournament_entries
+            SET chips_received = COALESCE(chips_received, 0) + $2,
+                updated_at = NOW()
+            WHERE tournament_id = $1
+              AND user_id = ANY($3::uuid[])
+              AND entry_type = 'initial'
+            "#,
+        )
+        .bind(tournament_id)
+        .bind(bonus_chips)
+        .bind(eligible_user_ids)
+        .execute(&self.db)
+        .await?;
+
+        Ok(result.rows_affected())
+    }
 }

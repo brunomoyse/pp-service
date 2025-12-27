@@ -25,6 +25,7 @@ pub struct TournamentRow {
     pub buy_in_cents: i32,
     pub seat_cap: Option<i32>,
     pub live_status: TournamentLiveStatus,
+    pub early_bird_bonus_chips: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

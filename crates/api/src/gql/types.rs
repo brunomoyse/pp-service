@@ -200,6 +200,7 @@ pub struct Tournament {
     pub seat_cap: Option<i32>,
     pub status: TournamentStatus, // Calculated: UPCOMING, LIVE, COMPLETED
     pub live_status: TournamentLiveStatus, // Direct from DB: NOT_STARTED, IN_PROGRESS, FINISHED, etc.
+    pub early_bird_bonus_chips: Option<i32>, // Extra chips for players present at tournament start
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -763,7 +764,8 @@ pub struct CheckInPlayerInput {
     pub tournament_id: ID,
     pub user_id: ID,
     pub assignment_strategy: Option<AssignmentStrategy>,
-    pub auto_assign: Option<bool>, // Default true
+    pub auto_assign: Option<bool>,            // Default true
+    pub grant_early_bird_bonus: Option<bool>, // Manually grant early bird bonus on late check-in
 }
 
 #[derive(InputObject)]
@@ -1056,4 +1058,25 @@ impl User {
             Ok(None)
         }
     }
+}
+
+// Player management input types
+#[derive(InputObject)]
+pub struct CreatePlayerInput {
+    pub email: String,
+    pub first_name: String,
+    pub last_name: Option<String>,
+    pub username: Option<String>,
+    pub phone: Option<String>,
+    pub club_id: ID,
+}
+
+#[derive(InputObject)]
+pub struct UpdatePlayerInput {
+    pub id: ID,
+    pub email: Option<String>,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub username: Option<String>,
+    pub phone: Option<String>,
 }

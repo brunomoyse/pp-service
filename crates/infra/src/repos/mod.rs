@@ -30,4 +30,4 @@ pub use tournament_results::{
     UserStatistics,
 };
 pub use tournaments::{TournamentFilter, TournamentLiveStatus, TournamentRepo};
-pub use users::{UserFilter, UserRepo};
+pub use users::{CreateUserData, UpdateUserData, UserFilter, UserRepo};

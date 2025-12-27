@@ -9,14 +9,15 @@ use super::subscriptions::{
 use super::types::{
     AddTournamentEntryInput, AssignPlayerToSeatInput, AssignTableToTournamentInput,
     AssignmentStrategy, AuthPayload, BalanceTablesInput, CheckInPlayerInput, CheckInResponse,
-    CreateOAuthClientInput, CreateOAuthClientResponse, DealType, EnterTournamentResultsInput,
-    EnterTournamentResultsResponse, EntryType, MovePlayerInput, NotificationType,
-    OAuthCallbackInput, OAuthClient, OAuthUrlResponse, PlayerDeal, PlayerDealInput,
-    PlayerPositionInput, PlayerRegistrationEvent, RegisterForTournamentInput,
+    CreateOAuthClientInput, CreateOAuthClientResponse, CreatePlayerInput, DealType,
+    EnterTournamentResultsInput, EnterTournamentResultsResponse, EntryType, MovePlayerInput,
+    NotificationType, OAuthCallbackInput, OAuthClient, OAuthUrlResponse, PlayerDeal,
+    PlayerDealInput, PlayerPositionInput, PlayerRegistrationEvent, RegisterForTournamentInput,
     RegistrationEventType, RegistrationStatus, Role, SeatAssignment, SeatingChangeEvent,
     SeatingEventType, Tournament, TournamentEntry, TournamentPlayer, TournamentRegistration,
-    TournamentResult, TournamentTable, UpdateStackSizeInput, UpdateTournamentStatusInput, User,
-    UserLoginInput, UserNotification, UserRegistrationInput, TITLE_REGISTRATION_CONFIRMED,
+    TournamentResult, TournamentTable, UpdatePlayerInput, UpdateStackSizeInput,
+    UpdateTournamentStatusInput, User, UserLoginInput, UserNotification, UserRegistrationInput,
+    TITLE_REGISTRATION_CONFIRMED,
 };
 use crate::auth::{
     custom_oauth::CustomOAuthService, password::PasswordService, permissions::require_admin_if,
@@ -26,9 +27,10 @@ use crate::state::AppState;
 use infra::models::TournamentRow;
 use infra::repos::{
     ClubTableRepo, CreatePlayerDeal, CreateSeatAssignment, CreateTournamentEntry,
-    CreateTournamentRegistration, CreateTournamentResult, PayoutTemplateRepo, PlayerDealRepo,
-    TableSeatAssignmentRepo, TournamentEntryRepo, TournamentLiveStatus, TournamentRegistrationRepo,
-    TournamentRepo, TournamentResultRepo, UpdateSeatAssignment, UserRepo,
+    CreateTournamentRegistration, CreateTournamentResult, CreateUserData, PayoutTemplateRepo,
+    PlayerDealRepo, TableSeatAssignmentRepo, TournamentEntryRepo, TournamentLiveStatus,
+    TournamentRegistrationRepo, TournamentRepo, TournamentResultRepo, UpdateSeatAssignment,
+    UpdateUserData, UserRepo,
 };
 use rand::{distr::Alphanumeric, Rng};
 use serde_json;
@@ -166,6 +168,7 @@ impl MutationRoot {
             seat_cap: None,
             status: crate::gql::types::TournamentStatus::Upcoming,
             live_status: crate::gql::types::TournamentLiveStatus::NotStarted,
+            early_bird_bonus_chips: None,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         })
@@ -286,6 +289,8 @@ impl MutationRoot {
         let registration_repo = TournamentRegistrationRepo::new(state.db.clone());
         let club_table_repo = ClubTableRepo::new(state.db.clone());
         let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
+        let tournament_repo = TournamentRepo::new(state.db.clone());
+        let entry_repo = TournamentEntryRepo::new(state.db.clone());
 
         let tournament_id = Uuid::parse_str(input.tournament_id.as_str())
             .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
@@ -326,6 +331,20 @@ impl MutationRoot {
             .get_by_tournament_and_user(tournament_id, user_id)
             .await?
             .ok_or_else(|| async_graphql::Error::new("Failed to get updated registration"))?;
+
+        // Apply early bird bonus if requested
+        if input.grant_early_bird_bonus.unwrap_or(false) {
+            let tournament = tournament_repo
+                .get(tournament_id)
+                .await?
+                .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
+
+            if let Some(bonus_chips) = tournament.early_bird_bonus_chips {
+                entry_repo
+                    .apply_early_bird_bonus(tournament_id, user_id, bonus_chips)
+                    .await?;
+            }
+        }
 
         // Auto-assign to table if requested
         let auto_assign = input.auto_assign.unwrap_or(true);
@@ -1253,6 +1272,39 @@ impl MutationRoot {
             .await?
             .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
 
+        // Apply early bird bonus when tournament transitions to InProgress
+        if live_status == TournamentLiveStatus::InProgress {
+            if let Some(bonus_chips) = tournament_row.early_bird_bonus_chips {
+                let registration_repo = TournamentRegistrationRepo::new(state.db.clone());
+                let entry_repo = TournamentEntryRepo::new(state.db.clone());
+
+                // Get all checked-in and seated players
+                let eligible_registrations = registration_repo
+                    .get_by_tournament(tournament_id)
+                    .await?
+                    .into_iter()
+                    .filter(|r| r.status == "checked_in" || r.status == "seated")
+                    .map(|r| r.user_id)
+                    .collect::<Vec<_>>();
+
+                if !eligible_registrations.is_empty() {
+                    let bonus_count = entry_repo
+                        .apply_early_bird_bonus_bulk(
+                            tournament_id,
+                            bonus_chips,
+                            &eligible_registrations,
+                        )
+                        .await?;
+                    tracing::info!(
+                        "Applied early bird bonus of {} chips to {} players for tournament {}",
+                        bonus_chips,
+                        bonus_count,
+                        tournament_id
+                    );
+                }
+            }
+        }
+
         // Publish seating change event
         let event = SeatingChangeEvent {
             event_type: SeatingEventType::TournamentStatusChanged,
@@ -1306,6 +1358,7 @@ impl MutationRoot {
             seat_cap: tournament_row.seat_cap,
             status: tournament_row.calculate_status().into(),
             live_status: tournament_row.live_status.into(),
+            early_bird_bonus_chips: tournament_row.early_bird_bonus_chips,
             created_at: tournament_row.created_at,
             updated_at: tournament_row.updated_at,
         })
@@ -1656,6 +1709,172 @@ impl MutationRoot {
         let _manager = require_club_manager(ctx, club_id).await?;
 
         entry_repo.delete(entry_id).await.map_err(|e| e.into())
+    }
+
+    /// Create a new player (managers only)
+    async fn create_player(&self, ctx: &Context<'_>, input: CreatePlayerInput) -> Result<User> {
+        use crate::auth::permissions::require_role;
+
+        // Require manager role
+        let _manager = require_role(ctx, Role::Manager).await?;
+
+        let state = ctx.data::<AppState>()?;
+        let user_repo = UserRepo::new(state.db.clone());
+
+        // Check if user with email already exists
+        let existing = sqlx::query!("SELECT id FROM users WHERE email = $1", input.email)
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        if existing.is_some() {
+            return Err(async_graphql::Error::new(
+                "A user with this email already exists",
+            ));
+        }
+
+        let create_data = CreateUserData {
+            email: input.email,
+            first_name: input.first_name,
+            last_name: input.last_name,
+            username: input.username,
+            phone: input.phone,
+        };
+
+        let user_row = user_repo.create(create_data).await?;
+
+        Ok(User {
+            id: user_row.id.into(),
+            email: user_row.email,
+            username: user_row.username,
+            first_name: user_row.first_name,
+            last_name: user_row.last_name,
+            phone: user_row.phone,
+            is_active: user_row.is_active,
+            role: crate::gql::types::Role::from(user_row.role),
+        })
+    }
+
+    /// Update an existing player (managers only)
+    async fn update_player(&self, ctx: &Context<'_>, input: UpdatePlayerInput) -> Result<User> {
+        use crate::auth::permissions::require_role;
+
+        // Require manager role
+        let _manager = require_role(ctx, Role::Manager).await?;
+
+        let state = ctx.data::<AppState>()?;
+        let user_repo = UserRepo::new(state.db.clone());
+
+        let user_id = Uuid::parse_str(input.id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
+
+        // Check if user exists
+        let existing = user_repo.get_by_id(user_id).await?;
+        if existing.is_none() {
+            return Err(async_graphql::Error::new("User not found"));
+        }
+
+        // If email is being updated, check it's not taken by another user
+        if let Some(ref new_email) = input.email {
+            let email_taken = sqlx::query!(
+                "SELECT id FROM users WHERE email = $1 AND id != $2",
+                new_email,
+                user_id
+            )
+            .fetch_optional(&state.db)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+            if email_taken.is_some() {
+                return Err(async_graphql::Error::new(
+                    "A user with this email already exists",
+                ));
+            }
+        }
+
+        let update_data = UpdateUserData {
+            email: input.email,
+            first_name: input.first_name,
+            last_name: input.last_name,
+            username: input.username,
+            phone: input.phone,
+        };
+
+        let user_row = user_repo
+            .update(user_id, update_data)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Failed to update user"))?;
+
+        Ok(User {
+            id: user_row.id.into(),
+            email: user_row.email,
+            username: user_row.username,
+            first_name: user_row.first_name,
+            last_name: user_row.last_name,
+            phone: user_row.phone,
+            is_active: user_row.is_active,
+            role: crate::gql::types::Role::from(user_row.role),
+        })
+    }
+
+    /// Deactivate a player (soft delete) - managers only
+    async fn deactivate_player(&self, ctx: &Context<'_>, id: ID) -> Result<User> {
+        use crate::auth::permissions::require_role;
+
+        // Require manager role
+        let _manager = require_role(ctx, Role::Manager).await?;
+
+        let state = ctx.data::<AppState>()?;
+        let user_repo = UserRepo::new(state.db.clone());
+
+        let user_id = Uuid::parse_str(id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
+
+        let user_row = user_repo
+            .deactivate(user_id)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("User not found"))?;
+
+        Ok(User {
+            id: user_row.id.into(),
+            email: user_row.email,
+            username: user_row.username,
+            first_name: user_row.first_name,
+            last_name: user_row.last_name,
+            phone: user_row.phone,
+            is_active: user_row.is_active,
+            role: crate::gql::types::Role::from(user_row.role),
+        })
+    }
+
+    /// Reactivate a player - managers only
+    async fn reactivate_player(&self, ctx: &Context<'_>, id: ID) -> Result<User> {
+        use crate::auth::permissions::require_role;
+
+        // Require manager role
+        let _manager = require_role(ctx, Role::Manager).await?;
+
+        let state = ctx.data::<AppState>()?;
+        let user_repo = UserRepo::new(state.db.clone());
+
+        let user_id = Uuid::parse_str(id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
+
+        let user_row = user_repo
+            .reactivate(user_id)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("User not found"))?;
+
+        Ok(User {
+            id: user_row.id.into(),
+            email: user_row.email,
+            username: user_row.username,
+            first_name: user_row.first_name,
+            last_name: user_row.last_name,
+            phone: user_row.phone,
+            is_active: user_row.is_active,
+            role: crate::gql::types::Role::from(user_row.role),
+        })
     }
 }
 
