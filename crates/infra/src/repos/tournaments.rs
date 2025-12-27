@@ -62,6 +62,29 @@ impl FromStr for TournamentLiveStatus {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct CreateTournamentData {
+    pub club_id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub start_time: DateTime<Utc>,
+    pub end_time: Option<DateTime<Utc>>,
+    pub buy_in_cents: i32,
+    pub seat_cap: Option<i32>,
+    pub early_bird_bonus_chips: Option<i32>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct UpdateTournamentData {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub start_time: Option<DateTime<Utc>>,
+    pub end_time: Option<DateTime<Utc>>,
+    pub buy_in_cents: Option<i32>,
+    pub seat_cap: Option<i32>,
+    pub early_bird_bonus_chips: Option<i32>,
+}
+
 #[derive(Clone)]
 pub struct TournamentRepo {
     pool: Db,
@@ -227,6 +250,103 @@ impl TournamentRepo {
         )
         .bind(ids)
         .fetch_all(&self.pool)
+        .await
+    }
+
+    /// Create a new tournament
+    pub async fn create(&self, data: CreateTournamentData) -> SqlxResult<TournamentRow> {
+        sqlx::query_as::<_, TournamentRow>(
+            r#"
+            INSERT INTO tournaments (club_id, name, description, start_time, end_time,
+                                     buy_in_cents, seat_cap, early_bird_bonus_chips)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING id, club_id, name, description, start_time, end_time,
+                      buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+                      created_at, updated_at
+            "#,
+        )
+        .bind(data.club_id)
+        .bind(data.name)
+        .bind(data.description)
+        .bind(data.start_time)
+        .bind(data.end_time)
+        .bind(data.buy_in_cents)
+        .bind(data.seat_cap)
+        .bind(data.early_bird_bonus_chips)
+        .fetch_one(&self.pool)
+        .await
+    }
+
+    /// Update a tournament (only allowed before FINISHED status)
+    pub async fn update(
+        &self,
+        id: Uuid,
+        data: UpdateTournamentData,
+    ) -> SqlxResult<Option<TournamentRow>> {
+        sqlx::query_as::<_, TournamentRow>(
+            r#"
+            UPDATE tournaments
+            SET name = COALESCE($2, name),
+                description = COALESCE($3, description),
+                start_time = COALESCE($4, start_time),
+                end_time = COALESCE($5, end_time),
+                buy_in_cents = COALESCE($6, buy_in_cents),
+                seat_cap = COALESCE($7, seat_cap),
+                early_bird_bonus_chips = COALESCE($8, early_bird_bonus_chips),
+                updated_at = NOW()
+            WHERE id = $1 AND live_status != 'finished'
+            RETURNING id, club_id, name, description, start_time, end_time,
+                      buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+                      created_at, updated_at
+            "#,
+        )
+        .bind(id)
+        .bind(data.name)
+        .bind(data.description)
+        .bind(data.start_time)
+        .bind(data.end_time)
+        .bind(data.buy_in_cents)
+        .bind(data.seat_cap)
+        .bind(data.early_bird_bonus_chips)
+        .fetch_optional(&self.pool)
+        .await
+    }
+
+    /// Get tournaments that have been running for longer than the specified hours
+    /// Used to auto-finish stale tournaments
+    pub async fn get_stale_tournaments(&self, max_hours: i32) -> SqlxResult<Vec<TournamentRow>> {
+        sqlx::query_as::<_, TournamentRow>(
+            r#"
+            SELECT id, club_id, name, description, start_time, end_time,
+                   buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+                   created_at, updated_at
+            FROM tournaments
+            WHERE live_status IN ('in_progress', 'late_registration', 'break', 'final_table')
+              AND updated_at < NOW() - ($1 || ' hours')::INTERVAL
+            ORDER BY updated_at ASC
+            "#,
+        )
+        .bind(max_hours)
+        .fetch_all(&self.pool)
+        .await
+    }
+
+    /// Auto-finish a stale tournament
+    pub async fn auto_finish(&self, id: Uuid) -> SqlxResult<Option<TournamentRow>> {
+        sqlx::query_as::<_, TournamentRow>(
+            r#"
+            UPDATE tournaments
+            SET live_status = 'finished',
+                end_time = NOW(),
+                updated_at = NOW()
+            WHERE id = $1 AND live_status != 'finished'
+            RETURNING id, club_id, name, description, start_time, end_time,
+                      buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+                      created_at, updated_at
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
         .await
     }
 }

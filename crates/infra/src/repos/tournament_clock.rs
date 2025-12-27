@@ -397,10 +397,10 @@ impl TournamentClockRepo {
         level: TournamentStructureLevel,
     ) -> SqlxResult<TournamentStructureRow> {
         sqlx::query_as::<_, TournamentStructureRow>(
-            "INSERT INTO tournament_structures 
+            "INSERT INTO tournament_structures
              (tournament_id, level_number, small_blind, big_blind, ante, duration_minutes, is_break, break_duration_minutes)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-             RETURNING id, tournament_id, level_number, small_blind, big_blind, ante, 
+             RETURNING id, tournament_id, level_number, small_blind, big_blind, ante,
                        duration_minutes, is_break, break_duration_minutes, created_at"
         )
         .bind(tournament_id)
@@ -413,6 +413,27 @@ impl TournamentClockRepo {
         .bind(level.break_duration_minutes)
         .fetch_one(&self.pool)
         .await
+    }
+
+    /// Replace all structure levels for a tournament (delete existing + insert new)
+    pub async fn replace_structures(
+        &self,
+        tournament_id: Uuid,
+        levels: Vec<TournamentStructureLevel>,
+    ) -> SqlxResult<Vec<TournamentStructureRow>> {
+        // Delete existing structures
+        sqlx::query("DELETE FROM tournament_structures WHERE tournament_id = $1")
+            .bind(tournament_id)
+            .execute(&self.pool)
+            .await?;
+
+        // Insert new structures
+        let mut results = Vec::new();
+        for level in levels {
+            let row = self.add_structure(tournament_id, level).await?;
+            results.push(row);
+        }
+        Ok(results)
     }
 
     /// Log clock event
