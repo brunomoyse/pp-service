@@ -4,9 +4,10 @@ repos:
   - repo: local
     hooks:
       # SQLx cache validation - runs on push
+      # Requires DATABASE_URL environment variable to be set
       - id: sqlx-check
         name: Check SQLx query cache is up to date
-        entry: sh -c 'if git diff --name-only @{upstream}..HEAD 2>/dev/null | xargs grep -l "sqlx::query" 2>/dev/null; then echo "SQLx queries detected. Ensuring cache is up to date..."; DATABASE_URL="postgres://brunomoyse:A9WeJQk%3F%217W0n%C2%A3h%C2%A3@192.168.0.14:5433/pocketpair" cargo sqlx prepare --workspace -- --tests --check || (echo "SQLx cache is outdated. Run: cargo sqlx prepare --workspace -- --tests"; exit 1); fi'
+        entry: sh -c 'if [ -z "$DATABASE_URL" ]; then echo "Skipping SQLx check: DATABASE_URL not set"; exit 0; fi; if git diff --name-only @{upstream}..HEAD 2>/dev/null | xargs grep -l "sqlx::query" 2>/dev/null; then echo "SQLx queries detected. Ensuring cache is up to date..."; cargo sqlx prepare --workspace -- --tests --check || (echo "SQLx cache is outdated. Run: cargo sqlx prepare --workspace -- --tests"; exit 1); fi'
         language: system
         files: '\.rs$'
         pass_filenames: false
