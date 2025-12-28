@@ -134,7 +134,7 @@ impl TableSeatAssignmentRepo {
     ) -> SqlxResult<Vec<TableSeatAssignmentRow>> {
         sqlx::query_as::<_, TableSeatAssignmentRow>(
             r#"
-            SELECT id, tournament_id, club_table_id, user_id, seat_number, stack_size, 
+            SELECT id, tournament_id, club_table_id, user_id, seat_number, stack_size,
                    is_current, assigned_at, unassigned_at, assigned_by, notes, created_at, updated_at
             FROM table_seat_assignments
             WHERE tournament_id = $1 AND is_current = true
@@ -142,6 +142,27 @@ impl TableSeatAssignmentRepo {
             "#
         )
         .bind(tournament_id)
+        .fetch_all(&self.pool)
+        .await
+    }
+
+    /// Get all current seat assignments for a specific table in a tournament
+    pub async fn get_current_for_tournament_table(
+        &self,
+        tournament_id: Uuid,
+        club_table_id: Uuid,
+    ) -> SqlxResult<Vec<TableSeatAssignmentRow>> {
+        sqlx::query_as::<_, TableSeatAssignmentRow>(
+            r#"
+            SELECT id, tournament_id, club_table_id, user_id, seat_number, stack_size,
+                   is_current, assigned_at, unassigned_at, assigned_by, notes, created_at, updated_at
+            FROM table_seat_assignments
+            WHERE tournament_id = $1 AND club_table_id = $2 AND is_current = true
+            ORDER BY seat_number ASC
+            "#
+        )
+        .bind(tournament_id)
+        .bind(club_table_id)
         .fetch_all(&self.pool)
         .await
     }
