@@ -239,3 +239,12 @@ pub struct TournamentEntryRow {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct BlindStructureTemplateRow {
+    pub id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub levels: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+}

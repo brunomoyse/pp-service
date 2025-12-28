@@ -7,9 +7,10 @@ use crate::state::AppState;
 use infra::{
     pagination::LimitOffset,
     repos::{
-        ClubRepo, ClubTableRepo, LeaderboardPeriod, SeatAssignmentFilter, TableSeatAssignmentRepo,
-        TournamentEntryRepo, TournamentFilter, TournamentPayoutRepo, TournamentRegistrationRepo,
-        TournamentRepo, TournamentResultRepo, UserFilter, UserRepo, UserStatistics,
+        BlindStructureTemplateRepo, ClubRepo, ClubTableRepo, LeaderboardPeriod,
+        SeatAssignmentFilter, TableSeatAssignmentRepo, TournamentEntryRepo, TournamentFilter,
+        TournamentPayoutRepo, TournamentRegistrationRepo, TournamentRepo, TournamentResultRepo,
+        UserFilter, UserRepo, UserStatistics,
     },
 };
 
@@ -866,5 +867,35 @@ impl QueryRoot {
             re_entry_count: stats.re_entry_count as i32,
             addon_count: stats.addon_count as i32,
         })
+    }
+
+    /// Get all available blind structure templates
+    async fn blind_structure_templates(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<Vec<crate::gql::types::BlindStructureTemplate>> {
+        let state = ctx.data::<AppState>()?;
+        let repo = BlindStructureTemplateRepo::new(state.db.clone());
+
+        let templates = repo.list_all().await?;
+
+        templates
+            .into_iter()
+            .map(|t| {
+                // Parse the JSONB levels into BlindStructureLevel
+                let levels: Vec<crate::gql::types::BlindStructureLevel> =
+                    serde_json::from_value(t.levels).map_err(|e| {
+                        async_graphql::Error::new(format!("Failed to parse template levels: {}", e))
+                    })?;
+
+                Ok(crate::gql::types::BlindStructureTemplate {
+                    id: t.id.into(),
+                    name: t.name,
+                    description: t.description,
+                    levels,
+                    created_at: t.created_at,
+                })
+            })
+            .collect()
     }
 }

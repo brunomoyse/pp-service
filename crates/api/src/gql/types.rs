@@ -570,6 +570,33 @@ pub struct TournamentStructure {
     pub break_duration_minutes: Option<i32>,
 }
 
+/// A blind structure level without tournament_id (for templates)
+#[derive(SimpleObject, Clone, Debug, serde::Deserialize)]
+pub struct BlindStructureLevel {
+    #[serde(rename = "levelNumber")]
+    pub level_number: i32,
+    #[serde(rename = "smallBlind")]
+    pub small_blind: i32,
+    #[serde(rename = "bigBlind")]
+    pub big_blind: i32,
+    pub ante: i32,
+    #[serde(rename = "durationMinutes")]
+    pub duration_minutes: i32,
+    #[serde(rename = "isBreak")]
+    pub is_break: bool,
+    #[serde(rename = "breakDurationMinutes")]
+    pub break_duration_minutes: Option<i32>,
+}
+
+#[derive(SimpleObject, Clone)]
+pub struct BlindStructureTemplate {
+    pub id: ID,
+    pub name: String,
+    pub description: Option<String>,
+    pub levels: Vec<BlindStructureLevel>,
+    pub created_at: DateTime<Utc>,
+}
+
 #[derive(SimpleObject, Clone)]
 pub struct TournamentClock {
     pub id: ID,
@@ -1092,6 +1119,9 @@ pub struct CreateTournamentInput {
     pub buy_in_cents: i32,
     pub seat_cap: Option<i32>,
     pub early_bird_bonus_chips: Option<i32>,
+    /// Blind structure template ID - if provided, copies levels from template
+    pub template_id: Option<ID>,
+    /// Custom blind structure levels - only used if template_id is not provided
     pub structure: Option<Vec<TournamentStructureInput>>,
 }
 
@@ -1105,6 +1135,9 @@ pub struct UpdateTournamentInput {
     pub buy_in_cents: Option<i32>,
     pub seat_cap: Option<i32>,
     pub early_bird_bonus_chips: Option<i32>,
+    /// Blind structure template ID - if provided, replaces structure with template levels
+    pub template_id: Option<ID>,
+    /// Custom blind structure levels - only used if template_id is not provided
     pub structure: Option<Vec<TournamentStructureInput>>,
 }
 
