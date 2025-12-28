@@ -28,12 +28,12 @@ use crate::auth::{
 use crate::state::AppState;
 use infra::models::TournamentRow;
 use infra::repos::{
-    ClubTableRepo, CreatePlayerDeal, CreateSeatAssignment, CreateTournamentData,
-    CreateTournamentEntry, CreateTournamentRegistration, CreateTournamentResult, CreateUserData,
-    PayoutTemplateRepo, PlayerDealRepo, TableSeatAssignmentRepo, TournamentClockRepo,
-    TournamentEntryRepo, TournamentLiveStatus, TournamentRegistrationRepo, TournamentRepo,
-    TournamentResultRepo, TournamentStructureLevel, UpdateSeatAssignment, UpdateTournamentData,
-    UpdateUserData, UserRepo,
+    BlindStructureTemplateRepo, ClubTableRepo, CreatePlayerDeal, CreateSeatAssignment,
+    CreateTournamentData, CreateTournamentEntry, CreateTournamentRegistration,
+    CreateTournamentResult, CreateUserData, PayoutTemplateRepo, PlayerDealRepo,
+    TableSeatAssignmentRepo, TournamentClockRepo, TournamentEntryRepo, TournamentLiveStatus,
+    TournamentRegistrationRepo, TournamentRepo, TournamentResultRepo, TournamentStructureLevel,
+    UpdateSeatAssignment, UpdateTournamentData, UpdateUserData, UserRepo,
 };
 use rand::{distr::Alphanumeric, Rng};
 use serde_json;
@@ -180,8 +180,42 @@ impl MutationRoot {
 
         let tournament_row = tournament_repo.create(create_data).await?;
 
-        // If custom structure is provided, replace the auto-generated one
-        if let Some(structure_levels) = input.structure {
+        // Handle blind structure: template_id takes priority over custom structure
+        if let Some(template_id) = input.template_id {
+            let template_id = Uuid::parse_str(template_id.as_str())
+                .map_err(|e| async_graphql::Error::new(format!("Invalid template ID: {}", e)))?;
+
+            let template_repo = BlindStructureTemplateRepo::new(state.db.clone());
+            let template = template_repo
+                .get_by_id(template_id)
+                .await?
+                .ok_or_else(|| async_graphql::Error::new("Blind structure template not found"))?;
+
+            // Parse template levels from JSONB
+            let template_levels: Vec<crate::gql::types::BlindStructureLevel> =
+                serde_json::from_value(template.levels).map_err(|e| {
+                    async_graphql::Error::new(format!("Failed to parse template levels: {}", e))
+                })?;
+
+            let clock_repo = TournamentClockRepo::new(state.db.clone());
+            let levels: Vec<TournamentStructureLevel> = template_levels
+                .iter()
+                .map(|l| TournamentStructureLevel {
+                    level_number: l.level_number,
+                    small_blind: l.small_blind,
+                    big_blind: l.big_blind,
+                    ante: l.ante,
+                    duration_minutes: l.duration_minutes,
+                    is_break: l.is_break,
+                    break_duration_minutes: l.break_duration_minutes,
+                })
+                .collect();
+
+            clock_repo
+                .replace_structures(tournament_row.id, levels)
+                .await?;
+        } else if let Some(structure_levels) = input.structure {
+            // If custom structure is provided (no template), replace the auto-generated one
             if !structure_levels.is_empty() {
                 let clock_repo = TournamentClockRepo::new(state.db.clone());
 
@@ -277,8 +311,46 @@ impl MutationRoot {
                 async_graphql::Error::new("Failed to update tournament or tournament is finished")
             })?;
 
-        // If structure is provided, update it
-        if let Some(structure_levels) = input.structure {
+        // Handle blind structure: template_id takes priority over custom structure
+        if let Some(template_id) = input.template_id {
+            let template_id = Uuid::parse_str(template_id.as_str())
+                .map_err(|e| async_graphql::Error::new(format!("Invalid template ID: {}", e)))?;
+
+            let template_repo = BlindStructureTemplateRepo::new(state.db.clone());
+            let template = template_repo
+                .get_by_id(template_id)
+                .await?
+                .ok_or_else(|| async_graphql::Error::new("Blind structure template not found"))?;
+
+            // Parse template levels from JSONB
+            let template_levels: Vec<crate::gql::types::BlindStructureLevel> =
+                serde_json::from_value(template.levels).map_err(|e| {
+                    async_graphql::Error::new(format!("Failed to parse template levels: {}", e))
+                })?;
+
+            let clock_repo = TournamentClockRepo::new(state.db.clone());
+
+            // Ensure clock exists
+            if clock_repo.get_clock(tournament_id).await?.is_none() {
+                clock_repo.create_clock(tournament_id).await?;
+            }
+
+            let levels: Vec<TournamentStructureLevel> = template_levels
+                .iter()
+                .map(|l| TournamentStructureLevel {
+                    level_number: l.level_number,
+                    small_blind: l.small_blind,
+                    big_blind: l.big_blind,
+                    ante: l.ante,
+                    duration_minutes: l.duration_minutes,
+                    is_break: l.is_break,
+                    break_duration_minutes: l.break_duration_minutes,
+                })
+                .collect();
+
+            clock_repo.replace_structures(tournament_id, levels).await?;
+        } else if let Some(structure_levels) = input.structure {
+            // If custom structure is provided (no template), update it
             let clock_repo = TournamentClockRepo::new(state.db.clone());
 
             // Ensure clock exists

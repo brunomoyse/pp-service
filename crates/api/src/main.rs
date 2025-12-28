@@ -27,9 +27,10 @@ async fn main() -> anyhow::Result<()> {
     let pool = PgPoolOptions::new()
         .max_connections(max_connections)
         .min_connections(5) // Pre-warm pool with 5 connections
-        .acquire_timeout(std::time::Duration::from_secs(10)) // Increased from 3s
-        .idle_timeout(Some(std::time::Duration::from_secs(600))) // 10 minutes
+        .acquire_timeout(std::time::Duration::from_secs(10))
+        .idle_timeout(Some(std::time::Duration::from_secs(300))) // 5 minutes (reduced from 10)
         .max_lifetime(Some(std::time::Duration::from_secs(1800))) // 30 minutes
+        .test_before_acquire(true) // Verify connection is alive before using
         .connect(&std::env::var("DATABASE_URL")?)
         .await?;
     tracing::info!(

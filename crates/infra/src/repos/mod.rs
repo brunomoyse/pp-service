@@ -1,3 +1,4 @@
+pub mod blind_structure_templates;
 pub mod club_managers;
 pub mod club_tables;
 pub mod clubs;
@@ -12,6 +13,7 @@ pub mod tournament_results;
 pub mod tournaments;
 pub mod users;
 
+pub use blind_structure_templates::BlindStructureTemplateRepo;
 pub use club_managers::{ClubInfo, ClubManagerRepo, CreateClubManager};
 pub use club_tables::{ClubTableRepo, CreateClubTable, UpdateClubTable};
 pub use clubs::ClubRepo;
