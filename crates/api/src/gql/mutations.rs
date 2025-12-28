@@ -15,9 +15,9 @@ use super::types::{
     PlayerDeal, PlayerDealInput, PlayerPositionInput, PlayerRegistrationEvent,
     RegisterForTournamentInput, RegistrationEventType, RegistrationStatus, Role, SeatAssignment,
     SeatingChangeEvent, SeatingEventType, Tournament, TournamentEntry, TournamentPlayer,
-    TournamentRegistration, TournamentResult, TournamentTable, UpdatePlayerInput,
-    UpdateStackSizeInput, UpdateTournamentInput, UpdateTournamentStatusInput, User, UserLoginInput,
-    UserNotification, UserRegistrationInput, TITLE_REGISTRATION_CONFIRMED,
+    TournamentRegistration, TournamentResult, TournamentTable, UnassignTableFromTournamentInput,
+    UpdatePlayerInput, UpdateStackSizeInput, UpdateTournamentInput, UpdateTournamentStatusInput,
+    User, UserLoginInput, UserNotification, UserRegistrationInput, TITLE_REGISTRATION_CONFIRMED,
 };
 use crate::auth::{
     custom_oauth::CustomOAuthService,
@@ -1167,6 +1167,75 @@ impl MutationRoot {
             is_active: club_table.is_active,
             created_at: club_table.created_at,
         })
+    }
+
+    /// Unassign (break) a table from a tournament (managers only)
+    /// Only empty tables (with no seated players) can be unassigned
+    async fn unassign_table_from_tournament(
+        &self,
+        ctx: &Context<'_>,
+        input: UnassignTableFromTournamentInput,
+    ) -> Result<bool> {
+        use crate::auth::permissions::require_club_manager;
+
+        let state = ctx.data::<AppState>()?;
+        let tournament_id = Uuid::parse_str(input.tournament_id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+        let club_table_id = Uuid::parse_str(input.club_table_id.as_str())
+            .map_err(|e| async_graphql::Error::new(format!("Invalid club table ID: {}", e)))?;
+
+        // Get club ID for the tournament to verify permissions
+        let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
+
+        // Require manager role for this specific club
+        let _manager = require_club_manager(ctx, club_id).await?;
+
+        let club_table_repo = ClubTableRepo::new(state.db.clone());
+        let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
+
+        // Verify the club table exists and belongs to the same club
+        let club_table = club_table_repo
+            .get_by_id(club_table_id)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Club table not found"))?;
+
+        if club_table.club_id != club_id {
+            return Err(async_graphql::Error::new(
+                "Club table does not belong to the tournament's club",
+            ));
+        }
+
+        // Check if there are any active seat assignments on this table for this tournament
+        let current_assignments = assignment_repo
+            .get_current_for_tournament_table(tournament_id, club_table_id)
+            .await?;
+
+        if !current_assignments.is_empty() {
+            return Err(async_graphql::Error::new(
+                "Cannot unassign table: there are still players seated at this table. Move or eliminate all players first.",
+            ));
+        }
+
+        // Unassign the table from the tournament
+        let success = club_table_repo
+            .unassign_from_tournament(tournament_id, club_table_id)
+            .await?;
+
+        if success {
+            // Publish seating change event
+            let event = SeatingChangeEvent {
+                event_type: SeatingEventType::TableRemoved,
+                tournament_id: tournament_id.into(),
+                club_id: club_id.into(),
+                affected_assignment: None,
+                affected_player: None,
+                message: format!("Table {} removed from tournament", club_table.table_number),
+                timestamp: chrono::Utc::now(),
+            };
+            publish_seating_event(event);
+        }
+
+        Ok(success)
     }
 
     /// Assign a player to a specific seat (managers only)

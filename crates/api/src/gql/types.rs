@@ -756,6 +756,12 @@ pub struct AssignTableToTournamentInput {
 }
 
 #[derive(InputObject)]
+pub struct UnassignTableFromTournamentInput {
+    pub tournament_id: ID,
+    pub club_table_id: ID,
+}
+
+#[derive(InputObject)]
 pub struct UpdateTournamentStatusInput {
     pub tournament_id: ID,
     pub live_status: TournamentLiveStatus,
@@ -835,6 +841,8 @@ pub enum SeatingEventType {
     TableCreated,
     #[graphql(name = "TABLE_CLOSED")]
     TableClosed,
+    #[graphql(name = "TABLE_REMOVED")]
+    TableRemoved,
     #[graphql(name = "TOURNAMENT_STATUS_CHANGED")]
     TournamentStatusChanged,
     #[graphql(name = "TABLES_BALANCED")]
