@@ -3,7 +3,7 @@ use crate::{
     models::{TableSeatAssignmentRow, UserRow},
 };
 use chrono::{DateTime, Utc};
-use sqlx::Result as SqlxResult;
+use sqlx::{PgExecutor, Result as SqlxResult};
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -51,26 +51,7 @@ impl TableSeatAssignmentRepo {
 
     /// Create a new seat assignment
     pub async fn create(&self, data: CreateSeatAssignment) -> SqlxResult<TableSeatAssignmentRow> {
-        sqlx::query_as::<_, TableSeatAssignmentRow>(
-            r#"
-            INSERT INTO table_seat_assignments (
-                tournament_id, club_table_id, user_id, seat_number, 
-                stack_size, assigned_by, notes
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id, tournament_id, club_table_id, user_id, seat_number, stack_size, 
-                     is_current, assigned_at, unassigned_at, assigned_by, notes, created_at, updated_at
-            "#
-        )
-        .bind(data.tournament_id)
-        .bind(data.club_table_id)
-        .bind(data.user_id)
-        .bind(data.seat_number)
-        .bind(data.stack_size)
-        .bind(data.assigned_by)
-        .bind(data.notes)
-        .fetch_one(&self.pool)
-        .await
+        create_seat_assignment(&self.pool, data).await
     }
 
     /// Get seat assignment by ID
@@ -132,18 +113,7 @@ impl TableSeatAssignmentRepo {
         &self,
         tournament_id: Uuid,
     ) -> SqlxResult<Vec<TableSeatAssignmentRow>> {
-        sqlx::query_as::<_, TableSeatAssignmentRow>(
-            r#"
-            SELECT id, tournament_id, club_table_id, user_id, seat_number, stack_size,
-                   is_current, assigned_at, unassigned_at, assigned_by, notes, created_at, updated_at
-            FROM table_seat_assignments
-            WHERE tournament_id = $1 AND is_current = true
-            ORDER BY club_table_id, seat_number ASC
-            "#
-        )
-        .bind(tournament_id)
-        .fetch_all(&self.pool)
-        .await
+        get_current_for_tournament(&self.pool, tournament_id).await
     }
 
     /// Get all current seat assignments for a specific table in a tournament
@@ -336,48 +306,20 @@ impl TableSeatAssignmentRepo {
         moved_by: Option<Uuid>,
         notes: Option<String>,
     ) -> SqlxResult<TableSeatAssignmentRow> {
-        // Start a transaction to ensure atomicity
         let mut tx = self.pool.begin().await?;
-
-        // Unassign current seat
-        sqlx::query(
-            r#"
-            UPDATE table_seat_assignments
-            SET is_current = false,
-                unassigned_at = NOW(),
-                assigned_by = COALESCE($3, assigned_by),
-                updated_at = NOW()
-            WHERE tournament_id = $1 AND user_id = $2 AND is_current = true
-            "#,
+        unassign_current_seat(&mut *tx, tournament_id, user_id, moved_by).await?;
+        let result = move_player_with_executor(
+            &mut *tx,
+            tournament_id,
+            user_id,
+            new_club_table_id,
+            new_seat_number,
+            moved_by,
+            notes,
         )
-        .bind(tournament_id)
-        .bind(user_id)
-        .bind(moved_by)
-        .execute(&mut *tx)
         .await?;
-
-        // Create new assignment
-        let new_assignment = sqlx::query_as::<_, TableSeatAssignmentRow>(
-            r#"
-            INSERT INTO table_seat_assignments (
-                tournament_id, club_table_id, user_id, seat_number, assigned_by, notes
-            )
-            VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING id, tournament_id, club_table_id, user_id, seat_number, stack_size, 
-                     is_current, assigned_at, unassigned_at, assigned_by, notes, created_at, updated_at
-            "#
-        )
-        .bind(tournament_id)
-        .bind(new_club_table_id)
-        .bind(user_id)
-        .bind(new_seat_number)
-        .bind(moved_by)
-        .bind(notes)
-        .fetch_one(&mut *tx)
-        .await?;
-
         tx.commit().await?;
-        Ok(new_assignment)
+        Ok(result)
     }
 
     /// Count players at a table
@@ -432,18 +374,130 @@ impl TableSeatAssignmentRepo {
 
     /// Get all occupied seat numbers for a table (batch query instead of N individual checks)
     pub async fn get_occupied_seats(&self, club_table_id: Uuid) -> SqlxResult<Vec<i32>> {
-        let rows: Vec<(i32,)> = sqlx::query_as(
-            r#"
-            SELECT seat_number
-            FROM table_seat_assignments
-            WHERE club_table_id = $1 AND is_current = true
-            ORDER BY seat_number
-            "#,
-        )
-        .bind(club_table_id)
-        .fetch_all(&self.pool)
-        .await?;
-
-        Ok(rows.into_iter().map(|(seat,)| seat).collect())
+        get_occupied_seats(&self.pool, club_table_id).await
     }
+}
+
+// Standalone functions that accept any PgExecutor (PgPool or Transaction)
+
+pub async fn create_seat_assignment<'e>(
+    executor: impl PgExecutor<'e>,
+    data: CreateSeatAssignment,
+) -> SqlxResult<TableSeatAssignmentRow> {
+    sqlx::query_as::<_, TableSeatAssignmentRow>(
+        r#"
+        INSERT INTO table_seat_assignments (
+            tournament_id, club_table_id, user_id, seat_number,
+            stack_size, assigned_by, notes
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id, tournament_id, club_table_id, user_id, seat_number, stack_size,
+                 is_current, assigned_at, unassigned_at, assigned_by, notes, created_at, updated_at
+        "#,
+    )
+    .bind(data.tournament_id)
+    .bind(data.club_table_id)
+    .bind(data.user_id)
+    .bind(data.seat_number)
+    .bind(data.stack_size)
+    .bind(data.assigned_by)
+    .bind(data.notes)
+    .fetch_one(executor)
+    .await
+}
+
+pub async fn get_current_for_tournament<'e>(
+    executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
+) -> SqlxResult<Vec<TableSeatAssignmentRow>> {
+    sqlx::query_as::<_, TableSeatAssignmentRow>(
+        r#"
+        SELECT id, tournament_id, club_table_id, user_id, seat_number, stack_size,
+               is_current, assigned_at, unassigned_at, assigned_by, notes, created_at, updated_at
+        FROM table_seat_assignments
+        WHERE tournament_id = $1 AND is_current = true
+        ORDER BY club_table_id, seat_number ASC
+        "#,
+    )
+    .bind(tournament_id)
+    .fetch_all(executor)
+    .await
+}
+
+pub async fn get_occupied_seats<'e>(
+    executor: impl PgExecutor<'e>,
+    club_table_id: Uuid,
+) -> SqlxResult<Vec<i32>> {
+    let rows: Vec<(i32,)> = sqlx::query_as(
+        r#"
+        SELECT seat_number
+        FROM table_seat_assignments
+        WHERE club_table_id = $1 AND is_current = true
+        ORDER BY seat_number
+        "#,
+    )
+    .bind(club_table_id)
+    .fetch_all(executor)
+    .await?;
+
+    Ok(rows.into_iter().map(|(seat,)| seat).collect())
+}
+
+pub async fn move_player_with_executor<'e>(
+    executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
+    user_id: Uuid,
+    new_club_table_id: Uuid,
+    new_seat_number: i32,
+    moved_by: Option<Uuid>,
+    notes: Option<String>,
+) -> SqlxResult<TableSeatAssignmentRow> {
+    // Note: caller is responsible for transaction boundaries.
+    // We need two statements, so we must accept a mutable transaction reference.
+    // However, PgExecutor is consumed on use. For multi-statement usage within
+    // a single transaction, the caller should pass &mut *tx each time.
+    // This function performs only the INSERT (new assignment).
+    // The caller should first run unassign_current_seat, then call this.
+    sqlx::query_as::<_, TableSeatAssignmentRow>(
+        r#"
+        INSERT INTO table_seat_assignments (
+            tournament_id, club_table_id, user_id, seat_number, assigned_by, notes
+        )
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, tournament_id, club_table_id, user_id, seat_number, stack_size,
+                 is_current, assigned_at, unassigned_at, assigned_by, notes, created_at, updated_at
+        "#,
+    )
+    .bind(tournament_id)
+    .bind(new_club_table_id)
+    .bind(user_id)
+    .bind(new_seat_number)
+    .bind(moved_by)
+    .bind(notes)
+    .fetch_one(executor)
+    .await
+}
+
+pub async fn unassign_current_seat<'e>(
+    executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
+    user_id: Uuid,
+    moved_by: Option<Uuid>,
+) -> SqlxResult<()> {
+    sqlx::query(
+        r#"
+        UPDATE table_seat_assignments
+        SET is_current = false,
+            unassigned_at = NOW(),
+            assigned_by = COALESCE($3, assigned_by),
+            updated_at = NOW()
+        WHERE tournament_id = $1 AND user_id = $2 AND is_current = true
+        "#,
+    )
+    .bind(tournament_id)
+    .bind(user_id)
+    .bind(moved_by)
+    .execute(executor)
+    .await?;
+    Ok(())
 }

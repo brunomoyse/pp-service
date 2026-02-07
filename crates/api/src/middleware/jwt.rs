@@ -28,9 +28,7 @@ pub async fn jwt_middleware(
                         request.extensions_mut().insert::<Claims>(claims);
                     }
                     Err(_) => {
-                        // Invalid token - we don't return an error here,
-                        // just don't add claims to the request
-                        // This allows unauthenticated requests to proceed
+                        return Err(AppError::Unauthorized("Invalid or expired token".to_string()));
                     }
                 }
             }

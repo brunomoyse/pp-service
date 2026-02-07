@@ -11,25 +11,27 @@ pub async fn require_role(ctx: &Context<'_>, required_role: Role) -> Result<User
         .data::<Claims>()
         .map_err(|_| Error::new("You must be logged in to perform this action"))?;
 
+    // Check role from JWT claims first (avoids DB query on mismatch)
+    let claims_role = Role::from(claims.role.clone());
+    if !has_required_role(&claims_role, required_role) {
+        return Err(Error::new(match required_role {
+            Role::Admin => format!(
+                "Access denied: Administrator privileges required. Your current role is {:?}",
+                claims_role
+            ),
+            Role::Manager => format!(
+                "Access denied: Manager privileges required. Your current role is {:?}",
+                claims_role
+            ),
+            Role::Player => "Access denied: You need to be registered as a player".to_string(),
+        }));
+    }
+
     let user_id =
         Uuid::parse_str(&claims.sub).map_err(|e| Error::new(format!("Invalid user ID: {}", e)))?;
 
     let state = ctx.data::<AppState>()?;
     let user = get_user_by_id_with_role(state, user_id).await?;
-
-    if !has_required_role(&user.role, required_role) {
-        return Err(Error::new(match required_role {
-            Role::Admin => format!(
-                "Access denied: Administrator privileges required. Your current role is {:?}",
-                user.role
-            ),
-            Role::Manager => format!(
-                "Access denied: Manager privileges required. Your current role is {:?}",
-                user.role
-            ),
-            Role::Player => "Access denied: You need to be registered as a player".to_string(),
-        }));
-    }
 
     Ok(user)
 }

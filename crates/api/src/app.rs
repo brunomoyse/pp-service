@@ -4,7 +4,10 @@ use async_graphql::{ObjectType, Schema, SubscriptionType};
 use async_graphql_axum::GraphQLSubscription;
 use axum::{
     extract::{Request, State},
-    http::StatusCode,
+    http::{
+        header::{HeaderValue, AUTHORIZATION, CONTENT_TYPE},
+        Method, StatusCode,
+    },
     middleware,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -61,7 +64,21 @@ where
             StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(30),
         ))
-        .layer(CorsLayer::permissive()) // tighten later
+        .layer({
+            let allowed_origins = std::env::var("ALLOWED_ORIGINS")
+                .unwrap_or_else(|_| "http://localhost:3000,http://localhost:3001".to_string());
+
+            let origins: Vec<HeaderValue> = allowed_origins
+                .split(',')
+                .filter_map(|o| o.trim().parse().ok())
+                .collect();
+
+            CorsLayer::new()
+                .allow_origin(origins)
+                .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+                .allow_headers([CONTENT_TYPE, AUTHORIZATION])
+                .allow_credentials(true)
+        })
 }
 
 /// Custom GraphQL handler that extracts JWT claims from request extensions
