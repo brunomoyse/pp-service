@@ -1,39 +1,29 @@
-use crate::{db::Db, models::ClubRow};
-use sqlx::Result as SqlxResult;
+use sqlx::{PgExecutor, Result as SqlxResult};
 use uuid::Uuid;
 
-#[derive(Clone)]
-pub struct ClubRepo {
-    pool: Db,
+use crate::models::ClubRow;
+
+pub async fn list<'e>(executor: impl PgExecutor<'e>) -> SqlxResult<Vec<ClubRow>> {
+    sqlx::query_as::<_, ClubRow>(
+        r#"
+        SELECT id, name, city, country, created_at, updated_at
+        FROM clubs
+        ORDER BY name ASC
+        "#,
+    )
+    .fetch_all(executor)
+    .await
 }
 
-impl ClubRepo {
-    pub fn new(pool: Db) -> Self {
-        Self { pool }
-    }
-
-    pub async fn list_all(&self) -> SqlxResult<Vec<ClubRow>> {
-        sqlx::query_as::<_, ClubRow>(
-            r#"
-            SELECT id, name, city, country, created_at, updated_at
-            FROM clubs
-            ORDER BY name ASC
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await
-    }
-
-    pub async fn get(&self, id: Uuid) -> SqlxResult<Option<ClubRow>> {
-        sqlx::query_as::<_, ClubRow>(
-            r#"
-            SELECT id, name, city, country, created_at, updated_at
-            FROM clubs
-            WHERE id = $1
-            "#,
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await
-    }
+pub async fn get_by_id<'e>(executor: impl PgExecutor<'e>, id: Uuid) -> SqlxResult<Option<ClubRow>> {
+    sqlx::query_as::<_, ClubRow>(
+        r#"
+        SELECT id, name, city, country, created_at, updated_at
+        FROM clubs
+        WHERE id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(executor)
+    .await
 }

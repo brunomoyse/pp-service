@@ -8,7 +8,9 @@ use uuid::Uuid;
 use crate::gql::subscriptions::publish_clock_update;
 use crate::gql::types::{ClockStatus, TournamentClock, TournamentStructure};
 use crate::AppState;
-use infra::repos::{ClockStatus as InfraClockStatus, TournamentClockRepo, TournamentRepo};
+use infra::repos::{
+    tournament_clock, tournament_clock::ClockStatus as InfraClockStatus, tournaments,
+};
 
 // Check for stale tournaments every 60 ticks (5 minutes at 5 second intervals)
 const STALE_CHECK_INTERVAL: u64 = 60;
@@ -56,20 +58,17 @@ impl ClockService {
 
     /// Process all tournaments and advance levels if needed
     async fn process_tournaments(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let repo = TournamentClockRepo::new(self.state.db.clone());
-
         // Get tournaments that need level advancement
-        let tournament_ids = repo.get_tournaments_to_advance().await?;
+        let tournament_ids = tournament_clock::get_tournaments_to_advance(&self.state.db).await?;
 
         for tournament_id in tournament_ids {
-            match repo.advance_level(tournament_id, true, None).await {
+            match tournament_clock::advance_level(&self.state.db, tournament_id, true, None).await {
                 Ok(clock_row) => {
                     info!("Auto-advanced level for tournament {}", tournament_id);
 
                     // Publish clock update to subscribers
-                    if let Ok(Some(clock)) = self
-                        .build_clock_update(&repo, tournament_id, &clock_row)
-                        .await
+                    if let Ok(Some(clock)) =
+                        self.build_clock_update(tournament_id, &clock_row).await
                     {
                         publish_clock_update(tournament_id, clock);
                     }
@@ -84,10 +83,11 @@ impl ClockService {
         }
 
         // Handle tournaments at their final level - stop the clock
-        let final_level_tournaments = repo.get_tournaments_at_final_level().await?;
+        let final_level_tournaments =
+            tournament_clock::get_tournaments_at_final_level(&self.state.db).await?;
 
         for tournament_id in final_level_tournaments {
-            match repo.stop_clock_final_level(tournament_id).await {
+            match tournament_clock::stop_clock_final_level(&self.state.db, tournament_id).await {
                 Ok(clock_row) => {
                     info!(
                         "Stopped clock for tournament {} - final level complete",
@@ -95,9 +95,8 @@ impl ClockService {
                     );
 
                     // Publish clock update to subscribers
-                    if let Ok(Some(clock)) = self
-                        .build_clock_update(&repo, tournament_id, &clock_row)
-                        .await
+                    if let Ok(Some(clock)) =
+                        self.build_clock_update(tournament_id, &clock_row).await
                     {
                         publish_clock_update(tournament_id, clock);
                     }
@@ -118,14 +117,11 @@ impl ClockService {
     async fn process_stale_tournaments(
         &self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let tournament_repo = TournamentRepo::new(self.state.db.clone());
-
-        let stale_tournaments = tournament_repo
-            .get_stale_tournaments(STALE_TOURNAMENT_HOURS)
-            .await?;
+        let stale_tournaments =
+            tournaments::list_stale(&self.state.db, STALE_TOURNAMENT_HOURS).await?;
 
         for tournament in stale_tournaments {
-            match tournament_repo.auto_finish(tournament.id).await {
+            match tournaments::auto_finish(&self.state.db, tournament.id).await {
                 Ok(Some(finished)) => {
                     warn!(
                         "Auto-finished stale tournament '{}' (ID: {}) - running for over {} hours",
@@ -153,29 +149,33 @@ impl ClockService {
     /// Build a TournamentClock from the clock row for publishing
     async fn build_clock_update(
         &self,
-        repo: &TournamentClockRepo,
         tournament_id: Uuid,
         clock_row: &infra::models::TournamentClockRow,
     ) -> Result<Option<TournamentClock>, Box<dyn std::error::Error + Send + Sync>> {
-        let structure = repo.get_current_structure(tournament_id).await.ok();
+        let structure = tournament_clock::get_current_structure(&self.state.db, tournament_id)
+            .await
+            .ok();
 
         // Use get_next_structure() instead of fetching all structures
-        let next_structure = repo
-            .get_next_structure(tournament_id, clock_row.current_level)
-            .await
-            .ok()
-            .flatten()
-            .map(|s| TournamentStructure {
-                id: s.id.into(),
-                tournament_id: s.tournament_id.into(),
-                level_number: s.level_number,
-                small_blind: s.small_blind,
-                big_blind: s.big_blind,
-                ante: s.ante,
-                duration_minutes: s.duration_minutes,
-                is_break: s.is_break,
-                break_duration_minutes: s.break_duration_minutes,
-            });
+        let next_structure = tournament_clock::get_next_structure(
+            &self.state.db,
+            tournament_id,
+            clock_row.current_level,
+        )
+        .await
+        .ok()
+        .flatten()
+        .map(|s| TournamentStructure {
+            id: s.id.into(),
+            tournament_id: s.tournament_id.into(),
+            level_number: s.level_number,
+            small_blind: s.small_blind,
+            big_blind: s.big_blind,
+            ante: s.ante,
+            duration_minutes: s.duration_minutes,
+            is_break: s.is_break,
+            break_duration_minutes: s.break_duration_minutes,
+        });
 
         let clock_status = InfraClockStatus::from_str(&clock_row.clock_status)
             .ok()

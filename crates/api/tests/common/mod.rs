@@ -80,6 +80,7 @@ pub async fn create_test_user(
     let claims = api::auth::Claims {
         sub: actual_user_id.to_string(),
         email: email.to_string(),
+        role: role.to_string(),
         iat: chrono::Utc::now().timestamp(),
         exp: (chrono::Utc::now() + chrono::Duration::hours(1)).timestamp(),
     };

@@ -2,15 +2,17 @@ use async_graphql::{dataloader::DataLoader, Context, Object, Result};
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 
+use crate::gql::error::ResultExt;
 use crate::gql::loaders::{TournamentLoader, UserLoader};
 use crate::state::AppState;
 use infra::{
     pagination::LimitOffset,
     repos::{
-        BlindStructureTemplateRepo, ClubRepo, ClubTableRepo, LeaderboardPeriod,
-        SeatAssignmentFilter, TableSeatAssignmentRepo, TournamentEntryRepo, TournamentFilter,
-        TournamentPayoutRepo, TournamentRegistrationRepo, TournamentRepo, TournamentResultRepo,
-        UserFilter, UserRepo, UserStatistics,
+        blind_structure_templates, club_tables, clubs, table_seat_assignments,
+        table_seat_assignments::SeatAssignmentFilter, tournament_entries, tournament_payouts,
+        tournament_registrations, tournament_results, tournament_results::LeaderboardPeriod,
+        tournament_results::UserStatistics, tournaments, tournaments::TournamentFilter, users,
+        users::UserFilter,
     },
 };
 
@@ -44,8 +46,7 @@ impl QueryRoot {
 
     async fn clubs(&self, ctx: &Context<'_>) -> Result<Vec<crate::gql::types::Club>> {
         let state = ctx.data::<AppState>()?;
-        let repo = ClubRepo::new(state.db.clone());
-        let rows = repo.list_all().await?;
+        let rows = clubs::list(&state.db).await?;
         Ok(rows
             .into_iter()
             .map(|r| crate::gql::types::Club {
@@ -68,7 +69,6 @@ impl QueryRoot {
         offset: Option<i64>,
     ) -> async_graphql::Result<Vec<crate::gql::types::Tournament>> {
         let state = ctx.data::<AppState>()?;
-        let repo = TournamentRepo::new(state.db.clone());
         let filter = TournamentFilter {
             club_id,
             from,
@@ -79,7 +79,7 @@ impl QueryRoot {
             limit: limit.unwrap_or(50).clamp(1, 200),
             offset: offset.unwrap_or(0).max(0),
         });
-        let rows = repo.list(filter, page).await?;
+        let rows = tournaments::list(&state.db, filter, page).await?;
         Ok(rows
             .into_iter()
             .map(|r| {
@@ -112,13 +112,12 @@ impl QueryRoot {
         offset: Option<i64>,
     ) -> Result<Vec<crate::gql::types::User>> {
         let state = ctx.data::<AppState>()?;
-        let repo = UserRepo::new(state.db.clone());
         let filter = UserFilter { search, is_active };
         let page = Some(LimitOffset {
             limit: limit.unwrap_or(50).clamp(1, 200),
             offset: offset.unwrap_or(0).max(0),
         });
-        let rows = repo.list(filter, page).await?;
+        let rows = users::list(&state.db, filter, page).await?;
         Ok(rows
             .into_iter()
             .map(|r| crate::gql::types::User {
@@ -146,18 +145,18 @@ impl QueryRoot {
             .map_err(|_| async_graphql::Error::new("Authentication required"))?;
 
         let state = ctx.data::<AppState>()?;
-        let registration_repo = TournamentRegistrationRepo::new(state.db.clone());
 
         // Fetch all registrations for the tournament
-        let registrations = registration_repo.get_by_tournament(tournament_id).await?;
+        let registrations =
+            tournament_registrations::list_by_tournament(&state.db, tournament_id).await?;
 
         // Collect all user IDs and batch load them using DataLoader
         let user_ids: Vec<uuid::Uuid> = registrations.iter().map(|r| r.user_id).collect();
         let user_loader = ctx.data::<DataLoader<UserLoader>>()?;
-        let users: HashMap<uuid::Uuid, _> = user_loader
+        let users: HashMap<uuid::Uuid, infra::models::UserRow> = user_loader
             .load_many(user_ids)
             .await
-            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+            .gql_err("Data loading failed")?;
 
         // Build players by looking up users from the HashMap
         let mut players = Vec::new();
@@ -236,14 +235,11 @@ impl QueryRoot {
             .data::<Claims>()
             .map_err(|_| async_graphql::Error::new("Authentication required"))?;
 
-        let user_id = uuid::Uuid::parse_str(&claims.sub)
-            .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
+        let user_id = uuid::Uuid::parse_str(&claims.sub).gql_err("Invalid user ID")?;
 
         let state = ctx.data::<AppState>()?;
-        let user_repo = UserRepo::new(state.db.clone());
 
-        let user = user_repo
-            .get_by_id(user_id)
+        let user = users::get_by_id(&state.db, user_id)
             .await?
             .ok_or_else(|| async_graphql::Error::new("User not found"))?;
 
@@ -270,15 +266,11 @@ impl QueryRoot {
             .data::<Claims>()
             .map_err(|_| async_graphql::Error::new("Authentication required"))?;
 
-        let user_id = uuid::Uuid::parse_str(&claims.sub)
-            .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
+        let user_id = uuid::Uuid::parse_str(&claims.sub).gql_err("Invalid user ID")?;
 
         let state = ctx.data::<AppState>()?;
-        let registration_repo = TournamentRegistrationRepo::new(state.db.clone());
 
-        let registrations = registration_repo
-            .get_user_current_registrations(user_id)
-            .await?;
+        let registrations = tournament_registrations::list_user_current(&state.db, user_id).await?;
 
         Ok(registrations
             .into_iter()
@@ -305,14 +297,12 @@ impl QueryRoot {
             .data::<Claims>()
             .map_err(|_| async_graphql::Error::new("Authentication required"))?;
 
-        let user_id = uuid::Uuid::parse_str(&claims.sub)
-            .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
+        let user_id = uuid::Uuid::parse_str(&claims.sub).gql_err("Invalid user ID")?;
 
         let state = ctx.data::<AppState>()?;
-        let result_repo = TournamentResultRepo::new(state.db.clone());
 
         let limit = limit.unwrap_or(10).clamp(1, 50);
-        let results = result_repo.get_user_recent_results(user_id, limit).await?;
+        let results = tournament_results::list_user_recent(&state.db, user_id, limit).await?;
 
         // Collect all tournament IDs and batch load them using DataLoader
         let tournament_ids: Vec<uuid::Uuid> = results.iter().map(|r| r.tournament_id).collect();
@@ -320,7 +310,7 @@ impl QueryRoot {
         let tournaments: HashMap<uuid::Uuid, _> = tournament_loader
             .load_many(tournament_ids)
             .await
-            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+            .gql_err("Data loading failed")?;
 
         // Build user results by looking up tournaments from the HashMap
         let mut user_results = Vec::new();
@@ -375,16 +365,14 @@ impl QueryRoot {
             .data::<Claims>()
             .map_err(|_| async_graphql::Error::new("Authentication required"))?;
 
-        let user_id = uuid::Uuid::parse_str(&claims.sub)
-            .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
+        let user_id = uuid::Uuid::parse_str(&claims.sub).gql_err("Invalid user ID")?;
 
         let state = ctx.data::<AppState>()?;
-        let result_repo = TournamentResultRepo::new(state.db.clone());
 
         // Get statistics for different time periods
-        let stats_7_days = result_repo.get_user_statistics(user_id, 7).await?;
-        let stats_30_days = result_repo.get_user_statistics(user_id, 30).await?;
-        let stats_year = result_repo.get_user_statistics(user_id, 365).await?;
+        let stats_7_days = tournament_results::get_user_statistics(&state.db, user_id, 7).await?;
+        let stats_30_days = tournament_results::get_user_statistics(&state.db, user_id, 30).await?;
+        let stats_year = tournament_results::get_user_statistics(&state.db, user_id, 365).await?;
 
         // Convert to GraphQL types
         let convert_stats = |stats: UserStatistics| crate::gql::types::PlayerStatistics {
@@ -410,13 +398,9 @@ impl QueryRoot {
         tournament_id: uuid::Uuid,
     ) -> Result<crate::gql::types::TournamentSeatingChart> {
         let state = ctx.data::<AppState>()?;
-        let tournament_repo = TournamentRepo::new(state.db.clone());
-        let club_table_repo = ClubTableRepo::new(state.db.clone());
-        let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
 
         // Get tournament
-        let tournament_row = tournament_repo
-            .get(tournament_id)
+        let tournament_row = tournaments::get_by_id(&state.db, tournament_id)
             .await?
             .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
 
@@ -437,9 +421,7 @@ impl QueryRoot {
         };
 
         // Get all active tables for the tournament
-        let table_rows = club_table_repo
-            .get_assigned_to_tournament(tournament_id)
-            .await?;
+        let table_rows = club_tables::list_assigned_to_tournament(&state.db, tournament_id).await?;
 
         // For each table, get current seat assignments with player info
         let mut tables = Vec::new();
@@ -453,37 +435,38 @@ impl QueryRoot {
                 created_at: table_row.created_at,
             };
 
-            let assignments_with_players = assignment_repo
-                .get_current_with_players_for_table(table_row.id)
+            let assignments_with_players =
+                table_seat_assignments::list_current_with_players_for_table(
+                    &state.db,
+                    table_row.id,
+                )
                 .await?;
             let seats: Vec<crate::gql::types::SeatWithPlayer> = assignments_with_players
                 .into_iter()
-                .map(|ap| {
-                    crate::gql::types::SeatWithPlayer {
-                        assignment: crate::gql::types::SeatAssignment {
-                            id: ap.assignment.id.into(),
-                            tournament_id: ap.assignment.tournament_id.into(),
-                            club_table_id: ap.assignment.club_table_id.into(),
-                            user_id: ap.assignment.user_id.into(),
-                            seat_number: ap.assignment.seat_number,
-                            stack_size: ap.assignment.stack_size,
-                            is_current: ap.assignment.is_current,
-                            assigned_at: ap.assignment.assigned_at,
-                            unassigned_at: None, // Field not yet implemented in database
-                            assigned_by: None,   // Field not yet implemented in database
-                            notes: None,         // Field not yet implemented in database
-                        },
-                        player: crate::gql::types::User {
-                            id: ap.player.id.into(),
-                            email: ap.player.email,
-                            username: ap.player.username,
-                            first_name: ap.player.first_name,
-                            last_name: ap.player.last_name,
-                            phone: ap.player.phone,
-                            is_active: ap.player.is_active,
-                            role: crate::gql::types::Role::from(ap.player.role),
-                        },
-                    }
+                .map(|ap| crate::gql::types::SeatWithPlayer {
+                    assignment: crate::gql::types::SeatAssignment {
+                        id: ap.assignment.id.into(),
+                        tournament_id: ap.assignment.tournament_id.into(),
+                        club_table_id: ap.assignment.club_table_id.into(),
+                        user_id: ap.assignment.user_id.into(),
+                        seat_number: ap.assignment.seat_number,
+                        stack_size: ap.assignment.stack_size,
+                        is_current: ap.assignment.is_current,
+                        assigned_at: ap.assignment.assigned_at,
+                        unassigned_at: ap.assignment.unassigned_at,
+                        assigned_by: ap.assignment.assigned_by.map(|id| id.into()),
+                        notes: ap.assignment.notes,
+                    },
+                    player: crate::gql::types::User {
+                        id: ap.player.id.into(),
+                        email: ap.player.email,
+                        username: ap.player.username,
+                        first_name: ap.player.first_name,
+                        last_name: ap.player.last_name,
+                        phone: ap.player.phone,
+                        is_active: ap.player.is_active,
+                        role: crate::gql::types::Role::from(ap.player.role),
+                    },
                 })
                 .collect();
 
@@ -491,9 +474,8 @@ impl QueryRoot {
         }
 
         // Get unassigned players
-        let unassigned_player_rows = assignment_repo
-            .get_unassigned_players(tournament_id)
-            .await?;
+        let unassigned_player_rows =
+            table_seat_assignments::list_unassigned_players(&state.db, tournament_id).await?;
         let unassigned_players: Vec<crate::gql::types::User> = unassigned_player_rows
             .into_iter()
             .map(|p| crate::gql::types::User {
@@ -522,11 +504,8 @@ impl QueryRoot {
         tournament_id: uuid::Uuid,
     ) -> Result<Vec<crate::gql::types::TournamentTable>> {
         let state = ctx.data::<AppState>()?;
-        let club_table_repo = ClubTableRepo::new(state.db.clone());
 
-        let table_rows = club_table_repo
-            .get_assigned_to_tournament(tournament_id)
-            .await?;
+        let table_rows = club_tables::list_assigned_to_tournament(&state.db, tournament_id).await?;
 
         Ok(table_rows
             .into_iter()
@@ -548,9 +527,8 @@ impl QueryRoot {
         club_id: uuid::Uuid,
     ) -> Result<Vec<crate::gql::types::ClubTable>> {
         let state = ctx.data::<AppState>()?;
-        let club_table_repo = ClubTableRepo::new(state.db.clone());
 
-        let table_rows = club_table_repo.get_by_club(club_id).await?;
+        let table_rows = club_tables::list_by_club(&state.db, club_id).await?;
 
         // Get all table assignments for this club to check which tables are assigned
         let assigned_table_ids: std::collections::HashSet<uuid::Uuid> = sqlx::query_scalar!(
@@ -590,40 +568,37 @@ impl QueryRoot {
         club_table_id: uuid::Uuid,
     ) -> Result<Vec<crate::gql::types::SeatWithPlayer>> {
         let state = ctx.data::<AppState>()?;
-        let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
 
-        let assignments_with_players = assignment_repo
-            .get_current_with_players_for_table(club_table_id)
-            .await?;
+        let assignments_with_players =
+            table_seat_assignments::list_current_with_players_for_table(&state.db, club_table_id)
+                .await?;
 
         Ok(assignments_with_players
             .into_iter()
-            .map(|ap| {
-                crate::gql::types::SeatWithPlayer {
-                    assignment: crate::gql::types::SeatAssignment {
-                        id: ap.assignment.id.into(),
-                        tournament_id: ap.assignment.tournament_id.into(),
-                        club_table_id: ap.assignment.club_table_id.into(),
-                        user_id: ap.assignment.user_id.into(),
-                        seat_number: ap.assignment.seat_number,
-                        stack_size: ap.assignment.stack_size,
-                        is_current: ap.assignment.is_current,
-                        assigned_at: ap.assignment.assigned_at,
-                        unassigned_at: None, // Field not yet implemented in database
-                        assigned_by: None,   // Field not yet implemented in database
-                        notes: None,         // Field not yet implemented in database
-                    },
-                    player: crate::gql::types::User {
-                        id: ap.player.id.into(),
-                        email: ap.player.email,
-                        username: ap.player.username,
-                        first_name: ap.player.first_name,
-                        last_name: ap.player.last_name,
-                        phone: ap.player.phone,
-                        is_active: ap.player.is_active,
-                        role: crate::gql::types::Role::from(ap.player.role),
-                    },
-                }
+            .map(|ap| crate::gql::types::SeatWithPlayer {
+                assignment: crate::gql::types::SeatAssignment {
+                    id: ap.assignment.id.into(),
+                    tournament_id: ap.assignment.tournament_id.into(),
+                    club_table_id: ap.assignment.club_table_id.into(),
+                    user_id: ap.assignment.user_id.into(),
+                    seat_number: ap.assignment.seat_number,
+                    stack_size: ap.assignment.stack_size,
+                    is_current: ap.assignment.is_current,
+                    assigned_at: ap.assignment.assigned_at,
+                    unassigned_at: ap.assignment.unassigned_at,
+                    assigned_by: ap.assignment.assigned_by.map(|id| id.into()),
+                    notes: ap.assignment.notes,
+                },
+                player: crate::gql::types::User {
+                    id: ap.player.id.into(),
+                    email: ap.player.email,
+                    username: ap.player.username,
+                    first_name: ap.player.first_name,
+                    last_name: ap.player.last_name,
+                    phone: ap.player.phone,
+                    is_active: ap.player.is_active,
+                    role: crate::gql::types::Role::from(ap.player.role),
+                },
             })
             .collect())
     }
@@ -635,10 +610,9 @@ impl QueryRoot {
         id: uuid::Uuid,
     ) -> Result<Option<crate::gql::types::Tournament>> {
         let state = ctx.data::<AppState>()?;
-        let tournament_repo = TournamentRepo::new(state.db.clone());
 
         // Get tournament
-        let tournament_row = match tournament_repo.get(id).await? {
+        let tournament_row = match tournaments::get_by_id(&state.db, id).await? {
             Some(row) => row,
             None => return Ok(None),
         };
@@ -667,7 +641,6 @@ impl QueryRoot {
         limit: Option<i64>,
     ) -> Result<Vec<crate::gql::types::SeatAssignment>> {
         let state = ctx.data::<AppState>()?;
-        let assignment_repo = TableSeatAssignmentRepo::new(state.db.clone());
 
         let filter = SeatAssignmentFilter {
             tournament_id: Some(tournament_id),
@@ -678,24 +651,23 @@ impl QueryRoot {
             to_date: None,
         };
 
-        let assignment_rows = assignment_repo.get_history(filter, limit).await?;
+        let assignment_rows =
+            table_seat_assignments::list_history(&state.db, filter, limit).await?;
 
         Ok(assignment_rows
             .into_iter()
-            .map(|assignment| {
-                crate::gql::types::SeatAssignment {
-                    id: assignment.id.into(),
-                    tournament_id: assignment.tournament_id.into(),
-                    club_table_id: assignment.club_table_id.into(),
-                    user_id: assignment.user_id.into(),
-                    seat_number: assignment.seat_number,
-                    stack_size: assignment.stack_size,
-                    is_current: assignment.is_current,
-                    assigned_at: assignment.assigned_at,
-                    unassigned_at: None, // Field not yet implemented in database
-                    assigned_by: None,   // Field not yet implemented in database
-                    notes: None,         // Field not yet implemented in database
-                }
+            .map(|assignment| crate::gql::types::SeatAssignment {
+                id: assignment.id.into(),
+                tournament_id: assignment.tournament_id.into(),
+                club_table_id: assignment.club_table_id.into(),
+                user_id: assignment.user_id.into(),
+                seat_number: assignment.seat_number,
+                stack_size: assignment.stack_size,
+                is_current: assignment.is_current,
+                assigned_at: assignment.assigned_at,
+                unassigned_at: assignment.unassigned_at,
+                assigned_by: assignment.assigned_by.map(|id| id.into()),
+                notes: assignment.notes,
             })
             .collect())
     }
@@ -707,12 +679,13 @@ impl QueryRoot {
         tournament_id: async_graphql::ID,
     ) -> Result<Option<crate::gql::types::TournamentPayout>> {
         let state = ctx.data::<AppState>()?;
-        let repo = TournamentPayoutRepo::new(state.db.clone());
 
-        let tournament_id = uuid::Uuid::parse_str(tournament_id.as_str())
-            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+        let tournament_id =
+            uuid::Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
 
-        if let Some(payout_row) = repo.get_by_tournament(tournament_id).await? {
+        if let Some(payout_row) =
+            tournament_payouts::get_by_tournament(&state.db, tournament_id).await?
+        {
             // Parse the JSONB payout_positions into structured data
             let positions_array = payout_row
                 .payout_positions
@@ -772,14 +745,12 @@ impl QueryRoot {
         club_id: Option<uuid::Uuid>,
     ) -> Result<crate::gql::types::LeaderboardResponse> {
         let state = ctx.data::<AppState>()?;
-        let result_repo = TournamentResultRepo::new(state.db.clone());
 
         let period = period.unwrap_or(crate::gql::types::LeaderboardPeriod::AllTime);
         let infra_period: LeaderboardPeriod = period.into();
 
-        let leaderboard_entries = result_repo
-            .get_leaderboard(infra_period, limit, club_id)
-            .await?;
+        let leaderboard_entries =
+            tournament_results::get_leaderboard(&state.db, infra_period, limit, club_id).await?;
 
         // Convert to GraphQL types and add rank
         let entries: Vec<crate::gql::types::LeaderboardEntry> = leaderboard_entries
@@ -827,11 +798,10 @@ impl QueryRoot {
         tournament_id: async_graphql::ID,
     ) -> Result<Vec<crate::gql::types::TournamentEntry>> {
         let state = ctx.data::<AppState>()?;
-        let tournament_id = uuid::Uuid::parse_str(tournament_id.as_str())
-            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+        let tournament_id =
+            uuid::Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
 
-        let entry_repo = TournamentEntryRepo::new(state.db.clone());
-        let entries = entry_repo.get_by_tournament(tournament_id).await?;
+        let entries = tournament_entries::list_by_tournament(&state.db, tournament_id).await?;
 
         Ok(entries
             .into_iter()
@@ -857,11 +827,10 @@ impl QueryRoot {
         tournament_id: async_graphql::ID,
     ) -> Result<crate::gql::types::TournamentEntryStats> {
         let state = ctx.data::<AppState>()?;
-        let tournament_id = uuid::Uuid::parse_str(tournament_id.as_str())
-            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+        let tournament_id =
+            uuid::Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
 
-        let entry_repo = TournamentEntryRepo::new(state.db.clone());
-        let stats = entry_repo.get_stats(tournament_id).await?;
+        let stats = tournament_entries::get_stats(&state.db, tournament_id).await?;
 
         Ok(crate::gql::types::TournamentEntryStats {
             tournament_id: tournament_id.into(),
@@ -881,18 +850,15 @@ impl QueryRoot {
         ctx: &Context<'_>,
     ) -> Result<Vec<crate::gql::types::BlindStructureTemplate>> {
         let state = ctx.data::<AppState>()?;
-        let repo = BlindStructureTemplateRepo::new(state.db.clone());
 
-        let templates = repo.list_all().await?;
+        let templates = blind_structure_templates::list(&state.db).await?;
 
         templates
             .into_iter()
             .map(|t| {
                 // Parse the JSONB levels into BlindStructureLevel
                 let levels: Vec<crate::gql::types::BlindStructureLevel> =
-                    serde_json::from_value(t.levels).map_err(|e| {
-                        async_graphql::Error::new(format!("Failed to parse template levels: {}", e))
-                    })?;
+                    serde_json::from_value(t.levels).gql_err("Parsing template levels failed")?;
 
                 Ok(crate::gql::types::BlindStructureTemplate {
                     id: t.id.into(),

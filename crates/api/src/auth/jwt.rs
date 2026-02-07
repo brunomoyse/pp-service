@@ -8,7 +8,7 @@ use crate::error::AppError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: String,  // Subject (user ID)
+    pub sub: String, // Subject (user ID)
     pub email: String,
     pub role: String,
     pub iat: i64, // Issued at
@@ -47,7 +47,12 @@ impl JwtService {
         }
     }
 
-    pub fn create_token(&self, user_id: Uuid, email: String, role: String) -> Result<String, AppError> {
+    pub fn create_token(
+        &self,
+        user_id: Uuid,
+        email: String,
+        role: String,
+    ) -> Result<String, AppError> {
         let claims = Claims::new(user_id, email, role, self.expiration_hours);
         encode(&Header::default(), &claims, &self.encoding_key)
             .map_err(|e| AppError::Internal(e.to_string()))

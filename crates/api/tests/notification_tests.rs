@@ -177,11 +177,8 @@ async fn test_tournaments_starting_soon_query() {
     .await
     .expect("Failed to create tournament");
 
-    // Query using the repository method
-    use infra::repos::TournamentRepo;
-    let repo = TournamentRepo::new(app_state.db.clone());
-
-    let upcoming = repo.get_tournaments_starting_soon(16).await;
+    // Query using the standalone function
+    let upcoming = infra::repos::tournaments::list_starting_soon(&app_state.db, 16).await;
 
     assert!(
         upcoming.is_ok(),

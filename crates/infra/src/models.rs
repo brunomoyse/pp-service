@@ -157,6 +157,11 @@ pub struct TableSeatAssignmentRow {
     pub stack_size: Option<i32>,
     pub is_current: bool,
     pub assigned_at: DateTime<Utc>,
+    pub unassigned_at: Option<DateTime<Utc>>,
+    pub assigned_by: Option<Uuid>,
+    pub notes: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
