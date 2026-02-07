@@ -5,6 +5,8 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
+use html_escape::{encode_double_quoted_attribute, encode_text};
+
 use crate::auth::custom_oauth::{
     AuthorizeRequest, CustomOAuthService, ErrorResponse, TokenRequest, TokenResponse,
 };
@@ -85,13 +87,22 @@ pub async fn authorize(
         .into_response());
     }
 
+    // Escape all user-controlled values before embedding in HTML
+    let client_name = encode_text(&client.name);
+    let client_id = encode_double_quoted_attribute(&params.client_id);
+    let redirect_uri = encode_double_quoted_attribute(&params.redirect_uri);
+    let scope_raw = params.scope.unwrap_or_else(|| "read".to_string());
+    let scope = encode_double_quoted_attribute(&scope_raw);
+    let state_raw = params.state.unwrap_or_default();
+    let state_val = encode_double_quoted_attribute(&state_raw);
+
     // Return login form
     let login_form = format!(
         r#"
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Login - {}</title>
+            <title>Login - {client_name}</title>
             <style>
                 body {{ font-family: Arial, sans-serif; max-width: 400px; margin: 50px auto; padding: 20px; }}
                 .form-group {{ margin-bottom: 15px; }}
@@ -103,38 +114,32 @@ pub async fn authorize(
             </style>
         </head>
         <body>
-            <h2>Login to {}</h2>
+            <h2>Login to {client_name}</h2>
             <form method="post" action="/oauth/login">
-                <input type="hidden" name="client_id" value="{}">
-                <input type="hidden" name="redirect_uri" value="{}">
-                <input type="hidden" name="scope" value="{}">
-                <input type="hidden" name="state" value="{}">
-                
+                <input type="hidden" name="client_id" value="{client_id}">
+                <input type="hidden" name="redirect_uri" value="{redirect_uri}">
+                <input type="hidden" name="scope" value="{scope}">
+                <input type="hidden" name="state" value="{state_val}">
+
                 <div class="form-group">
                     <label for="email">Email:</label>
                     <input type="email" id="email" name="email" required>
                 </div>
-                
+
                 <div class="form-group">
                     <label for="password">Password:</label>
                     <input type="password" id="password" name="password" required>
                 </div>
-                
+
                 <button type="submit">Login</button>
             </form>
-            
+
             <div class="register-link">
                 <p>Don't have an account? <a href="/oauth/register">Register here</a></p>
             </div>
         </body>
         </html>
-        "#,
-        client.name,
-        client.name,
-        params.client_id,
-        params.redirect_uri,
-        params.scope.unwrap_or_else(|| "read".to_string()),
-        params.state.unwrap_or_default()
+        "#
     );
 
     Ok(Html(login_form).into_response())

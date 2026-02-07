@@ -139,6 +139,12 @@ impl QueryRoot {
         ctx: &Context<'_>,
         tournament_id: uuid::Uuid,
     ) -> Result<Vec<crate::gql::types::TournamentPlayer>> {
+        use crate::auth::Claims;
+
+        let _claims = ctx
+            .data::<Claims>()
+            .map_err(|_| async_graphql::Error::new("Authentication required"))?;
+
         let state = ctx.data::<AppState>()?;
         let registration_repo = TournamentRegistrationRepo::new(state.db.clone());
 

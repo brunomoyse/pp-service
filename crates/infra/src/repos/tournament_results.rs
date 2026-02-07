@@ -1,4 +1,4 @@
-use sqlx::{PgPool, Result, Row};
+use sqlx::{PgExecutor, PgPool, Result, Row};
 use uuid::Uuid;
 
 use crate::models::TournamentResultRow;
@@ -64,24 +64,7 @@ impl TournamentResultRepo {
     }
 
     pub async fn create(&self, data: CreateTournamentResult) -> Result<TournamentResultRow> {
-        // Insert tournament result without calculating points
-        // Points will be calculated automatically when tournament status changes to 'finished'
-        let row = sqlx::query_as::<_, TournamentResultRow>(
-            r#"
-            INSERT INTO tournament_results (tournament_id, user_id, final_position, prize_cents, points, notes)
-            VALUES ($1, $2, $3, $4, 0, $5)
-            RETURNING id, tournament_id, user_id, final_position, prize_cents, points, notes, created_at, updated_at
-            "#
-        )
-        .bind(data.tournament_id)
-        .bind(data.user_id)
-        .bind(data.final_position)
-        .bind(data.prize_cents)
-        .bind(data.notes)
-        .fetch_one(&self.db)
-        .await?;
-
-        Ok(row)
+        create_tournament_result(&self.db, data).await
     }
 
     pub async fn get_by_id(&self, id: Uuid) -> Result<Option<TournamentResultRow>> {
@@ -389,4 +372,26 @@ impl TournamentResultRepo {
 
         Ok(leaderboard)
     }
+}
+
+pub async fn create_tournament_result<'e>(
+    executor: impl PgExecutor<'e>,
+    data: CreateTournamentResult,
+) -> Result<TournamentResultRow> {
+    let row = sqlx::query_as::<_, TournamentResultRow>(
+        r#"
+        INSERT INTO tournament_results (tournament_id, user_id, final_position, prize_cents, points, notes)
+        VALUES ($1, $2, $3, $4, 0, $5)
+        RETURNING id, tournament_id, user_id, final_position, prize_cents, points, notes, created_at, updated_at
+        "#,
+    )
+    .bind(data.tournament_id)
+    .bind(data.user_id)
+    .bind(data.final_position)
+    .bind(data.prize_cents)
+    .bind(data.notes)
+    .fetch_one(executor)
+    .await?;
+
+    Ok(row)
 }

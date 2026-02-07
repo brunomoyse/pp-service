@@ -49,6 +49,10 @@ impl SubscriptionChannels {
         }
     }
 
+    fn remove_tournament(&mut self, tournament_id: &Uuid) {
+        self.tournaments.remove(tournament_id);
+    }
+
     fn get_or_create_tournament(&mut self, tournament_id: Uuid) -> &TournamentChannels {
         self.tournaments
             .entry(tournament_id)
@@ -211,6 +215,12 @@ pub fn publish_clock_update(tournament_id: Uuid, clock: TournamentClock) {
     let mut channels = CHANNELS.lock();
     let tournament = channels.get_or_create_tournament(tournament_id);
     let _ = tournament.clock.send(clock);
+}
+
+/// Cleanup tournament channels when a tournament finishes
+pub fn cleanup_tournament_channels(tournament_id: Uuid) {
+    let mut channels = CHANNELS.lock();
+    channels.remove_tournament(&tournament_id);
 }
 
 /// Publish a notification to a specific user's channel

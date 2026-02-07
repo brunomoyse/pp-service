@@ -1,4 +1,4 @@
-use sqlx::{PgPool, Result};
+use sqlx::{PgExecutor, PgPool, Result};
 use uuid::Uuid;
 
 use crate::models::TournamentRegistrationRow;
@@ -59,19 +59,7 @@ impl TournamentRegistrationRepo {
         tournament_id: Uuid,
         user_id: Uuid,
     ) -> Result<Option<TournamentRegistrationRow>> {
-        let row = sqlx::query_as::<_, TournamentRegistrationRow>(
-            r#"
-            SELECT id, tournament_id, user_id, registration_time, status, notes, created_at, updated_at
-            FROM tournament_registrations
-            WHERE tournament_id = $1 AND user_id = $2
-            "#
-        )
-        .bind(tournament_id)
-        .bind(user_id)
-        .fetch_optional(&self.db)
-        .await?;
-
-        Ok(row)
+        get_registration_by_tournament_and_user(&self.db, tournament_id, user_id).await
     }
 
     pub async fn get_by_tournament(
@@ -112,4 +100,41 @@ impl TournamentRegistrationRepo {
 
         Ok(rows)
     }
+}
+
+pub async fn get_registration_by_tournament_and_user<'e>(
+    executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<TournamentRegistrationRow>> {
+    let row = sqlx::query_as::<_, TournamentRegistrationRow>(
+        r#"
+        SELECT id, tournament_id, user_id, registration_time, status, notes, created_at, updated_at
+        FROM tournament_registrations
+        WHERE tournament_id = $1 AND user_id = $2
+        "#,
+    )
+    .bind(tournament_id)
+    .bind(user_id)
+    .fetch_optional(executor)
+    .await?;
+
+    Ok(row)
+}
+
+pub async fn update_registration_status<'e>(
+    executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
+    user_id: Uuid,
+    status: &str,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE tournament_registrations SET status = $3, updated_at = NOW() WHERE tournament_id = $1 AND user_id = $2",
+    )
+    .bind(tournament_id)
+    .bind(user_id)
+    .bind(status)
+    .execute(executor)
+    .await?;
+    Ok(())
 }

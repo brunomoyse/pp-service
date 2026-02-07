@@ -1,4 +1,4 @@
-use sqlx::{PgPool, Result};
+use sqlx::{PgExecutor, PgPool, Result};
 use uuid::Uuid;
 
 use crate::models::TournamentEntryRow;
@@ -179,25 +179,7 @@ impl TournamentEntryRepo {
         user_id: Uuid,
         bonus_chips: i32,
     ) -> Result<Option<TournamentEntryRow>> {
-        let row = sqlx::query_as::<_, TournamentEntryRow>(
-            r#"
-            UPDATE tournament_entries
-            SET chips_received = COALESCE(chips_received, 0) + $3,
-                updated_at = NOW()
-            WHERE tournament_id = $1
-              AND user_id = $2
-              AND entry_type = 'initial'
-            RETURNING id, tournament_id, user_id, entry_type, amount_cents,
-                      chips_received, recorded_by, notes, created_at, updated_at
-            "#,
-        )
-        .bind(tournament_id)
-        .bind(user_id)
-        .bind(bonus_chips)
-        .fetch_optional(&self.db)
-        .await?;
-
-        Ok(row)
+        apply_early_bird_bonus(&self.db, tournament_id, user_id, bonus_chips).await
     }
 
     /// Apply early bird bonus to all checked-in players' initial entries
@@ -231,4 +213,31 @@ impl TournamentEntryRepo {
 
         Ok(result.rows_affected())
     }
+}
+
+pub async fn apply_early_bird_bonus<'e>(
+    executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
+    user_id: Uuid,
+    bonus_chips: i32,
+) -> Result<Option<TournamentEntryRow>> {
+    let row = sqlx::query_as::<_, TournamentEntryRow>(
+        r#"
+        UPDATE tournament_entries
+        SET chips_received = COALESCE(chips_received, 0) + $3,
+            updated_at = NOW()
+        WHERE tournament_id = $1
+          AND user_id = $2
+          AND entry_type = 'initial'
+        RETURNING id, tournament_id, user_id, entry_type, amount_cents,
+                  chips_received, recorded_by, notes, created_at, updated_at
+        "#,
+    )
+    .bind(tournament_id)
+    .bind(user_id)
+    .bind(bonus_chips)
+    .fetch_optional(executor)
+    .await?;
+
+    Ok(row)
 }

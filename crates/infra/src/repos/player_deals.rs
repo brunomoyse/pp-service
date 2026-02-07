@@ -1,5 +1,5 @@
 use serde_json::Value as JsonValue;
-use sqlx::{PgPool, Result};
+use sqlx::{PgExecutor, PgPool, Result};
 use uuid::Uuid;
 
 use crate::models::PlayerDealRow;
@@ -25,24 +25,7 @@ impl PlayerDealRepo {
     }
 
     pub async fn create(&self, data: CreatePlayerDeal) -> Result<PlayerDealRow> {
-        let row = sqlx::query_as::<_, PlayerDealRow>(
-            r#"
-            INSERT INTO player_deals (tournament_id, deal_type, affected_positions, custom_payouts, total_amount_cents, notes, created_by)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id, tournament_id, deal_type, affected_positions, custom_payouts, total_amount_cents, notes, created_by, created_at, updated_at
-            "#
-        )
-        .bind(data.tournament_id)
-        .bind(data.deal_type)
-        .bind(&data.affected_positions)
-        .bind(data.custom_payouts)
-        .bind(data.total_amount_cents)
-        .bind(data.notes)
-        .bind(data.created_by)
-        .fetch_one(&self.db)
-        .await?;
-
-        Ok(row)
+        create_player_deal(&self.db, data).await
     }
 
     pub async fn get_by_id(&self, id: Uuid) -> Result<Option<PlayerDealRow>> {
@@ -106,4 +89,28 @@ impl PlayerDealRepo {
 
         Ok(result.rows_affected() > 0)
     }
+}
+
+pub async fn create_player_deal<'e>(
+    executor: impl PgExecutor<'e>,
+    data: CreatePlayerDeal,
+) -> Result<PlayerDealRow> {
+    let row = sqlx::query_as::<_, PlayerDealRow>(
+        r#"
+        INSERT INTO player_deals (tournament_id, deal_type, affected_positions, custom_payouts, total_amount_cents, notes, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id, tournament_id, deal_type, affected_positions, custom_payouts, total_amount_cents, notes, created_by, created_at, updated_at
+        "#,
+    )
+    .bind(data.tournament_id)
+    .bind(data.deal_type)
+    .bind(&data.affected_positions)
+    .bind(data.custom_payouts)
+    .bind(data.total_amount_cents)
+    .bind(data.notes)
+    .bind(data.created_by)
+    .fetch_one(executor)
+    .await?;
+
+    Ok(row)
 }

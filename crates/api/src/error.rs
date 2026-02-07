@@ -11,6 +11,9 @@ pub enum AppError {
     #[error("database error")]
     Db(#[from] sqlx::Error),
 
+    #[error("unauthorized: {0}")]
+    Unauthorized(String),
+
     #[allow(dead_code)]
     #[error("bad request: {0}")]
     BadRequest(String),
@@ -30,6 +33,7 @@ struct ErrorBody {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status = match self {
+            AppError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::Db(_) | AppError::Anyhow(_) => StatusCode::INTERNAL_SERVER_ERROR,

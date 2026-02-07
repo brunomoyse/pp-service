@@ -76,13 +76,14 @@ pub async fn callback(
         None => create_user_from_oauth(&state, oauth_user.clone(), &provider_str).await?,
     };
 
-    // Generate JWT token
-    let token = state
-        .jwt_service()
-        .create_token(user_id, oauth_user.email.clone())?;
-
     // Get user info for response
     let user = get_user_by_id(&state, user_id).await?;
+
+    // Generate JWT token
+    let role_str: String = user.role.into();
+    let token = state
+        .jwt_service()
+        .create_token(user_id, oauth_user.email.clone(), role_str)?;
 
     Ok(Json(AuthResponse { token, user }))
 }
