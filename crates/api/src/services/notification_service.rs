@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::gql::subscriptions::publish_user_notification;
 use crate::gql::types::{NotificationType, UserNotification, TITLE_TOURNAMENT_STARTING};
 use crate::AppState;
-use infra::repos::{TournamentRegistrationRepo, TournamentRepo};
+use infra::repos::{tournament_registrations, tournaments};
 
 const NOTIFICATION_WINDOW_MINUTES: i32 = 16; // Check for tournaments starting within 16 minutes
 const CHECK_INTERVAL_SECONDS: u64 = 60; // Check every minute
@@ -48,13 +48,9 @@ impl NotificationService {
     async fn check_upcoming_tournaments(
         &mut self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let tournament_repo = TournamentRepo::new(self.state.db.clone());
-        let registration_repo = TournamentRegistrationRepo::new(self.state.db.clone());
-
         // Get tournaments starting within the next 16 minutes
-        let upcoming = tournament_repo
-            .get_tournaments_starting_soon(NOTIFICATION_WINDOW_MINUTES)
-            .await?;
+        let upcoming =
+            tournaments::list_starting_soon(&self.state.db, NOTIFICATION_WINDOW_MINUTES).await?;
 
         for tournament in upcoming {
             // Skip if we've already notified for this tournament
@@ -63,7 +59,8 @@ impl NotificationService {
             }
 
             // Get all registered players for this tournament
-            let registrations = registration_repo.get_by_tournament(tournament.id).await?;
+            let registrations =
+                tournament_registrations::list_by_tournament(&self.state.db, tournament.id).await?;
 
             info!(
                 "Sending 'starting soon' notifications for tournament {} to {} players",
@@ -99,8 +96,6 @@ impl NotificationService {
 
     /// Remove tournaments from the notified set if they've already started
     async fn cleanup_old_entries(&mut self) {
-        let tournament_repo = TournamentRepo::new(self.state.db.clone());
-
         // Collect all tournament IDs to check
         let ids: Vec<Uuid> = self.notified_tournaments.iter().copied().collect();
 
@@ -109,7 +104,7 @@ impl NotificationService {
         }
 
         // Bulk fetch all tournaments in one query instead of N queries
-        let tournaments = match tournament_repo.get_by_ids(&ids).await {
+        let tournaments = match tournaments::get_by_ids(&self.state.db, &ids).await {
             Ok(t) => t,
             Err(_) => return, // Keep entries on error, retry later
         };

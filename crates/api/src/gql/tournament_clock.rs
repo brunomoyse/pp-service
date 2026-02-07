@@ -6,15 +6,15 @@ use uuid::Uuid;
 use crate::gql::subscriptions::publish_clock_update;
 use crate::gql::types::{ClockStatus, Role, TournamentClock, TournamentStructure};
 use crate::{auth::permissions::require_role, AppState};
-use infra::repos::{ClockStatus as InfraClockStatus, TournamentClockRepo};
+use infra::repos::tournament_clock::{self, ClockStatus as InfraClockStatus};
 
 /// Helper function to get next structure for a tournament
 async fn get_next_structure(
-    repo: &TournamentClockRepo,
+    pool: &sqlx::PgPool,
     tournament_id: Uuid,
     current_level: i32,
 ) -> Option<TournamentStructure> {
-    repo.get_all_structures(tournament_id)
+    tournament_clock::get_all_structures(pool, tournament_id)
         .await
         .ok()
         .and_then(|structures| {
@@ -86,53 +86,55 @@ impl TournamentClockQuery {
         tournament_id: ID,
     ) -> Result<Option<TournamentClock>> {
         let state = ctx.data::<AppState>()?;
-        let repo = TournamentClockRepo::new(state.db.clone());
         let tournament_id: Uuid = tournament_id.parse()?;
 
-        if let Some(clock_row) = repo.get_clock(tournament_id).await? {
-            let structure = repo.get_current_structure(tournament_id).await.ok();
+        if let Some(clock_row) = tournament_clock::get_clock(&state.db, tournament_id).await? {
+            let structure = tournament_clock::get_current_structure(&state.db, tournament_id)
+                .await
+                .ok();
             let next_structure =
-                get_next_structure(&repo, tournament_id, clock_row.current_level).await;
+                get_next_structure(&state.db, tournament_id, clock_row.current_level).await;
 
             // Calculate time remaining
-            let time_remaining =
-                if let Ok(status) = InfraClockStatus::from_str(&clock_row.clock_status) {
-                    match status {
-                        InfraClockStatus::Running => {
-                            if let Some(end_time) = clock_row.level_end_time {
-                                let remaining = end_time - Utc::now();
-                                Some(remaining.num_seconds().max(0))
-                            } else {
-                                None
-                            }
-                        }
-                        InfraClockStatus::Paused => {
-                            if let (Some(end_time), Some(pause_start)) =
-                                (clock_row.level_end_time, clock_row.pause_started_at)
-                            {
-                                let remaining = end_time - pause_start;
-                                Some(remaining.num_seconds().max(0))
-                            } else {
-                                None
-                            }
-                        }
-                        InfraClockStatus::Stopped => {
-                            // Show full duration of current level when stopped
-                            // Use already fetched structure or fetch it
-                            if let Some(s) = &structure {
-                                Some((s.duration_minutes as i64) * 60)
-                            } else if let Ok(current_structure) =
-                                repo.get_current_structure(tournament_id).await
-                            {
-                                Some((current_structure.duration_minutes as i64) * 60)
-                            } else {
-                                None
-                            }
+            let time_remaining = if let Ok(status) =
+                InfraClockStatus::from_str(&clock_row.clock_status)
+            {
+                match status {
+                    InfraClockStatus::Running => {
+                        if let Some(end_time) = clock_row.level_end_time {
+                            let remaining = end_time - Utc::now();
+                            Some(remaining.num_seconds().max(0))
+                        } else {
+                            None
                         }
                     }
-                } else {
-                    None
-                };
+                    InfraClockStatus::Paused => {
+                        if let (Some(end_time), Some(pause_start)) =
+                            (clock_row.level_end_time, clock_row.pause_started_at)
+                        {
+                            let remaining = end_time - pause_start;
+                            Some(remaining.num_seconds().max(0))
+                        } else {
+                            None
+                        }
+                    }
+                    InfraClockStatus::Stopped => {
+                        // Show full duration of current level when stopped
+                        // Use already fetched structure or fetch it
+                        if let Some(s) = &structure {
+                            Some((s.duration_minutes as i64) * 60)
+                        } else if let Ok(current_structure) =
+                            tournament_clock::get_current_structure(&state.db, tournament_id).await
+                        {
+                            Some((current_structure.duration_minutes as i64) * 60)
+                        } else {
+                            None
+                        }
+                    }
+                }
+            } else {
+                None
+            };
 
             // Convert PgInterval to seconds
             let total_pause_seconds = clock_row.total_pause_duration.microseconds / 1_000_000;
@@ -181,10 +183,9 @@ impl TournamentClockQuery {
         tournament_id: ID,
     ) -> Result<Vec<TournamentStructure>> {
         let state = ctx.data::<AppState>()?;
-        let repo = TournamentClockRepo::new(state.db.clone());
         let tournament_id: Uuid = tournament_id.parse()?;
 
-        let structures = repo.get_all_structures(tournament_id).await?;
+        let structures = tournament_clock::get_all_structures(&state.db, tournament_id).await?;
 
         Ok(structures
             .into_iter()
@@ -215,13 +216,14 @@ impl TournamentClockMutation {
     ) -> Result<TournamentClock> {
         let _manager = require_role(ctx, Role::Manager).await?;
         let state = ctx.data::<AppState>()?;
-        let repo = TournamentClockRepo::new(state.db.clone());
         let tournament_id: Uuid = tournament_id.parse()?;
 
-        let clock_row = repo.create_clock(tournament_id).await?;
-        let structure = repo.get_current_structure(tournament_id).await.ok();
+        let clock_row = tournament_clock::create_clock(&state.db, tournament_id).await?;
+        let structure = tournament_clock::get_current_structure(&state.db, tournament_id)
+            .await
+            .ok();
         let next_structure =
-            get_next_structure(&repo, tournament_id, clock_row.current_level).await;
+            get_next_structure(&state.db, tournament_id, clock_row.current_level).await;
 
         // Show full duration of first level when clock is created (stopped state)
         let time_remaining_seconds = structure.as_ref().map(|s| (s.duration_minutes as i64) * 60);
@@ -273,15 +275,16 @@ impl TournamentClockMutation {
     ) -> Result<TournamentClock> {
         let manager = require_role(ctx, Role::Manager).await?;
         let state = ctx.data::<AppState>()?;
-        let repo = TournamentClockRepo::new(state.db.clone());
         let tournament_id: Uuid = tournament_id.parse()?;
 
-        let clock_row = repo
-            .start_clock(tournament_id, Some(manager.id.parse()?))
-            .await?;
-        let structure = repo.get_current_structure(tournament_id).await.ok();
+        let clock_row =
+            tournament_clock::start_clock(&state.db, tournament_id, Some(manager.id.parse()?))
+                .await?;
+        let structure = tournament_clock::get_current_structure(&state.db, tournament_id)
+            .await
+            .ok();
         let next_structure =
-            get_next_structure(&repo, tournament_id, clock_row.current_level).await;
+            get_next_structure(&state.db, tournament_id, clock_row.current_level).await;
 
         // Calculate time remaining
         let time_remaining = if let Some(end_time) = clock_row.level_end_time {
@@ -314,15 +317,16 @@ impl TournamentClockMutation {
     ) -> Result<TournamentClock> {
         let manager = require_role(ctx, Role::Manager).await?;
         let state = ctx.data::<AppState>()?;
-        let repo = TournamentClockRepo::new(state.db.clone());
         let tournament_id: Uuid = tournament_id.parse()?;
 
-        let clock_row = repo
-            .pause_clock(tournament_id, Some(manager.id.parse()?))
-            .await?;
-        let structure = repo.get_current_structure(tournament_id).await.ok();
+        let clock_row =
+            tournament_clock::pause_clock(&state.db, tournament_id, Some(manager.id.parse()?))
+                .await?;
+        let structure = tournament_clock::get_current_structure(&state.db, tournament_id)
+            .await
+            .ok();
         let next_structure =
-            get_next_structure(&repo, tournament_id, clock_row.current_level).await;
+            get_next_structure(&state.db, tournament_id, clock_row.current_level).await;
 
         // Calculate time remaining at pause
         let time_remaining = if let (Some(end_time), Some(pause_start)) =
@@ -359,15 +363,16 @@ impl TournamentClockMutation {
     ) -> Result<TournamentClock> {
         let manager = require_role(ctx, Role::Manager).await?;
         let state = ctx.data::<AppState>()?;
-        let repo = TournamentClockRepo::new(state.db.clone());
         let tournament_id: Uuid = tournament_id.parse()?;
 
-        let clock_row = repo
-            .resume_clock(tournament_id, Some(manager.id.parse()?))
-            .await?;
-        let structure = repo.get_current_structure(tournament_id).await.ok();
+        let clock_row =
+            tournament_clock::resume_clock(&state.db, tournament_id, Some(manager.id.parse()?))
+                .await?;
+        let structure = tournament_clock::get_current_structure(&state.db, tournament_id)
+            .await
+            .ok();
         let next_structure =
-            get_next_structure(&repo, tournament_id, clock_row.current_level).await;
+            get_next_structure(&state.db, tournament_id, clock_row.current_level).await;
 
         // Calculate time remaining
         let time_remaining = if let Some(end_time) = clock_row.level_end_time {
@@ -404,9 +409,7 @@ impl TournamentClockMutation {
         let tournament_id: Uuid = tournament_id.parse()?;
 
         // Get tournament to find club_id for authorization
-        let tournament_repo = infra::repos::TournamentRepo::new(state.db.clone());
-        let tournament = tournament_repo
-            .get(tournament_id)
+        let tournament = infra::repos::tournaments::get_by_id(&state.db, tournament_id)
             .await?
             .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
 
@@ -414,14 +417,18 @@ impl TournamentClockMutation {
         let manager =
             crate::auth::permissions::require_club_manager(ctx, tournament.club_id).await?;
 
-        let repo = TournamentClockRepo::new(state.db.clone());
-
-        let clock_row = repo
-            .advance_level(tournament_id, false, Some(manager.id.parse()?))
-            .await?;
-        let structure = repo.get_current_structure(tournament_id).await.ok();
+        let clock_row = tournament_clock::advance_level(
+            &state.db,
+            tournament_id,
+            false,
+            Some(manager.id.parse()?),
+        )
+        .await?;
+        let structure = tournament_clock::get_current_structure(&state.db, tournament_id)
+            .await
+            .ok();
         let next_structure =
-            get_next_structure(&repo, tournament_id, clock_row.current_level).await;
+            get_next_structure(&state.db, tournament_id, clock_row.current_level).await;
 
         // Calculate time remaining for new level
         let time_remaining = if let Some(end_time) = clock_row.level_end_time {
@@ -462,21 +469,22 @@ impl TournamentClockMutation {
     ) -> Result<TournamentClock> {
         let manager = require_role(ctx, Role::Manager).await?;
         let state = ctx.data::<AppState>()?;
-        let repo = TournamentClockRepo::new(state.db.clone());
         let tournament_id: Uuid = tournament_id.parse()?;
 
-        let clock_row = repo
-            .revert_level(tournament_id, Some(manager.id.parse()?))
+        let clock_row =
+            tournament_clock::revert_level(&state.db, tournament_id, Some(manager.id.parse()?))
+                .await
+                .map_err(|e| match e {
+                    sqlx::Error::RowNotFound => async_graphql::Error::new(
+                        "Reverting level failed: tournament is already at level 1",
+                    ),
+                    other => async_graphql::Error::new(format!("Reverting level failed: {other}")),
+                })?;
+        let structure = tournament_clock::get_current_structure(&state.db, tournament_id)
             .await
-            .map_err(|e| match e {
-                sqlx::Error::RowNotFound => {
-                    async_graphql::Error::new("Cannot revert: Tournament is already at level 1")
-                }
-                _ => async_graphql::Error::new(format!("Failed to revert level: {}", e)),
-            })?;
-        let structure = repo.get_current_structure(tournament_id).await.ok();
+            .ok();
         let next_structure =
-            get_next_structure(&repo, tournament_id, clock_row.current_level).await;
+            get_next_structure(&state.db, tournament_id, clock_row.current_level).await;
 
         // Calculate time remaining for reverted level
         let time_remaining = if let Some(end_time) = clock_row.level_end_time {

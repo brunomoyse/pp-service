@@ -4,13 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-PocketPair is a poker tournament management platform backend built with Rust. The service provides a GraphQL API for managing poker clubs, tournaments, players, and real-time tournament features like clock management and table seating.
+PocketPair Service is a poker tournament management platform backend built with Rust. It provides a GraphQL API for managing poker clubs, tournaments, players, and real-time tournament features like clock management and table seating.
 
 **Tech Stack:**
-- Rust (Axum 0.8, Async-GraphQL, SQLx)
+- Rust (Edition 2021)
+- Axum 0.8 (web framework with WebSocket support)
+- Async-GraphQL 7 (GraphQL server with subscriptions)
+- SQLx 0.8 (compile-time verified SQL queries, PostgreSQL)
+- Tokio 1.49 (async runtime)
 - PostgreSQL 16
-- Docker & docker-compose
-- Prometheus + Grafana (monitoring)
 
 ## Architecture
 
@@ -22,157 +24,170 @@ This is a Cargo workspace with two crates:
   - GraphQL schema, queries, mutations, and subscriptions
   - REST routes for OAuth authentication
   - JWT middleware for authentication
-  - Background services (tournament clock auto-advance)
-  - Prometheus metrics (`src/metrics/`)
+  - Background services (tournament clock auto-advance, notifications)
   - Entry point: `src/main.rs`
 
 - **`crates/infra/`**: Infrastructure/data layer
-  - Database models (`models.rs`)
-  - Repository pattern for data access (`repos/`)
-  - Database utilities and notifications (`db/`)
+  - Database models (`models.rs`) - 18 `FromRow` structs
+  - Repository pattern for data access (`repos/`) - 15 repositories
+  - Database utilities (`db/`)
   - Pagination helpers
-  - Scoring calculations
+  - Scoring calculations (`scoring.rs`)
+
+Note: `crates/telemetry/` and `crates/types/` directories exist but are empty stubs.
 
 ### Key Architectural Patterns
 
-1. **Repository Pattern**: All database operations are encapsulated in repository structs in `crates/infra/src/repos/`. Each repository (e.g., `TournamentRepo`, `UserRepo`) provides methods for CRUD operations and domain-specific queries.
+1. **Repository Pattern**: All database operations are in `crates/infra/src/repos/`. Each repository takes a `PgPool` clone and provides CRUD + domain-specific queries.
 
-2. **GraphQL Layer**: The API exposes a GraphQL schema built with async-graphql:
-   - Schema definition: `crates/api/src/gql/schema.rs`
-   - Queries: `crates/api/src/gql/queries.rs`
-   - Mutations: `crates/api/src/gql/mutations.rs`
-   - Subscriptions: `crates/api/src/gql/subscriptions.rs`
-   - Types: `crates/api/src/gql/types.rs`
-   - DataLoaders: `crates/api/src/gql/loaders.rs` (N+1 query prevention)
+2. **GraphQL Layer** (`crates/api/src/gql/`):
+   - `schema.rs` - Schema builder with DataLoaders
+   - `queries.rs` - QueryRoot resolvers
+   - `mutations.rs` - MutationRoot (50+ mutations)
+   - `subscriptions.rs` - SubscriptionRoot (5 subscription endpoints)
+   - `types.rs` - GraphQL type definitions and enums
+   - `loaders.rs` - DataLoaders (ClubLoader, UserLoader, TournamentLoader)
+   - `tournament_clock.rs` - Clock type and resolvers
+   - `scalars.rs` - Custom scalar types
 
-3. **State Management**: `AppState` (in `crates/api/src/state.rs`) holds shared application state including:
-   - Database connection pool (`PgPool`)
-   - JWT service for token generation/validation
-   - OAuth service for third-party authentication
+3. **State Management** (`crates/api/src/state.rs`):
+   ```rust
+   pub struct AppState {
+       pub db: PgPool,
+       jwt_service: JwtService,
+       oauth_service: OAuthService,
+   }
+   ```
 
-4. **Authentication & Authorization**:
-   - JWT-based authentication middleware in `crates/api/src/middleware/jwt.rs`
-   - Role-based permissions (Admin, Manager, Player) in `crates/api/src/auth/permissions.rs`
-   - OAuth flows for external providers + custom OAuth server
-   - Permission helpers: `require_role()`, `require_club_manager()`, `require_admin_if()`
+4. **Authentication & Authorization** (`crates/api/src/auth/`):
+   - `jwt.rs` - JWT token creation/verification (Claims: sub, email, iat, exp)
+   - `oauth.rs` - External OAuth provider integration (Google)
+   - `custom_oauth.rs` - Custom OAuth server (username/password login)
+   - `password.rs` - bcrypt password hashing
+   - `permissions.rs` - Role-based access control (Admin, Manager, Player)
+   - Permission helpers: `require_role()`, `require_admin()`, `require_club_manager()`, `require_admin_if()`
 
-5. **Background Services**:
-   - Tournament clock service (`crates/api/src/services/clock_service.rs`) runs in background
-   - Auto-advances tournament levels every 5 seconds when enabled
-   - Uses PostgreSQL NOTIFY for real-time updates
+5. **Background Services** (`crates/api/src/services/`):
+   - `clock_service.rs` - Checks every 5 seconds for tournament level advancement. Detects stale tournaments (24+ hours) every 5 minutes.
+   - `notification_service.rs` - Sends "tournament starting soon" alerts.
 
 6. **Real-time Features**:
-   - GraphQL subscriptions for live tournament updates
-   - PostgreSQL LISTEN/NOTIFY for event broadcasting (see `crates/infra/src/db/notifications.rs`)
+   - GraphQL subscriptions over WebSocket
+   - Uses Tokio broadcast channels (per-tournament, per-user, per-club) stored in static `Lazy<Arc<Mutex<HashMap>>>`
+   - Publish functions: `publish_registration_event()`, `publish_seating_event()`, `publish_clock_update()`, `publish_user_notification()`
+   - 5 subscription endpoints: clock updates, registrations, seating changes (per-tournament and per-club), user notifications
 
-7. **Metrics & Monitoring**:
-   - Prometheus metrics exposed on port 9090 at `/metrics`
-   - HTTP request metrics middleware (`crates/api/src/middleware/metrics.rs`)
-   - Business metrics organized by domain (`crates/api/src/metrics/mod.rs`):
-     - `tournament` - tournament creation, status transitions, durations
-     - `graphql` - request counts, durations, errors
-     - `db` - query durations and errors
-     - `websocket` - subscription counts, messages sent
-     - `clock_service` - tick durations, auto-advances
-     - `auth` - OAuth and JWT operations
-   - Database connection pool monitoring (active/idle connections)
+### Startup Flow (main.rs)
+
+1. Initialize tracing (`RUST_LOG`, default: "info")
+2. Load `.env` via dotenvy
+3. Create PgPool (min 5, max 30 connections, 10s acquire timeout)
+4. Run migrations from `../../migrations` (skip with `SKIP_MIGRATIONS=true`)
+5. Create `AppState` (db + jwt + oauth)
+6. Build GraphQL schema
+7. Wait 2s for pool warmup
+8. Spawn clock service and notification service
+9. Build Axum router
+10. Bind to `PORT` (default: 8080)
+
+### HTTP Routes (app.rs)
+
+```
+GET  /health                        Health check with DB probe
+GET  /auth/choose                   Unified auth choice page
+GET  /auth/{provider}/authorize     External OAuth authorization
+GET  /auth/{provider}/callback      External OAuth callback
+GET  /oauth/authorize               Custom OAuth authorization
+POST /oauth/login                   Custom OAuth login
+POST /oauth/token                   Custom OAuth token
+GET  /oauth/register                Custom OAuth registration form
+POST /oauth/register                Custom OAuth registration
+POST /graphql                       GraphQL queries/mutations
+GET  /graphql                       GraphQL WebSocket subscriptions
+```
+
+**Middleware stack**: JWT extraction -> TraceLayer -> TimeoutLayer (30s) -> CorsLayer (permissive)
 
 ## Database
 
 ### Migrations
 
-Migrations are in `./migrations/` and use SQLx's migration system. They run **automatically on application startup** unless `SKIP_MIGRATIONS=true` is set.
+68 migration files in `./migrations/` (SQLx migration system). They run **automatically on startup** unless `SKIP_MIGRATIONS=true`.
 
-**Important migration notes:**
-- The database uses custom ENUMs (e.g., `tournament_live_status`, `tournament_status`, `clock_status`)
-- Database triggers auto-create related records (tournament clocks, tournament structures, tournament payouts)
-- The schema includes a timestamp trigger that automatically updates `updated_at` columns
+- Custom ENUMs: `tournament_live_status`, `tournament_status`, `clock_status`
+- Triggers auto-create tournament clocks, structures, and payouts
+- Timestamp trigger auto-updates `updated_at` columns
 
-### Key Database Concepts
+### Key Entities
 
-- **Clubs**: Organizations that host tournaments
-- **Tournaments**: Events with lifecycle tracked by `live_status` (not_started → registration_open → in_progress → finished)
-- **Tournament Clocks**: Manages blind levels and timing for each tournament
-- **Tournament Structure**: Defines blind levels for tournaments
-- **Club Tables**: Physical tables assigned to tournaments
-- **Table Seat Assignments**: Player seating arrangements
-- **Club Managers**: Users with manager role for specific clubs (separate from global Admin role)
+| Entity | Description |
+|--------|-------------|
+| `clubs` | Organizations hosting tournaments |
+| `users` | Players/managers with roles (admin, manager, player) |
+| `tournaments` | Events with lifecycle (not_started -> registration_open -> late_registration -> in_progress -> break -> final_table -> finished) |
+| `tournament_clocks` | Real-time blind level state per tournament |
+| `tournament_structure` | Blind level definitions (small/big blind, ante, duration) |
+| `tournament_registrations` | Player registrations (registered, checked_in, seated, busted, waitlisted, cancelled, no_show) |
+| `tournament_entries` | Buy-ins, rebuys, add-ons (amounts in integer cents) |
+| `tournament_results` | Final positions and prize payouts |
+| `tournament_payouts` | Prize pool distribution from templates |
+| `club_tables` | Physical tables at a club |
+| `table_seat_assignments` | Player-to-seat mappings with stack sizes |
+| `club_managers` | Manager role assignments per club |
+| `player_deals` | Side deals (even chop, ICM, custom) |
+| `blind_structure_templates` | Reusable blind level templates |
+| `payout_templates` | Reusable payout structures |
 
-### Database Connection
+### Repositories (crates/infra/src/repos/)
 
-The main application connects using `DATABASE_URL` environment variable. Tests use `TEST_DATABASE_URL` (defaults to `postgres://postgres:postgres@localhost:5432/pocketpair` if not set).
-
-Production database credentials are URL-encoded in environment variables to handle special characters.
+`clubs`, `tournaments`, `users`, `tournament_registrations`, `tournament_results`, `tournament_clock`, `tournament_entries`, `tournament_payouts`, `table_seat_assignments`, `club_tables`, `club_managers`, `payout_templates`, `player_deals`, `blind_structure_templates`
 
 ## Development Commands
 
-### Local Development
+### Running Locally
 
 ```bash
-# Start PostgreSQL and API in Docker
-docker compose up -d --build
+# Run the API
+cargo run --package api
 
 # Check health
 curl http://localhost:8080/health
-
-# Check metrics
-curl http://localhost:9090/metrics
 ```
 
-### Monitoring Stack
+### Building
 
 ```bash
-# Start with Prometheus + Grafana monitoring
-docker compose -f docker-compose.monitoring.yml up -d --build
-
-# Access points:
-# - API: http://localhost:8080
-# - Prometheus: http://localhost:9091
-# - Grafana: http://localhost:3000 (admin/admin)
-# - Metrics: http://localhost:9090/metrics
-```
-
-### Running Tests
-
-Tests are located in `crates/api/tests/` and use a test database.
-
-```bash
-# Run all integration tests
-TEST_DATABASE_URL="postgres://brunomoyse:A9WeJQk%3F%217W0n%C2%A3h%C2%A3@192.168.0.14:5433/pocketpair" cargo test --package api --test integration_tests
-
-# Run specific test file
-TEST_DATABASE_URL="..." cargo test --package api --test tournament_tests
-
-# Run specific test
-TEST_DATABASE_URL="..." cargo test test_me_query_unauthenticated --package api
-
-# Run with output visible
-TEST_DATABASE_URL="..." cargo test --package api --test tournament_tests -- --nocapture
-```
-
-**Test helpers** are in `crates/api/tests/common/mod.rs`:
-- `setup_test_db()`: Initialize test database connection
-- `execute_graphql()`: Execute GraphQL queries/mutations with optional auth
-- `create_test_user()`: Create user and return JWT claims
-- `create_test_club()`: Create test club
-- `create_test_tournament()`: Create test tournament
-- `create_club_manager()`: Assign manager to club
-
-### Building and Type Checking
-
-```bash
-# Build (offline mode for SQLx)
+# Build (offline mode for SQLx - required when DB is not available)
 SQLX_OFFLINE=true cargo build --all-features
 
 # Type check
 SQLX_OFFLINE=true cargo check --all-features
 
-# Run clippy
+# Clippy
 SQLX_OFFLINE=true cargo clippy --all-targets --all-features -- -D warnings
 
 # Format check
-SQLX_OFFLINE=true cargo fmt --all -- --check
+cargo fmt --all -- --check
 ```
+
+### Running Tests
+
+Tests are in `crates/api/tests/` and use a real PostgreSQL database via `TEST_DATABASE_URL`.
+
+```bash
+# Run all tests
+TEST_DATABASE_URL="..." cargo test --package api
+
+# Run specific test file
+TEST_DATABASE_URL="..." cargo test --package api --test tournament_tests
+
+# Run specific test with output
+TEST_DATABASE_URL="..." cargo test test_name --package api -- --nocapture
+```
+
+**Test files:** `auth_tests`, `tournament_tests`, `tournament_clock_tests`, `tournament_entries_tests`, `tournament_results_tests`, `permission_tests`, `table_seating_tests`, `club_tests`, `club_tables_test`, `user_tests`, `system_tests`, `integration_tests`, `payouts_tests`, `notification_tests`
+
+**Test helpers** (`crates/api/tests/common/mod.rs`): `setup_test_db()`, `execute_graphql()`, `create_test_user()`, `create_test_club()`, `create_test_tournament()`, `create_club_manager()`, `create_test_club_table()`
 
 ### Database Management
 
@@ -183,126 +198,83 @@ DATABASE_URL="..." cargo sqlx migrate run
 # Revert last migration
 DATABASE_URL="..." sqlx migrate revert
 
-# View migration status
-DATABASE_URL="..." sqlx migrate info
-
-# Reset database (drop + recreate + migrate)
-DATABASE_URL="..." sqlx database reset -y
-
 # Prepare SQLx metadata for offline builds (required after schema changes)
 DATABASE_URL="..." cargo sqlx prepare --workspace -- --tests
-```
 
-### Running the API Locally
-
-```bash
-# With cargo
-cargo run --package api
-
-# With timeout (useful for testing)
-timeout 5 cargo run --package api
+# Reset database
+DATABASE_URL="..." sqlx database reset -y
 ```
 
 ## Environment Variables
 
-Required environment variables (set in `.env` for local development):
+Set in `.env` for local development:
 
-- `DATABASE_URL`: PostgreSQL connection string
-- `TEST_DATABASE_URL`: Test database connection string (for running tests)
-- `RUST_LOG`: Logging level (default: `info`)
-- `PORT`: Server port (default: `8080`)
-- `DATABASE_MAX_CONNECTIONS`: Connection pool size (default: `30`)
-- `SKIP_MIGRATIONS`: Skip auto-migrations on startup (default: `false`)
-- OAuth configuration (see `crates/api/src/auth/config.rs`)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | (required) | PostgreSQL connection string |
+| `TEST_DATABASE_URL` | `postgres://postgres:postgres@localhost:5432/pocketpair` | Test database |
+| `PORT` | `8080` | Server port |
+| `RUST_LOG` | `info` | Log level |
+| `DATABASE_MAX_CONNECTIONS` | `30` | Connection pool max size |
+| `SKIP_MIGRATIONS` | `false` | Skip auto-migrations on startup |
+| `JWT_SECRET` | (required) | JWT signing secret |
+| `JWT_EXPIRATION_HOURS` | `24` | Token lifetime |
+| `GOOGLE_CLIENT_ID` | | Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | | Google OAuth client secret |
+| `REDIRECT_BASE_URL` | `http://localhost:8080` | OAuth redirect base URL |
 
-**Production URL encoding note**: Special characters in passwords must be URL-encoded (e.g., `?` → `%3F`, `!` → `%21`, `£` → `%C2%A3`)
+**Note**: Special characters in database passwords must be URL-encoded (e.g., `?` -> `%3F`, `!` -> `%21`).
 
-## GraphQL Schema
+## GraphQL
 
-The GraphQL API is available at `/graphql` (both POST for queries/mutations and WebSocket for subscriptions).
+The API is at `/graphql` (POST for queries/mutations, WebSocket for subscriptions).
 
-### Authentication in GraphQL
+### Authentication in Resolvers
 
-- JWT claims are injected into GraphQL context by `jwt_middleware` and custom `graphql_handler`
-- Access claims in resolvers: `ctx.data::<Claims>()?`
-- Use permission helpers from `crates/api/src/auth/permissions.rs`
-
-### Common Patterns
-
-**N+1 Query Prevention**: Use DataLoaders (see `crates/api/src/gql/loaders.rs`):
 ```rust
-let club_loader = ctx.data::<DataLoader<ClubLoader>>()?;
-let club = club_loader.load_one(club_id).await?;
-```
+// JWT claims injected by middleware into GraphQL context
+let claims = ctx.data::<Claims>()?;
 
-**Permission Checks**:
-```rust
-// Require specific role
+// Permission checks
 let user = require_role(ctx, Role::Manager).await?;
-
-// Require club manager (or admin)
 let user = require_club_manager(ctx, club_id).await?;
-
-// Conditionally require admin
-let user = require_admin_if(ctx, is_changing_sensitive_field, "field_name").await?;
+let user = require_admin_if(ctx, condition, "field_name").await?;
 ```
 
-## Testing Strategy
+### N+1 Prevention
 
-- Integration tests use real PostgreSQL database (via `TEST_DATABASE_URL`)
-- Tests are organized by feature in `crates/api/tests/`:
-  - `auth_tests.rs` - authentication and JWT tests
-  - `tournament_tests.rs` - tournament CRUD and lifecycle
-  - `tournament_clock_tests.rs` - clock state and level advancement
-  - `permission_tests.rs` - role-based access control
-  - `table_seating_tests.rs` - table and seat assignment
-  - `club_tests.rs`, `club_tables_test.rs` - club management
-  - `user_tests.rs` - user operations
-  - `system_tests.rs` - end-to-end system tests
-  - `integration_tests.rs` - general integration tests
-- Use test helpers from `common/mod.rs` for setup
-- Clean test data is ensured through database transactions or cleanup
+```rust
+let loader = ctx.data::<DataLoader<ClubLoader>>()?;
+let club = loader.load_one(club_id).await?;
+```
 
 ## Special Considerations
 
-### Tournament Clock System
-
-The tournament clock auto-advances levels based on time. Key files:
-- Service: `crates/api/src/services/clock_service.rs`
-- Repository: `crates/infra/src/repos/tournament_clock.rs`
-- GraphQL: `crates/api/src/gql/tournament_clock.rs`
-
-The service runs every 5 seconds and checks for tournaments ready to advance.
-
 ### SQLx Offline Mode
 
-SQLx requires compile-time query verification. For offline builds (e.g., in Docker):
-1. Make schema changes and run migrations
-2. Run `cargo sqlx prepare --workspace -- --tests` to generate metadata
-3. Commit `.sqlx/` directory
+SQLx verifies queries at compile time. For builds without a live database:
+1. Run migrations against a database
+2. Generate metadata: `cargo sqlx prepare --workspace -- --tests`
+3. Commit the `.sqlx/` directory
 4. Build with `SQLX_OFFLINE=true`
 
-### URL Encoding in Database URLs
+### Tournament Clock System
 
-Production database passwords with special characters MUST be URL-encoded when used in `DATABASE_URL` or `TEST_DATABASE_URL`.
+Key files: `services/clock_service.rs`, `repos/tournament_clock.rs`, `gql/tournament_clock.rs`
 
-### Metrics Implementation
+The clock service runs every 5 seconds, advancing blind levels when `level_end_time` is reached. Stale tournaments (running 24+ hours) are auto-finished.
 
-The metrics system uses the `metrics` crate ecosystem:
-- `metrics` - Core metrics facade
-- `metrics-exporter-prometheus` - Prometheus exporter
-- `metrics-util` - Utilities for idle timeout
+### Docker
 
-To add new metrics:
-```rust
-use metrics::{counter, gauge, histogram};
+Multi-stage Dockerfile using cargo-chef for dependency caching:
+1. **Planner** - generates recipe.json
+2. **Builder** - compiles release binary with `SQLX_OFFLINE=true` (Rust 1.92, Alpine 3.23)
+3. **Runtime** - minimal Alpine with dumb-init, runs as non-root (uid 10001), health check on `/health`
 
-// Counter - monotonically increasing value
-counter!("my_events_total", "label" => "value").increment(1);
+### Scripts
 
-// Gauge - value that can go up and down
-gauge!("my_current_value").set(42.0);
-
-// Histogram - track distribution of values
-histogram!("my_duration_seconds").record(0.5);
-```
+- `scripts/dev.sh` - Development setup
+- `scripts/migrate.sh` - Migration helpers
+- `scripts/setup-pre-commit.sh` - Pre-commit hook setup
+- `scripts/seed.sql` - Test data seeding
+- `scripts/calculate_points.sql` - Points calculation SQL

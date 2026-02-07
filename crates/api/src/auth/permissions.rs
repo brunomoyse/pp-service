@@ -2,7 +2,6 @@ use crate::auth::Claims;
 use crate::gql::types::{Role, User};
 use crate::state::AppState;
 use async_graphql::{Context, Error, Result};
-use infra::repos::ClubManagerRepo;
 use uuid::Uuid;
 
 /// Check if the authenticated user has the required role
@@ -91,13 +90,11 @@ pub async fn require_club_manager(ctx: &Context<'_>, club_id: Uuid) -> Result<Us
     }
 
     let state = ctx.data::<AppState>()?;
-    let club_manager_repo = ClubManagerRepo::new(state.db.clone());
 
     let user_id = Uuid::parse_str(user.id.as_str())
         .map_err(|e| Error::new(format!("Invalid user ID: {}", e)))?;
 
-    let is_manager = club_manager_repo
-        .is_club_manager(user_id, club_id)
+    let is_manager = infra::repos::club_managers::is_club_manager(&state.db, user_id, club_id)
         .await
         .map_err(|e| Error::new(format!("Database error: {}", e)))?;
 

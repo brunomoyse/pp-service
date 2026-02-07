@@ -9,6 +9,7 @@ use tokio_stream::wrappers::{errors::BroadcastStreamRecvError, BroadcastStream};
 use uuid::Uuid;
 
 use crate::auth::jwt::Claims;
+use crate::gql::error::ResultExt;
 use crate::gql::types::{
     PlayerRegistrationEvent, Role, SeatingChangeEvent, TournamentClock, UserNotification,
 };
@@ -84,8 +85,8 @@ impl SubscriptionRoot {
         &self,
         tournament_id: async_graphql::ID,
     ) -> Result<impl Stream<Item = Result<TournamentClock, BroadcastStreamRecvError>>> {
-        let tournament_uuid = Uuid::parse_str(tournament_id.as_str())
-            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+        let tournament_uuid =
+            Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
 
         let receiver = {
             let mut channels = CHANNELS.lock();
@@ -101,8 +102,8 @@ impl SubscriptionRoot {
         &self,
         tournament_id: async_graphql::ID,
     ) -> Result<impl Stream<Item = Result<PlayerRegistrationEvent, BroadcastStreamRecvError>>> {
-        let tournament_uuid = Uuid::parse_str(tournament_id.as_str())
-            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+        let tournament_uuid =
+            Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
 
         let receiver = {
             let mut channels = CHANNELS.lock();
@@ -118,8 +119,8 @@ impl SubscriptionRoot {
         &self,
         tournament_id: async_graphql::ID,
     ) -> Result<impl Stream<Item = Result<SeatingChangeEvent, BroadcastStreamRecvError>>> {
-        let tournament_uuid = Uuid::parse_str(tournament_id.as_str())
-            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+        let tournament_uuid =
+            Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
 
         let receiver = {
             let mut channels = CHANNELS.lock();
@@ -141,8 +142,7 @@ impl SubscriptionRoot {
         // Require manager role
         let _manager = require_role(ctx, Role::Manager).await?;
 
-        let club_uuid = Uuid::parse_str(club_id.as_str())
-            .map_err(|e| async_graphql::Error::new(format!("Invalid club ID: {}", e)))?;
+        let club_uuid = Uuid::parse_str(club_id.as_str()).gql_err("Invalid club ID")?;
 
         let receiver = {
             let mut channels = CHANNELS.lock();
@@ -159,8 +159,7 @@ impl SubscriptionRoot {
         ctx: &Context<'_>,
     ) -> Result<impl Stream<Item = Result<UserNotification, BroadcastStreamRecvError>>> {
         let claims = ctx.data::<Claims>()?;
-        let user_id = Uuid::parse_str(&claims.sub)
-            .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
+        let user_id = Uuid::parse_str(&claims.sub).gql_err("Invalid user ID")?;
 
         let receiver = {
             let mut channels = CHANNELS.lock();

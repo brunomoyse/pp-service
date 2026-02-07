@@ -3,6 +3,7 @@ use async_graphql::{ComplexObject, Context, Enum, Error, InputObject, Result, Si
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
+use crate::gql::error::ResultExt;
 use crate::gql::loaders::ClubLoader;
 
 // Notification title constants
@@ -11,11 +12,8 @@ pub const TITLE_TOURNAMENT_STARTING: &str = "Tournament Starting Soon";
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Role {
-    #[graphql(name = "ADMIN")]
     Admin,
-    #[graphql(name = "MANAGER")]
     Manager,
-    #[graphql(name = "PLAYER")]
     Player,
 }
 
@@ -51,29 +49,19 @@ impl From<Role> for String {
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum TournamentStatus {
-    #[graphql(name = "UPCOMING")]
     Upcoming,
-    #[graphql(name = "IN_PROGRESS")]
     InProgress,
-    #[graphql(name = "COMPLETED")]
     Completed,
 }
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum TournamentLiveStatus {
-    #[graphql(name = "NOT_STARTED")]
     NotStarted,
-    #[graphql(name = "REGISTRATION_OPEN")]
     RegistrationOpen,
-    #[graphql(name = "LATE_REGISTRATION")]
     LateRegistration,
-    #[graphql(name = "IN_PROGRESS")]
     InProgress,
-    #[graphql(name = "BREAK")]
     Break,
-    #[graphql(name = "FINAL_TABLE")]
     FinalTable,
-    #[graphql(name = "FINISHED")]
     Finished,
 }
 
@@ -262,11 +250,8 @@ pub struct UserTournamentResult {
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
 pub enum DealType {
-    #[graphql(name = "EVEN_SPLIT")]
     EvenSplit,
-    #[graphql(name = "ICM")]
     Icm,
-    #[graphql(name = "CUSTOM")]
     Custom,
 }
 
@@ -399,31 +384,24 @@ pub struct TournamentSeatingChart {
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum RegistrationStatus {
     /// Player has registered but not yet checked in
-    #[graphql(name = "REGISTERED")]
     Registered,
 
     /// Player has checked in and is ready to be seated
-    #[graphql(name = "CHECKED_IN")]
     CheckedIn,
 
     /// Player is seated and actively playing
-    #[graphql(name = "SEATED")]
     Seated,
 
     /// Player was eliminated/busted from tournament
-    #[graphql(name = "BUSTED")]
     Busted,
 
     /// Player was placed on waiting list (tournament full)
-    #[graphql(name = "WAITLISTED")]
     Waitlisted,
 
     /// Player cancelled their registration
-    #[graphql(name = "CANCELLED")]
     Cancelled,
 
     /// Player didn't show up for check-in
-    #[graphql(name = "NO_SHOW")]
     NoShow,
 }
 
@@ -458,11 +436,8 @@ impl From<RegistrationStatus> for String {
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq)]
 pub enum ClockStatus {
-    #[graphql(name = "STOPPED")]
     Stopped,
-    #[graphql(name = "RUNNING")]
     Running,
-    #[graphql(name = "PAUSED")]
     Paused,
 }
 
@@ -488,13 +463,9 @@ impl From<ClockStatus> for infra::repos::tournament_clock::ClockStatus {
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
 pub enum EntryType {
-    #[graphql(name = "INITIAL")]
     Initial,
-    #[graphql(name = "REBUY")]
     Rebuy,
-    #[graphql(name = "RE_ENTRY")]
     ReEntry,
-    #[graphql(name = "ADDON")]
     Addon,
 }
 
@@ -639,9 +610,7 @@ pub struct TournamentPayout {
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
 pub enum RegistrationEventType {
-    #[graphql(name = "PLAYER_REGISTERED")]
     PlayerRegistered,
-    #[graphql(name = "PLAYER_UNREGISTERED")]
     PlayerUnregistered,
 }
 
@@ -776,19 +745,15 @@ pub struct BalanceTablesInput {
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
 pub enum AssignmentStrategy {
     /// Balanced distribution - fills tables evenly
-    #[graphql(name = "BALANCED")]
     Balanced,
 
     /// Random assignment for fairness
-    #[graphql(name = "RANDOM")]
     Random,
 
     /// Sequential - fills tables in order
-    #[graphql(name = "SEQUENTIAL")]
     Sequential,
 
     /// Manual - no auto-assignment
-    #[graphql(name = "MANUAL")]
     Manual,
 }
 
@@ -829,33 +794,21 @@ pub struct SeatingChangeEvent {
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
 pub enum SeatingEventType {
-    #[graphql(name = "PLAYER_ASSIGNED")]
     PlayerAssigned,
-    #[graphql(name = "PLAYER_MOVED")]
     PlayerMoved,
-    #[graphql(name = "PLAYER_ELIMINATED")]
     PlayerEliminated,
-    #[graphql(name = "STACK_UPDATED")]
     StackUpdated,
-    #[graphql(name = "TABLE_CREATED")]
     TableCreated,
-    #[graphql(name = "TABLE_CLOSED")]
     TableClosed,
-    #[graphql(name = "TABLE_REMOVED")]
     TableRemoved,
-    #[graphql(name = "TOURNAMENT_STATUS_CHANGED")]
     TournamentStatusChanged,
-    #[graphql(name = "TABLES_BALANCED")]
     TablesBalanced,
 }
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
 pub enum NotificationType {
-    #[graphql(name = "TOURNAMENT_STARTING_SOON")]
     TournamentStartingSoon,
-    #[graphql(name = "REGISTRATION_CONFIRMED")]
     RegistrationConfirmed,
-    #[graphql(name = "TOURNAMENT_STATUS_CHANGED")]
     TournamentStatusChanged,
 }
 
@@ -872,26 +825,31 @@ pub struct UserNotification {
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
 pub enum LeaderboardPeriod {
-    #[graphql(name = "ALL_TIME")]
     AllTime,
-    #[graphql(name = "LAST_YEAR")]
     LastYear,
-    #[graphql(name = "LAST_6_MONTHS")]
     Last6Months,
-    #[graphql(name = "LAST_30_DAYS")]
     Last30Days,
-    #[graphql(name = "LAST_7_DAYS")]
     Last7Days,
 }
 
-impl From<LeaderboardPeriod> for infra::repos::LeaderboardPeriod {
+impl From<LeaderboardPeriod> for infra::repos::tournament_results::LeaderboardPeriod {
     fn from(period: LeaderboardPeriod) -> Self {
         match period {
-            LeaderboardPeriod::AllTime => infra::repos::LeaderboardPeriod::AllTime,
-            LeaderboardPeriod::LastYear => infra::repos::LeaderboardPeriod::LastYear,
-            LeaderboardPeriod::Last6Months => infra::repos::LeaderboardPeriod::Last6Months,
-            LeaderboardPeriod::Last30Days => infra::repos::LeaderboardPeriod::Last30Days,
-            LeaderboardPeriod::Last7Days => infra::repos::LeaderboardPeriod::Last7Days,
+            LeaderboardPeriod::AllTime => {
+                infra::repos::tournament_results::LeaderboardPeriod::AllTime
+            }
+            LeaderboardPeriod::LastYear => {
+                infra::repos::tournament_results::LeaderboardPeriod::LastYear
+            }
+            LeaderboardPeriod::Last6Months => {
+                infra::repos::tournament_results::LeaderboardPeriod::Last6Months
+            }
+            LeaderboardPeriod::Last30Days => {
+                infra::repos::tournament_results::LeaderboardPeriod::Last30Days
+            }
+            LeaderboardPeriod::Last7Days => {
+                infra::repos::tournament_results::LeaderboardPeriod::Last7Days
+            }
         }
     }
 }
@@ -924,13 +882,12 @@ pub struct LeaderboardResponse {
 impl Tournament {
     async fn club(&self, ctx: &Context<'_>) -> Result<Club> {
         let loader = ctx.data::<DataLoader<ClubLoader>>()?;
-        let club_uuid =
-            Uuid::parse_str(self.club_id.as_str()).map_err(|e| Error::new(e.to_string()))?;
+        let club_uuid = Uuid::parse_str(self.club_id.as_str()).gql_err("Invalid club ID")?;
 
         match loader
             .load_one(club_uuid)
             .await
-            .map_err(|e| Error::new(e.to_string()))?
+            .gql_err("Loading club failed")?
         {
             Some(row) => Ok(Club {
                 id: row.id.into(),
@@ -946,15 +903,14 @@ impl Tournament {
         ctx: &Context<'_>,
     ) -> async_graphql::Result<Vec<TournamentStructure>> {
         use crate::state::AppState;
-        use infra::repos::TournamentClockRepo;
 
         let state = ctx.data::<AppState>()?;
-        let clock_repo = TournamentClockRepo::new(state.db.clone());
 
-        let tournament_id = uuid::Uuid::parse_str(self.id.as_str())
-            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+        let tournament_id =
+            uuid::Uuid::parse_str(self.id.as_str()).gql_err("Invalid tournament ID")?;
 
-        let structures = clock_repo.get_all_structures(tournament_id).await?;
+        let structures =
+            infra::repos::tournament_clock::get_all_structures(&state.db, tournament_id).await?;
 
         Ok(structures
             .into_iter()
@@ -974,16 +930,15 @@ impl Tournament {
 
     async fn clock(&self, ctx: &Context<'_>) -> async_graphql::Result<Option<TournamentClock>> {
         use crate::state::AppState;
-        use infra::repos::{ClockStatus as InfraClockStatus, TournamentClockRepo};
+        use infra::repos::tournament_clock::ClockStatus as InfraClockStatus;
         use std::str::FromStr;
 
         let state = ctx.data::<AppState>()?;
-        let clock_repo = TournamentClockRepo::new(state.db.clone());
 
-        let tournament_id = uuid::Uuid::parse_str(self.id.as_str())
-            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+        let tournament_id =
+            uuid::Uuid::parse_str(self.id.as_str()).gql_err("Invalid tournament ID")?;
 
-        let clock = clock_repo.get_clock(tournament_id).await?;
+        let clock = infra::repos::tournament_clock::get_clock(&state.db, tournament_id).await?;
 
         Ok(clock.map(|clock_row| TournamentClock {
             id: clock_row.id.into(),
@@ -1012,15 +967,15 @@ impl Tournament {
         ctx: &Context<'_>,
     ) -> async_graphql::Result<Vec<TournamentRegistration>> {
         use crate::state::AppState;
-        use infra::repos::TournamentRegistrationRepo;
 
         let state = ctx.data::<AppState>()?;
-        let registration_repo = TournamentRegistrationRepo::new(state.db.clone());
 
-        let tournament_id = uuid::Uuid::parse_str(self.id.as_str())
-            .map_err(|e| async_graphql::Error::new(format!("Invalid tournament ID: {}", e)))?;
+        let tournament_id =
+            uuid::Uuid::parse_str(self.id.as_str()).gql_err("Invalid tournament ID")?;
 
-        let registrations = registration_repo.get_by_tournament(tournament_id).await?;
+        let registrations =
+            infra::repos::tournament_registrations::list_by_tournament(&state.db, tournament_id)
+                .await?;
 
         Ok(registrations
             .into_iter()
@@ -1041,15 +996,14 @@ impl TournamentRegistration {
     async fn user(&self, ctx: &Context<'_>) -> async_graphql::Result<Option<User>> {
         use crate::gql::loaders::UserLoader;
 
-        let user_id = Uuid::parse_str(self.user_id.as_str())
-            .map_err(|e| Error::new(format!("Invalid user ID: {}", e)))?;
+        let user_id = Uuid::parse_str(self.user_id.as_str()).gql_err("Invalid user ID")?;
 
         let loader = ctx.data::<DataLoader<UserLoader>>()?;
 
         match loader
             .load_one(user_id)
             .await
-            .map_err(|e| Error::new(e.to_string()))?
+            .gql_err("Loading user failed")?
         {
             Some(user) => Ok(Some(User {
                 id: user.id.into(),
@@ -1070,20 +1024,17 @@ impl TournamentRegistration {
 impl User {
     async fn managed_club(&self, ctx: &Context<'_>) -> async_graphql::Result<Option<Club>> {
         use crate::state::AppState;
-        use infra::repos::{ClubManagerRepo, ClubRepo};
 
         let state = ctx.data::<AppState>()?;
-        let club_manager_repo = ClubManagerRepo::new(state.db.clone());
-        let club_repo = ClubRepo::new(state.db.clone());
 
-        let user_id = uuid::Uuid::parse_str(self.id.as_str())
-            .map_err(|e| async_graphql::Error::new(format!("Invalid user ID: {}", e)))?;
+        let user_id = uuid::Uuid::parse_str(self.id.as_str()).gql_err("Invalid user ID")?;
 
-        let managed_clubs = club_manager_repo.get_manager_clubs(user_id).await?;
+        let managed_clubs =
+            infra::repos::club_managers::get_manager_clubs(&state.db, user_id).await?;
 
         // Get the first managed club if any
         if let Some(club_info) = managed_clubs.into_iter().next() {
-            let club_row = club_repo.get(club_info.club_id).await?;
+            let club_row = infra::repos::clubs::get_by_id(&state.db, club_info.club_id).await?;
             Ok(club_row.map(|club| Club {
                 id: club.id.into(),
                 name: club.name,
