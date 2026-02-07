@@ -4,11 +4,51 @@ use oauth2::{
     basic::BasicClient, AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl,
     Scope, TokenResponse, TokenUrl,
 };
-use reqwest::Client as HttpClient;
+use oauth2::{AsyncHttpClient, HttpClientError, HttpResponse};
 use serde::{Deserialize, Serialize};
+use std::future::Future;
+use std::pin::Pin;
 
 use crate::auth::AuthConfig;
 use crate::error::AppError;
+
+/// Wrapper around reqwest 0.13 Client that implements oauth2's AsyncHttpClient trait.
+/// oauth2 5.0 bundles its own reqwest 0.12 integration, but since we use reqwest 0.13,
+/// we need a bridge implementation.
+#[derive(Clone)]
+struct OAuth2HttpClient(reqwest::Client);
+
+impl<'c> AsyncHttpClient<'c> for OAuth2HttpClient {
+    type Error = HttpClientError<reqwest::Error>;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<HttpResponse, Self::Error>> + Send + Sync + 'c>>;
+
+    fn call(&'c self, request: oauth2::HttpRequest) -> Self::Future {
+        Box::pin(async move {
+            let method = request.method().clone();
+            let url = request.uri().to_string();
+
+            let mut req_builder = self.0.request(method, &url);
+            for (name, value) in request.headers().iter() {
+                req_builder = req_builder.header(name, value);
+            }
+            req_builder = req_builder.body(request.into_body());
+
+            let response = req_builder.send().await.map_err(Box::new)?;
+
+            let status = response.status();
+            let headers = response.headers().clone();
+            let body = response.bytes().await.map_err(Box::new)?.to_vec();
+
+            let mut builder = axum::http::Response::builder().status(status);
+            for (name, value) in headers.iter() {
+                builder = builder.header(name, value);
+            }
+
+            builder.body(body).map_err(HttpClientError::Http)
+        })
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum OAuthProvider {
@@ -62,14 +102,17 @@ impl From<GoogleUserInfo> for OAuthUserInfo {
 #[derive(Clone)]
 pub struct OAuthService {
     config: AuthConfig,
-    http_client: HttpClient,
+    http_client: reqwest::Client,
+    oauth2_client: OAuth2HttpClient,
 }
 
 impl OAuthService {
     pub fn new(config: AuthConfig) -> Self {
+        let http_client = reqwest::Client::new();
         Self {
             config,
-            http_client: HttpClient::new(),
+            oauth2_client: OAuth2HttpClient(http_client.clone()),
+            http_client,
         }
     }
 
@@ -153,7 +196,7 @@ impl OAuthService {
 
                 let token = client
                     .exchange_code(AuthorizationCode::new(code))
-                    .request_async(&self.http_client)
+                    .request_async(&self.oauth2_client)
                     .await
                     .map_err(|e| AppError::Internal(format!("Token exchange failed: {}", e)))?;
 
