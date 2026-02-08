@@ -1,7 +1,7 @@
 ########################################
 # Planner stage (generate cargo-chef recipe)
 ########################################
-FROM rust:1.92-alpine3.23 AS planner
+FROM rust:1.93-alpine3.23 AS planner
 WORKDIR /app
 
 # Build deps for musl builds
@@ -16,7 +16,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 ########################################
 # Builder stage (compile with cached deps)
 ########################################
-FROM rust:1.92-alpine3.23 AS builder
+FROM rust:1.93-alpine3.23 AS builder
 WORKDIR /app
 
 # Tools + strip for smaller binary + static SSL libs for musl
