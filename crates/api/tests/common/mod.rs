@@ -1,24 +1,75 @@
-use std::env;
-
 use api::AppState;
 use async_graphql::{Request, Variables};
 use sqlx::postgres::PgPoolOptions;
+use testcontainers_modules::postgres::Postgres;
+use testcontainers_modules::testcontainers::runners::SyncRunner;
+use testcontainers_modules::testcontainers::Container;
+use testcontainers_modules::testcontainers::ImageExt;
 use uuid::Uuid;
 
+struct TestContainer {
+    _container: Container<Postgres>,
+    db_url: String,
+}
+
+// Safety: Container<Postgres> holds a Docker client with Arc internals.
+// We never mutate TestContainer after init, and db_url is a plain String.
+unsafe impl Send for TestContainer {}
+unsafe impl Sync for TestContainer {}
+
+static TEST_CONTAINER: std::sync::OnceLock<TestContainer> = std::sync::OnceLock::new();
+
+fn get_db_url() -> &'static str {
+    let tc = TEST_CONTAINER.get_or_init(|| {
+        // Spawn a dedicated thread so SyncRunner doesn't conflict with tokio runtime
+        std::thread::spawn(|| {
+            let container = Postgres::default()
+                .with_tag("16-alpine")
+                .start()
+                .expect("Failed to start Postgres container");
+
+            let host_port = container.get_host_port_ipv4(5432).unwrap();
+            let db_url = format!(
+                "postgres://postgres:postgres@localhost:{}/postgres",
+                host_port
+            );
+
+            TestContainer {
+                _container: container,
+                db_url,
+            }
+        })
+        .join()
+        .expect("Container init thread panicked")
+    });
+    &tc.db_url
+}
+
 pub async fn setup_test_db() -> AppState {
-    let database_url = env::var("TEST_DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/pocketpair".to_string());
+    // Each test gets its own pool connected to the shared container.
+    // We don't share the pool across tests because each #[tokio::test]
+    // creates a separate runtime, and SQLx pool background tasks are
+    // tied to the runtime that created them.
+    let url = get_db_url();
 
     let pool = PgPoolOptions::new()
         .max_connections(5)
-        .connect(&database_url)
+        .acquire_timeout(std::time::Duration::from_secs(30))
+        .connect(url)
         .await
         .expect("Failed to connect to test database");
+
+    // Run migrations (idempotent — safe to call from every test)
+    sqlx::migrate!("../../migrations")
+        .run(&pool)
+        .await
+        .expect("Failed to run migrations");
 
     AppState::new(pool).expect("Failed to create AppState")
 }
 
 /// Helper function to execute GraphQL queries and mutations
+#[allow(dead_code)]
 pub async fn execute_graphql(
     schema: &async_graphql::Schema<
         api::gql::QueryRoot,
@@ -53,8 +104,8 @@ pub async fn create_test_user(
 
     // Insert test user directly into database
     sqlx::query!(
-        "INSERT INTO users (id, email, username, first_name, last_name, password_hash, role, is_active) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+        "INSERT INTO users (id, email, username, first_name, last_name, password_hash, role, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (email) DO UPDATE SET role = $7",
         user_id,
         email,
@@ -113,9 +164,9 @@ pub async fn create_test_tournament(app_state: &AppState, club_id: Uuid, title: 
 
     sqlx::query!(
         r#"INSERT INTO tournaments (
-            id, name, description, club_id, start_time, end_time, 
+            id, name, description, club_id, start_time, end_time,
             buy_in_cents, seat_cap, live_status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'not_started'::tournament_live_status) 
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'not_started'::tournament_live_status)
         ON CONFLICT (id) DO NOTHING"#,
         tournament_id,
         title,
