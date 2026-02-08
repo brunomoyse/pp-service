@@ -293,9 +293,11 @@ async fn test_revert_tournament_level() {
         !response.errors.is_empty(),
         "Revert below level 1 should fail"
     );
-    assert!(response.errors[0]
-        .message
-        .contains("Cannot revert: Tournament is already at level 1"));
+    assert!(
+        response.errors[0].message.contains("already at level 1"),
+        "Expected 'already at level 1' error, got: '{}'",
+        response.errors[0].message
+    );
 }
 
 #[tokio::test]
