@@ -11,12 +11,7 @@ pub mod schema;
 pub mod subscriptions;
 pub mod types;
 
-// Legacy modules (kept for backward compatibility, but unused in new architecture)
-pub mod mutations;
-pub mod queries;
-pub mod tournament_clock;
-
-// Re-exports - using new modular root resolvers
+// Re-exports
 pub use root::{MutationRoot, QueryRoot};
 pub use schema::build_schema;
 pub use subscriptions::SubscriptionRoot;

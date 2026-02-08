@@ -30,23 +30,6 @@ fn needs_rebalancing(table_counts: &std::collections::HashMap<Uuid, usize>) -> b
     (max_count - min_count > 2) || (min_count < 4 && table_counts.len() > 1)
 }
 
-// Helper function to calculate optimal table distribution
-fn calculate_optimal_distribution(total_players: usize, total_tables: usize) -> Vec<usize> {
-    if total_tables == 0 {
-        return vec![];
-    }
-
-    let base_count = total_players / total_tables;
-    let remainder = total_players % total_tables;
-
-    let mut distribution = vec![base_count; total_tables];
-    for item in distribution.iter_mut().take(remainder) {
-        *item += 1;
-    }
-
-    distribution
-}
-
 async fn get_club_id_for_tournament(db: &infra::db::Db, tournament_id: Uuid) -> Result<Uuid> {
     let tournament = tournaments::get_by_id(db, tournament_id)
         .await?
@@ -734,11 +717,7 @@ impl SeatingMutation {
             return Ok(Vec::new()); // Tables are already balanced
         }
 
-        // Calculate optimal distribution
         let total_players = table_counts.values().sum::<usize>();
-        let _optimal_distribution = calculate_optimal_distribution(total_players, tables.len());
-
-        // For backward compatibility, keep target_per_table calculation
         let target_per_table = input
             .target_players_per_table
             .unwrap_or(((total_players as f64) / (tables.len() as f64)).ceil() as i32);
