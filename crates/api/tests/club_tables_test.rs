@@ -1,15 +1,12 @@
+mod common;
+
+use common::*;
 use infra::repos::club_tables;
-use sqlx::PgPool;
-use std::env;
 
 #[tokio::test]
 async fn test_club_tables_system() {
-    let database_url =
-        env::var("TEST_DATABASE_URL").expect("TEST_DATABASE_URL must be set for integration tests");
-
-    let pool = PgPool::connect(&database_url)
-        .await
-        .expect("Failed to connect to test database");
+    let app_state = setup_test_db().await;
+    let pool = &app_state.db;
 
     // Create test club and tables directly
     let poker_one_club_id = uuid::Uuid::new_v4();
@@ -21,7 +18,7 @@ async fn test_club_tables_system() {
         "Test Poker Club",
         "Test City"
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("Should be able to create test club");
 
@@ -37,13 +34,13 @@ async fn test_club_tables_system() {
             i as i32,
             max_seats
         )
-        .execute(&pool)
+        .execute(pool)
         .await
         .expect("Should be able to create test table");
     }
 
     // Get all tables for test club
-    let tables = club_tables::list_by_club(&pool, poker_one_club_id)
+    let tables = club_tables::list_by_club(pool, poker_one_club_id)
         .await
         .expect("Should be able to get club tables");
 
@@ -66,7 +63,7 @@ async fn test_club_tables_system() {
     assert_eq!(final_table.max_seats, 6);
 
     // Test get available tables (should return all 4 since none are assigned)
-    let available_tables = club_tables::list_available_by_club(&pool, poker_one_club_id)
+    let available_tables = club_tables::list_available_by_club(pool, poker_one_club_id)
         .await
         .expect("Should be able to get available tables");
 
@@ -90,14 +87,14 @@ async fn test_club_tables_system() {
         5000i32,
         100i32
     )
-    .execute(&pool)
+    .execute(pool)
     .await
     .expect("Should be able to create test tournament");
 
     let table1_id = tables[0].id;
 
     // Assign table 1 to the tournament
-    let assignment = club_tables::assign_to_tournament(&pool, tournament_id, table1_id)
+    let assignment = club_tables::assign_to_tournament(pool, tournament_id, table1_id)
         .await
         .expect("Should be able to assign table to tournament");
 
@@ -107,7 +104,7 @@ async fn test_club_tables_system() {
     );
 
     // Verify available tables is now 3 (one assigned)
-    let available_after_assignment = club_tables::list_available_by_club(&pool, poker_one_club_id)
+    let available_after_assignment = club_tables::list_available_by_club(pool, poker_one_club_id)
         .await
         .expect("Should be able to get available tables after assignment");
 
@@ -118,7 +115,7 @@ async fn test_club_tables_system() {
     );
 
     // Get assigned tables for the tournament
-    let assigned_tables = club_tables::list_assigned_to_tournament(&pool, tournament_id)
+    let assigned_tables = club_tables::list_assigned_to_tournament(pool, tournament_id)
         .await
         .expect("Should be able to get assigned tables");
 
