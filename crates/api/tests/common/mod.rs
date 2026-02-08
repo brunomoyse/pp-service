@@ -169,3 +169,46 @@ pub async fn create_test_club_table(
 
     table_id
 }
+
+/// Create a tournament registration for a user and return its ID
+#[allow(dead_code)]
+pub async fn create_test_registration(
+    app_state: &AppState,
+    tournament_id: Uuid,
+    user_id: Uuid,
+    status: &str,
+) -> Uuid {
+    let reg_id = Uuid::new_v4();
+
+    sqlx::query!(
+        r#"INSERT INTO tournament_registrations (id, tournament_id, user_id, status)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT DO NOTHING"#,
+        reg_id,
+        tournament_id,
+        user_id,
+        status
+    )
+    .execute(&app_state.db)
+    .await
+    .expect("Failed to create test registration");
+
+    reg_id
+}
+
+/// Assign a club table to a tournament (creates the tournament_table_assignments row)
+#[allow(dead_code)]
+pub async fn assign_table_to_tournament(
+    app_state: &AppState,
+    tournament_id: Uuid,
+    club_table_id: Uuid,
+) {
+    sqlx::query!(
+        "INSERT INTO tournament_table_assignments (tournament_id, club_table_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        tournament_id,
+        club_table_id
+    )
+    .execute(&app_state.db)
+    .await
+    .expect("Failed to assign table to tournament");
+}
