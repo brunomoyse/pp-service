@@ -11,10 +11,14 @@ pub fn build_schema(state: AppState) -> Schema<QueryRoot, MutationRoot, Subscrip
     let user_loader = DataLoader::new(UserLoader::new(state.db.clone()), tokio::spawn);
     let tournament_loader = DataLoader::new(TournamentLoader::new(state.db.clone()), tokio::spawn);
 
-    Schema::build(QueryRoot, MutationRoot, SubscriptionRoot)
-        .data(state) // AppState is Clone; available in resolvers via ctx.data::<AppState>()
-        .data(club_loader)
-        .data(user_loader)
-        .data(tournament_loader)
-        .finish()
+    Schema::build(
+        QueryRoot::default(),
+        MutationRoot::default(),
+        SubscriptionRoot,
+    )
+    .data(state) // AppState is Clone; available in resolvers via ctx.data::<AppState>()
+    .data(club_loader)
+    .data(user_loader)
+    .data(tournament_loader)
+    .finish()
 }
