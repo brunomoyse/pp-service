@@ -13,14 +13,7 @@ impl ClubQuery {
     async fn clubs(&self, ctx: &Context<'_>) -> Result<Vec<Club>> {
         let state = ctx.data::<AppState>()?;
         let rows = clubs::list(&state.db).await?;
-        Ok(rows
-            .into_iter()
-            .map(|r| Club {
-                id: r.id.into(),
-                name: r.name,
-                city: r.city,
-            })
-            .collect())
+        Ok(rows.into_iter().map(Club::from).collect())
     }
 
     /// Get all tables for a club

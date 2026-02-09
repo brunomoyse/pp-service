@@ -5,7 +5,7 @@ use crate::gql::error::ResultExt;
 use crate::state::AppState;
 use infra::repos::{tournament_entries, tournament_entries::CreateTournamentEntry, tournaments};
 
-use super::types::{AddTournamentEntryInput, EntryType, TournamentEntry, TournamentEntryStats};
+use super::types::{AddTournamentEntryInput, TournamentEntry, TournamentEntryStats};
 
 #[derive(Default)]
 pub struct EntryQuery;
@@ -24,21 +24,7 @@ impl EntryQuery {
 
         let entries = tournament_entries::list_by_tournament(&state.db, tournament_id).await?;
 
-        Ok(entries
-            .into_iter()
-            .map(|e| TournamentEntry {
-                id: e.id.into(),
-                tournament_id: e.tournament_id.into(),
-                user_id: e.user_id.into(),
-                entry_type: EntryType::from(e.entry_type),
-                amount_cents: e.amount_cents,
-                chips_received: e.chips_received,
-                recorded_by: e.recorded_by.map(|id| id.into()),
-                notes: e.notes,
-                created_at: e.created_at,
-                updated_at: e.updated_at,
-            })
-            .collect())
+        Ok(entries.into_iter().map(TournamentEntry::from).collect())
     }
 
     /// Get entry statistics for a tournament
@@ -110,18 +96,7 @@ impl EntryMutation {
 
         let entry_row = tournament_entries::create(&state.db, create_data).await?;
 
-        Ok(TournamentEntry {
-            id: entry_row.id.into(),
-            tournament_id: entry_row.tournament_id.into(),
-            user_id: entry_row.user_id.into(),
-            entry_type: EntryType::from(entry_row.entry_type),
-            amount_cents: entry_row.amount_cents,
-            chips_received: entry_row.chips_received,
-            recorded_by: entry_row.recorded_by.map(|id| id.into()),
-            notes: entry_row.notes,
-            created_at: entry_row.created_at,
-            updated_at: entry_row.updated_at,
-        })
+        Ok(entry_row.into())
     }
 
     /// Delete a tournament entry (for corrections)

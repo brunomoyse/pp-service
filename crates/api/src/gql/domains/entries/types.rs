@@ -46,6 +46,23 @@ pub struct TournamentEntry {
     pub updated_at: DateTime<Utc>,
 }
 
+impl From<infra::models::TournamentEntryRow> for TournamentEntry {
+    fn from(row: infra::models::TournamentEntryRow) -> Self {
+        Self {
+            id: row.id.into(),
+            tournament_id: row.tournament_id.into(),
+            user_id: row.user_id.into(),
+            entry_type: EntryType::from(row.entry_type),
+            amount_cents: row.amount_cents,
+            chips_received: row.chips_received,
+            recorded_by: row.recorded_by.map(|id| id.into()),
+            notes: row.notes,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }
+    }
+}
+
 #[derive(SimpleObject, Clone)]
 pub struct TournamentEntryStats {
     pub tournament_id: ID,
