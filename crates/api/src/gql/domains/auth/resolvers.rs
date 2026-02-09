@@ -1,5 +1,5 @@
 use async_graphql::{Context, Object, Result};
-use rand::{distr::Alphanumeric, Rng};
+use rand::{distr::Alphanumeric, RngExt};
 use uuid::Uuid;
 
 use crate::auth::{

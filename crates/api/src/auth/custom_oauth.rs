@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use rand::{distr::Alphanumeric, Rng};
+use rand::{distr::Alphanumeric, RngExt};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
