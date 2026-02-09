@@ -35,16 +35,7 @@ impl AuthQuery {
             .await?
             .ok_or_else(|| async_graphql::Error::new("User not found"))?;
 
-        Ok(User {
-            id: user.id.into(),
-            email: user.email,
-            username: user.username,
-            first_name: user.first_name,
-            last_name: user.last_name,
-            phone: user.phone,
-            is_active: user.is_active,
-            role: crate::gql::types::Role::from(user.role),
-        })
+        Ok(user.into())
     }
 
     /// Get OAuth authorization URL for a provider
@@ -142,6 +133,9 @@ impl AuthMutation {
         ctx: &Context<'_>,
         input: CreateOAuthClientInput,
     ) -> Result<CreateOAuthClientResponse> {
+        use crate::auth::permissions::require_admin;
+        let _admin = require_admin(ctx).await?;
+
         let state = ctx.data::<AppState>()?;
 
         let client_id = generate_client_id();

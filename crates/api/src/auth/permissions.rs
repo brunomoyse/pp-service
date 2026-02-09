@@ -35,8 +35,8 @@ pub async fn require_role(ctx: &Context<'_>, required_role: Role) -> Result<User
     Ok(user)
 }
 
-/// Check if the authenticated user has admin permissions when a condition is met
-pub async fn require_admin_if(
+/// Check if the authenticated user has manager permissions when a condition is met
+pub async fn require_manager_if(
     ctx: &Context<'_>,
     condition: bool,
     _field_name: &str,
@@ -109,7 +109,6 @@ pub async fn require_club_manager(ctx: &Context<'_>, club_id: Uuid) -> Result<Us
 }
 
 /// Check if the authenticated user is an admin (global access)
-#[allow(dead_code)]
 pub async fn require_admin(ctx: &Context<'_>) -> Result<User> {
     require_role(ctx, Role::Admin).await
 }

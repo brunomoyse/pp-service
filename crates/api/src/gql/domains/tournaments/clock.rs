@@ -3,9 +3,11 @@ use chrono::Utc;
 use std::str::FromStr;
 use uuid::Uuid;
 
+use crate::auth::permissions::require_club_manager;
+use crate::gql::common::helpers::get_club_id_for_tournament;
 use crate::gql::subscriptions::publish_clock_update;
-use crate::gql::types::{ClockStatus, Role, TournamentClock, TournamentStructure};
-use crate::{auth::permissions::require_role, AppState};
+use crate::gql::types::{ClockStatus, TournamentClock, TournamentStructure};
+use crate::AppState;
 use infra::repos::tournament_clock::{self, ClockStatus as InfraClockStatus};
 
 /// Helper function to get next structure for a tournament
@@ -21,17 +23,7 @@ async fn get_next_structure(
             structures
                 .into_iter()
                 .find(|s| s.level_number == current_level + 1)
-                .map(|s| TournamentStructure {
-                    id: s.id.into(),
-                    tournament_id: s.tournament_id.into(),
-                    level_number: s.level_number,
-                    small_blind: s.small_blind,
-                    big_blind: s.big_blind,
-                    ante: s.ante,
-                    duration_minutes: s.duration_minutes,
-                    is_break: s.is_break,
-                    break_duration_minutes: s.break_duration_minutes,
-                })
+                .map(TournamentStructure::from)
         })
 }
 
@@ -54,17 +46,7 @@ fn create_tournament_clock(
         level_end_time: clock_row.level_end_time,
         total_pause_duration_seconds: total_pause_seconds,
         auto_advance: clock_row.auto_advance,
-        current_structure: structure.map(|s| TournamentStructure {
-            id: s.id.into(),
-            tournament_id: s.tournament_id.into(),
-            level_number: s.level_number,
-            small_blind: s.small_blind,
-            big_blind: s.big_blind,
-            ante: s.ante,
-            duration_minutes: s.duration_minutes,
-            is_break: s.is_break,
-            break_duration_minutes: s.break_duration_minutes,
-        }),
+        current_structure: structure.map(|s| TournamentStructure::from(s.clone())),
         next_structure,
         // Additional fields from ClockUpdate
         small_blind: structure.map(|s| s.small_blind),
@@ -153,17 +135,9 @@ impl TournamentClockQuery {
                 level_end_time: clock_row.level_end_time,
                 total_pause_duration_seconds: total_pause_seconds,
                 auto_advance: clock_row.auto_advance,
-                current_structure: structure.as_ref().map(|s| TournamentStructure {
-                    id: s.id.into(),
-                    tournament_id: s.tournament_id.into(),
-                    level_number: s.level_number,
-                    small_blind: s.small_blind,
-                    big_blind: s.big_blind,
-                    ante: s.ante,
-                    duration_minutes: s.duration_minutes,
-                    is_break: s.is_break,
-                    break_duration_minutes: s.break_duration_minutes,
-                }),
+                current_structure: structure
+                    .as_ref()
+                    .map(|s| TournamentStructure::from(s.clone())),
                 next_structure,
                 // Additional fields from ClockUpdate
                 small_blind: structure.as_ref().map(|s| s.small_blind),
@@ -190,17 +164,7 @@ impl TournamentClockQuery {
 
         Ok(structures
             .into_iter()
-            .map(|s| TournamentStructure {
-                id: s.id.into(),
-                tournament_id: s.tournament_id.into(),
-                level_number: s.level_number,
-                small_blind: s.small_blind,
-                big_blind: s.big_blind,
-                ante: s.ante,
-                duration_minutes: s.duration_minutes,
-                is_break: s.is_break,
-                break_duration_minutes: s.break_duration_minutes,
-            })
+            .map(TournamentStructure::from)
             .collect())
     }
 }
@@ -216,9 +180,11 @@ impl TournamentClockMutation {
         ctx: &Context<'_>,
         tournament_id: ID,
     ) -> Result<TournamentClock> {
-        let _manager = require_role(ctx, Role::Manager).await?;
         let state = ctx.data::<AppState>()?;
         let tournament_id: Uuid = tournament_id.parse()?;
+
+        let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
+        let _manager = require_club_manager(ctx, club_id).await?;
 
         let clock_row = tournament_clock::create_clock(&state.db, tournament_id).await?;
         let structure = tournament_clock::get_current_structure(&state.db, tournament_id)
@@ -243,17 +209,9 @@ impl TournamentClockMutation {
             level_end_time: clock_row.level_end_time,
             total_pause_duration_seconds: 0,
             auto_advance: clock_row.auto_advance,
-            current_structure: structure.as_ref().map(|s| TournamentStructure {
-                id: s.id.into(),
-                tournament_id: s.tournament_id.into(),
-                level_number: s.level_number,
-                small_blind: s.small_blind,
-                big_blind: s.big_blind,
-                ante: s.ante,
-                duration_minutes: s.duration_minutes,
-                is_break: s.is_break,
-                break_duration_minutes: s.break_duration_minutes,
-            }),
+            current_structure: structure
+                .as_ref()
+                .map(|s| TournamentStructure::from(s.clone())),
             next_structure,
             // Additional fields from ClockUpdate
             small_blind: structure.as_ref().map(|s| s.small_blind),
@@ -275,9 +233,11 @@ impl TournamentClockMutation {
         ctx: &Context<'_>,
         tournament_id: ID,
     ) -> Result<TournamentClock> {
-        let manager = require_role(ctx, Role::Manager).await?;
         let state = ctx.data::<AppState>()?;
         let tournament_id: Uuid = tournament_id.parse()?;
+
+        let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
+        let manager = require_club_manager(ctx, club_id).await?;
 
         let clock_row =
             tournament_clock::start_clock(&state.db, tournament_id, Some(manager.id.parse()?))
@@ -317,9 +277,11 @@ impl TournamentClockMutation {
         ctx: &Context<'_>,
         tournament_id: ID,
     ) -> Result<TournamentClock> {
-        let manager = require_role(ctx, Role::Manager).await?;
         let state = ctx.data::<AppState>()?;
         let tournament_id: Uuid = tournament_id.parse()?;
+
+        let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
+        let manager = require_club_manager(ctx, club_id).await?;
 
         let clock_row =
             tournament_clock::pause_clock(&state.db, tournament_id, Some(manager.id.parse()?))
@@ -363,9 +325,11 @@ impl TournamentClockMutation {
         ctx: &Context<'_>,
         tournament_id: ID,
     ) -> Result<TournamentClock> {
-        let manager = require_role(ctx, Role::Manager).await?;
         let state = ctx.data::<AppState>()?;
         let tournament_id: Uuid = tournament_id.parse()?;
+
+        let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
+        let manager = require_club_manager(ctx, club_id).await?;
 
         let clock_row =
             tournament_clock::resume_clock(&state.db, tournament_id, Some(manager.id.parse()?))
@@ -469,9 +433,11 @@ impl TournamentClockMutation {
         ctx: &Context<'_>,
         tournament_id: ID,
     ) -> Result<TournamentClock> {
-        let manager = require_role(ctx, Role::Manager).await?;
         let state = ctx.data::<AppState>()?;
         let tournament_id: Uuid = tournament_id.parse()?;
+
+        let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
+        let manager = require_club_manager(ctx, club_id).await?;
 
         let clock_row =
             tournament_clock::revert_level(&state.db, tournament_id, Some(manager.id.parse()?))

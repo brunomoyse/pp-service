@@ -34,19 +34,7 @@ impl UserQuery {
             offset: offset.unwrap_or(0).max(0),
         });
         let rows = users::list(&state.db, filter, page).await?;
-        Ok(rows
-            .into_iter()
-            .map(|r| User {
-                id: r.id.into(),
-                email: r.email,
-                username: r.username,
-                first_name: r.first_name,
-                last_name: r.last_name,
-                phone: r.phone,
-                is_active: r.is_active,
-                role: Role::from(r.role),
-            })
-            .collect())
+        Ok(rows.into_iter().map(User::from).collect())
     }
 }
 
@@ -56,12 +44,13 @@ pub struct UserMutation;
 #[Object]
 impl UserMutation {
     async fn create_player(&self, ctx: &Context<'_>, input: CreatePlayerInput) -> Result<User> {
-        use crate::auth::permissions::require_role;
-
-        // Require manager role
-        let _manager = require_role(ctx, Role::Manager).await?;
+        use crate::auth::permissions::require_club_manager;
 
         let state = ctx.data::<AppState>()?;
+
+        // Parse club_id and require club manager permissions
+        let club_id = Uuid::parse_str(input.club_id.as_str()).gql_err("Invalid club ID")?;
+        let _manager = require_club_manager(ctx, club_id).await?;
 
         // Check if user with email already exists
         let existing = sqlx::query!("SELECT id FROM users WHERE email = $1", input.email)
@@ -85,23 +74,14 @@ impl UserMutation {
 
         let user_row = users::create(&state.db, create_data).await?;
 
-        Ok(User {
-            id: user_row.id.into(),
-            email: user_row.email,
-            username: user_row.username,
-            first_name: user_row.first_name,
-            last_name: user_row.last_name,
-            phone: user_row.phone,
-            is_active: user_row.is_active,
-            role: Role::from(user_row.role),
-        })
+        Ok(user_row.into())
     }
 
     /// Update an existing player (managers only)
     async fn update_player(&self, ctx: &Context<'_>, input: UpdatePlayerInput) -> Result<User> {
         use crate::auth::permissions::require_role;
 
-        // Require manager role
+        // TODO: users aren't club-scoped, keep role-based for now
         let _manager = require_role(ctx, Role::Manager).await?;
 
         let state = ctx.data::<AppState>()?;
@@ -144,23 +124,14 @@ impl UserMutation {
             .await?
             .ok_or_else(|| async_graphql::Error::new("Failed to update user"))?;
 
-        Ok(User {
-            id: user_row.id.into(),
-            email: user_row.email,
-            username: user_row.username,
-            first_name: user_row.first_name,
-            last_name: user_row.last_name,
-            phone: user_row.phone,
-            is_active: user_row.is_active,
-            role: Role::from(user_row.role),
-        })
+        Ok(user_row.into())
     }
 
     /// Deactivate a player (soft delete) - managers only
     async fn deactivate_player(&self, ctx: &Context<'_>, id: ID) -> Result<User> {
         use crate::auth::permissions::require_role;
 
-        // Require manager role
+        // TODO: users aren't club-scoped, keep role-based for now
         let _manager = require_role(ctx, Role::Manager).await?;
 
         let state = ctx.data::<AppState>()?;
@@ -171,23 +142,14 @@ impl UserMutation {
             .await?
             .ok_or_else(|| async_graphql::Error::new("User not found"))?;
 
-        Ok(User {
-            id: user_row.id.into(),
-            email: user_row.email,
-            username: user_row.username,
-            first_name: user_row.first_name,
-            last_name: user_row.last_name,
-            phone: user_row.phone,
-            is_active: user_row.is_active,
-            role: Role::from(user_row.role),
-        })
+        Ok(user_row.into())
     }
 
     /// Reactivate a player - managers only
     async fn reactivate_player(&self, ctx: &Context<'_>, id: ID) -> Result<User> {
         use crate::auth::permissions::require_role;
 
-        // Require manager role
+        // TODO: users aren't club-scoped, keep role-based for now
         let _manager = require_role(ctx, Role::Manager).await?;
 
         let state = ctx.data::<AppState>()?;
@@ -198,15 +160,6 @@ impl UserMutation {
             .await?
             .ok_or_else(|| async_graphql::Error::new("User not found"))?;
 
-        Ok(User {
-            id: user_row.id.into(),
-            email: user_row.email,
-            username: user_row.username,
-            first_name: user_row.first_name,
-            last_name: user_row.last_name,
-            phone: user_row.phone,
-            is_active: user_row.is_active,
-            role: Role::from(user_row.role),
-        })
+        Ok(user_row.into())
     }
 }
