@@ -13,17 +13,7 @@ pub async fn require_role(ctx: &Context<'_>, required_role: Role) -> Result<User
     // Check role from JWT claims first (avoids DB query on mismatch)
     let claims_role = Role::from(claims.role.clone());
     if !has_required_role(&claims_role, required_role) {
-        return Err(Error::new(match required_role {
-            Role::Admin => format!(
-                "Access denied: Administrator privileges required. Your current role is {:?}",
-                claims_role
-            ),
-            Role::Manager => format!(
-                "Access denied: Manager privileges required. Your current role is {:?}",
-                claims_role
-            ),
-            Role::Player => "Access denied: You need to be registered as a player".to_string(),
-        }));
+        return Err(Error::new("Access denied: insufficient permissions"));
     }
 
     let user_id =
@@ -31,6 +21,10 @@ pub async fn require_role(ctx: &Context<'_>, required_role: Role) -> Result<User
 
     let state = ctx.data::<AppState>()?;
     let user = get_user_by_id_with_role(state, user_id).await?;
+
+    if !user.is_active {
+        return Err(Error::new("Account is deactivated"));
+    }
 
     Ok(user)
 }
@@ -66,7 +60,10 @@ async fn get_user_by_id_with_role(state: &AppState, user_id: Uuid) -> Result<Use
     )
     .fetch_one(&state.db)
     .await
-    .map_err(|e| Error::new(e.to_string()))?;
+    .map_err(|e| {
+        tracing::error!("Failed to retrieve user {}: {}", user_id, e);
+        Error::new("Failed to retrieve user")
+    })?;
 
     Ok(User {
         id: row.id.into(),
@@ -96,13 +93,15 @@ pub async fn require_club_manager(ctx: &Context<'_>, club_id: Uuid) -> Result<Us
 
     let is_manager = infra::repos::club_managers::is_club_manager(&state.db, user_id, club_id)
         .await
-        .map_err(|e| Error::new(format!("Database error: {}", e)))?;
+        .map_err(|e| {
+            tracing::error!("Failed to check club manager status: {}", e);
+            Error::new("Failed to verify club permissions")
+        })?;
 
     if !is_manager {
-        return Err(Error::new(format!(
-            "Access denied: You are not authorized to manage this club. Only administrators and designated managers for this club can perform this action. Current role: {:?}",
-            user.role
-        )));
+        return Err(Error::new(
+            "Access denied: you are not authorized to manage this club",
+        ));
     }
 
     Ok(user)

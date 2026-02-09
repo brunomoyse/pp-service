@@ -1,3 +1,5 @@
+use std::env;
+
 use async_graphql::dataloader::DataLoader;
 use async_graphql::Schema;
 
@@ -11,7 +13,11 @@ pub fn build_schema(state: AppState) -> Schema<QueryRoot, MutationRoot, Subscrip
     let user_loader = DataLoader::new(UserLoader::new(state.db.clone()), tokio::spawn);
     let tournament_loader = DataLoader::new(TournamentLoader::new(state.db.clone()), tokio::spawn);
 
-    Schema::build(
+    let introspection_enabled = env::var("GQL_INTROSPECTION")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+
+    let mut builder = Schema::build(
         QueryRoot::default(),
         MutationRoot::default(),
         SubscriptionRoot,
@@ -20,5 +26,12 @@ pub fn build_schema(state: AppState) -> Schema<QueryRoot, MutationRoot, Subscrip
     .data(club_loader)
     .data(user_loader)
     .data(tournament_loader)
-    .finish()
+    .limit_depth(15)
+    .limit_complexity(200);
+
+    if !introspection_enabled {
+        builder = builder.disable_introspection();
+    }
+
+    builder.finish()
 }
