@@ -3,19 +3,16 @@ use std::collections::HashMap;
 
 use crate::gql::error::ResultExt;
 use crate::gql::loaders::TournamentLoader;
-use crate::gql::types::Tournament;
 use crate::state::AppState;
-use infra::models::TournamentRow;
 use infra::repos::{
-    payout_templates, player_deals, player_deals::CreatePlayerDeal, tournament_payouts,
-    tournament_results, tournament_results::UserStatistics, tournaments,
+    tournament_payouts, tournament_results, tournament_results::UserStatistics, tournaments,
 };
 use uuid::Uuid;
 
 use super::types::{
     CustomPayout, DealType, EnterTournamentResultsInput, EnterTournamentResultsResponse,
-    PayoutPosition, PlayerDeal, PlayerDealInput, PlayerStatistics, PlayerStatsResponse,
-    TournamentPayout, TournamentResult, UserTournamentResult,
+    PayoutPosition, PlayerDeal, PlayerStatistics, PlayerStatsResponse, TournamentPayout,
+    UserTournamentResult,
 };
 
 #[derive(Default)]
@@ -53,37 +50,9 @@ impl ResultQuery {
         let mut user_results = Vec::new();
         for result_row in results {
             if let Some(tournament_row) = tournaments.get(&result_row.tournament_id) {
-                let tournament_result = TournamentResult {
-                    id: result_row.id.into(),
-                    tournament_id: result_row.tournament_id.into(),
-                    user_id: result_row.user_id.into(),
-                    final_position: result_row.final_position,
-                    prize_cents: result_row.prize_cents,
-                    points: result_row.points,
-                    notes: result_row.notes.clone(),
-                    created_at: result_row.created_at,
-                };
-
-                let status = tournament_row.calculate_status().into();
-                let tournament = Tournament {
-                    id: tournament_row.id.into(),
-                    title: tournament_row.name.clone(),
-                    description: tournament_row.description.clone(),
-                    club_id: tournament_row.club_id.into(),
-                    start_time: tournament_row.start_time,
-                    end_time: tournament_row.end_time,
-                    buy_in_cents: tournament_row.buy_in_cents,
-                    seat_cap: tournament_row.seat_cap,
-                    status,
-                    live_status: tournament_row.live_status.into(),
-                    early_bird_bonus_chips: tournament_row.early_bird_bonus_chips,
-                    created_at: tournament_row.created_at,
-                    updated_at: tournament_row.updated_at,
-                };
-
                 user_results.push(UserTournamentResult {
-                    result: tournament_result,
-                    tournament,
+                    result: result_row.into(),
+                    tournament: tournament_row.clone().into(),
                 });
             }
         }
@@ -200,118 +169,40 @@ impl ResultMutation {
         ctx: &Context<'_>,
         input: EnterTournamentResultsInput,
     ) -> Result<EnterTournamentResultsResponse> {
-        use crate::auth::permissions::require_role;
-        use crate::gql::types::Role as GqlRole;
-        use infra::repos::tournament_results::CreateTournamentResult;
-
-        // Require manager role
-        let manager = require_role(ctx, GqlRole::Manager).await?;
+        use crate::auth::permissions::require_club_manager;
 
         let state = ctx.data::<AppState>()?;
 
         let tournament_id =
             Uuid::parse_str(input.tournament_id.as_str()).gql_err("Invalid tournament ID")?;
 
-        // Verify tournament exists
+        // Verify tournament exists and get club_id for auth
         let tournament = tournaments::get_by_id(&state.db, tournament_id)
             .await?
             .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
 
-        // Calculate payouts
-        let total_prize_pool =
-            calculate_prize_pool(&tournament, input.player_positions.len() as i32)?;
-        let payouts = calculate_payouts(
-            &state.db,
-            input.payout_template_id.as_ref(),
-            &input.player_positions,
-            total_prize_pool,
-            input.deal.as_ref(),
-        )
-        .await?;
+        let manager = require_club_manager(ctx, tournament.club_id).await?;
+        let manager_id = Uuid::parse_str(manager.id.as_str()).gql_err("Invalid manager ID")?;
 
-        // Begin transaction for all write operations
-        let mut tx = state
-            .db
-            .begin()
-            .await
-            .gql_err("Database operation failed")?;
-
-        // Create player deal if specified
-        let deal = if let Some(deal_input) = input.deal {
-            let manager_id = Uuid::parse_str(manager.id.as_str()).gql_err("Invalid manager ID")?;
-
-            let custom_payouts = if let Some(custom) = &deal_input.custom_payouts {
-                let mut payouts_map = serde_json::Map::new();
-                for payout in custom {
-                    payouts_map.insert(
-                        payout.user_id.to_string(),
-                        serde_json::Value::Number(serde_json::Number::from(payout.amount_cents)),
-                    );
-                }
-                Some(serde_json::Value::Object(payouts_map))
-            } else {
-                None
-            };
-
-            let total_deal_amount = calculate_deal_total(&deal_input, &payouts)?;
-
-            let deal_data = CreatePlayerDeal {
-                tournament_id,
-                deal_type: match deal_input.deal_type {
-                    DealType::EvenSplit => "even_split".to_string(),
-                    DealType::Icm => "icm".to_string(),
-                    DealType::Custom => "custom".to_string(),
-                },
-                affected_positions: deal_input.affected_positions.clone(),
-                custom_payouts,
-                total_amount_cents: total_deal_amount,
-                notes: deal_input.notes.clone(),
-                created_by: manager_id,
-            };
-
-            Some(
-                player_deals::create(&mut *tx, deal_data)
-                    .await
-                    .gql_err("Database operation failed")?,
-            )
-        } else {
-            None
+        // Delegate to service
+        let params = super::service::EnterResultsParams {
+            tournament_id,
+            manager_id,
+            payout_template_id: input.payout_template_id,
+            player_positions: input.player_positions,
+            deal: input.deal,
         };
 
-        // Create tournament results
-        let mut results = Vec::new();
-        for (position_input, payout_amount) in input.player_positions.iter().zip(payouts.iter()) {
-            let user_id =
-                Uuid::parse_str(position_input.user_id.as_str()).gql_err("Invalid user ID")?;
+        let output = super::service::enter_tournament_results(&state.db, params)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
-            let result_data = CreateTournamentResult {
-                tournament_id,
-                user_id,
-                final_position: position_input.final_position,
-                prize_cents: *payout_amount,
-                notes: None,
-            };
+        // Convert results to GQL types
+        let results: Vec<super::types::TournamentResult> =
+            output.results.into_iter().map(|r| r.into()).collect();
 
-            let result_row = tournament_results::create(&mut *tx, result_data)
-                .await
-                .gql_err("Database operation failed")?;
-            results.push(TournamentResult {
-                id: result_row.id.into(),
-                tournament_id: result_row.tournament_id.into(),
-                user_id: result_row.user_id.into(),
-                final_position: result_row.final_position,
-                prize_cents: result_row.prize_cents,
-                points: result_row.points,
-                notes: result_row.notes,
-                created_at: result_row.created_at,
-            });
-        }
-
-        // Commit transaction
-        tx.commit().await.gql_err("Database operation failed")?;
-
-        // Convert deal to GraphQL type
-        let gql_deal = if let Some(deal_row) = deal {
+        // Convert deal to GQL type
+        let gql_deal = if let Some(deal_row) = output.deal {
             let custom_payouts = if let Some(payouts_json) = &deal_row.custom_payouts {
                 let payouts_obj = payouts_json
                     .as_object()
@@ -360,255 +251,4 @@ impl ResultMutation {
             deal: gql_deal,
         })
     }
-}
-
-// Helper functions for payout calculation
-
-fn calculate_prize_pool(tournament: &TournamentRow, player_count: i32) -> Result<i32> {
-    let total_pool = tournament.buy_in_cents * player_count;
-    Ok(total_pool)
-}
-
-async fn calculate_payouts(
-    db: &infra::db::Db,
-    template_id: Option<&ID>,
-    positions: &[super::types::PlayerPositionInput],
-    total_prize_pool: i32,
-    deal: Option<&PlayerDealInput>,
-) -> Result<Vec<i32>> {
-    let mut payouts = vec![0; positions.len()];
-
-    // If there's a deal that affects certain positions, handle it
-    if let Some(deal_input) = deal {
-        match deal_input.deal_type {
-            DealType::EvenSplit => {
-                let affected_total = if let Some(template_id) = template_id {
-                    calculate_template_total(
-                        db,
-                        template_id,
-                        &deal_input.affected_positions,
-                        total_prize_pool,
-                    )
-                    .await?
-                } else {
-                    total_prize_pool
-                };
-
-                let per_player = affected_total / deal_input.affected_positions.len() as i32;
-
-                for position in positions {
-                    if deal_input
-                        .affected_positions
-                        .contains(&position.final_position)
-                    {
-                        let index = (position.final_position - 1) as usize;
-                        if index < payouts.len() {
-                            payouts[index] = per_player;
-                        }
-                    }
-                }
-            }
-            DealType::Custom => {
-                if let Some(custom_payouts) = &deal_input.custom_payouts {
-                    for position in positions {
-                        if deal_input
-                            .affected_positions
-                            .contains(&position.final_position)
-                        {
-                            for custom in custom_payouts {
-                                if custom.user_id == position.user_id {
-                                    let index = (position.final_position - 1) as usize;
-                                    if index < payouts.len() {
-                                        payouts[index] = custom.amount_cents;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            DealType::Icm => {
-                let affected_total = if let Some(template_id) = template_id {
-                    calculate_template_total(
-                        db,
-                        template_id,
-                        &deal_input.affected_positions,
-                        total_prize_pool,
-                    )
-                    .await?
-                } else {
-                    total_prize_pool
-                };
-
-                let per_player = affected_total / deal_input.affected_positions.len() as i32;
-
-                for position in positions {
-                    if deal_input
-                        .affected_positions
-                        .contains(&position.final_position)
-                    {
-                        let index = (position.final_position - 1) as usize;
-                        if index < payouts.len() {
-                            payouts[index] = per_player;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Calculate remaining positions using template if available
-        if let Some(template_id) = template_id {
-            let template_id_uuid =
-                Uuid::parse_str(template_id.as_str()).gql_err("Invalid template ID")?;
-
-            if let Some(template) = payout_templates::get_by_id(db, template_id_uuid).await? {
-                let payout_structure = parse_payout_structure(&template.payout_structure)?;
-
-                for position in positions {
-                    if !deal_input
-                        .affected_positions
-                        .contains(&position.final_position)
-                    {
-                        if let Some(percentage) =
-                            get_position_percentage(&payout_structure, position.final_position)
-                        {
-                            let index = (position.final_position - 1) as usize;
-                            if index < payouts.len() {
-                                payouts[index] =
-                                    ((total_prize_pool as f64 * percentage / 100.0).round()) as i32;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    } else {
-        // No deal - use template for all positions
-        if let Some(template_id) = template_id {
-            let template_id_uuid =
-                Uuid::parse_str(template_id.as_str()).gql_err("Invalid template ID")?;
-
-            if let Some(template) = payout_templates::get_by_id(db, template_id_uuid).await? {
-                let payout_structure = parse_payout_structure(&template.payout_structure)?;
-
-                for position in positions {
-                    if let Some(percentage) =
-                        get_position_percentage(&payout_structure, position.final_position)
-                    {
-                        let index = (position.final_position - 1) as usize;
-                        if index < payouts.len() {
-                            payouts[index] =
-                                ((total_prize_pool as f64 * percentage / 100.0).round()) as i32;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Adjust for rounding remainder
-    let payout_sum: i32 = payouts.iter().sum();
-    let remainder = total_prize_pool - payout_sum;
-    if remainder != 0 {
-        if let Some(last_paid) = payouts.iter().rposition(|&p| p > 0) {
-            payouts[last_paid] += remainder;
-        }
-    }
-
-    Ok(payouts)
-}
-
-async fn calculate_template_total(
-    db: &infra::db::Db,
-    template_id: &ID,
-    affected_positions: &[i32],
-    total_prize_pool: i32,
-) -> Result<i32> {
-    let template_id_uuid = Uuid::parse_str(template_id.as_str()).gql_err("Invalid template ID")?;
-
-    if let Some(template) = payout_templates::get_by_id(db, template_id_uuid).await? {
-        let payout_structure = parse_payout_structure(&template.payout_structure)?;
-        let mut total_percentage = 0.0;
-
-        for position in affected_positions {
-            if let Some(percentage) = get_position_percentage(&payout_structure, *position) {
-                total_percentage += percentage;
-            }
-        }
-
-        Ok(((total_prize_pool as f64 * total_percentage / 100.0).round()) as i32)
-    } else {
-        Ok(total_prize_pool)
-    }
-}
-
-fn calculate_deal_total(deal_input: &PlayerDealInput, payouts: &[i32]) -> Result<i32> {
-    match deal_input.deal_type {
-        DealType::Custom => {
-            if let Some(custom_payouts) = &deal_input.custom_payouts {
-                Ok(custom_payouts.iter().map(|p| p.amount_cents).sum())
-            } else {
-                Ok(0)
-            }
-        }
-        _ => {
-            let mut total = 0;
-            for position in &deal_input.affected_positions {
-                let index = (*position - 1) as usize;
-                if index < payouts.len() {
-                    total += payouts[index];
-                }
-            }
-            Ok(total)
-        }
-    }
-}
-
-fn parse_payout_structure(structure: &serde_json::Value) -> Result<Vec<(i32, f64)>> {
-    let array = structure
-        .as_array()
-        .ok_or_else(|| async_graphql::Error::new("Invalid payout structure format"))?;
-
-    let mut payouts = Vec::new();
-    for item in array {
-        let obj = item
-            .as_object()
-            .ok_or_else(|| async_graphql::Error::new("Invalid payout item format"))?;
-
-        let position = obj
-            .get("position")
-            .and_then(|v| v.as_i64())
-            .ok_or_else(|| async_graphql::Error::new("Missing or invalid position"))?
-            as i32;
-
-        let percentage = obj
-            .get("percentage")
-            .and_then(|v| v.as_f64())
-            .ok_or_else(|| async_graphql::Error::new("Missing or invalid percentage"))?;
-
-        if !(0.0..=100.0).contains(&percentage) {
-            return Err(async_graphql::Error::new(
-                "Each payout percentage must be between 0 and 100",
-            ));
-        }
-
-        payouts.push((position, percentage));
-    }
-
-    let total: f64 = payouts.iter().map(|(_, p)| p).sum();
-    if (total - 100.0).abs() > 0.01 {
-        return Err(async_graphql::Error::new(format!(
-            "Payout percentages must sum to 100%, got {:.2}%",
-            total
-        )));
-    }
-
-    Ok(payouts)
-}
-
-fn get_position_percentage(payout_structure: &[(i32, f64)], position: i32) -> Option<f64> {
-    payout_structure
-        .iter()
-        .find(|(pos, _)| *pos == position)
-        .map(|(_, percentage)| *percentage)
 }

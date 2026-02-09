@@ -1,11 +1,12 @@
 use async_graphql::{Context, Object, Result, ID};
 use uuid::Uuid;
 
+use crate::gql::common::helpers::get_club_id_for_tournament;
 use crate::gql::error::ResultExt;
 use crate::gql::subscriptions::publish_seating_event;
 use crate::gql::types::{
     AssignPlayerToSeatInput, AssignTableToTournamentInput, BalanceTablesInput, MovePlayerInput,
-    Role, SeatAssignment, SeatWithPlayer, SeatingChangeEvent, SeatingEventType, TableWithSeats,
+    SeatAssignment, SeatWithPlayer, SeatingChangeEvent, SeatingEventType, TableWithSeats,
     Tournament, TournamentSeatingChart, TournamentTable, UnassignTableFromTournamentInput,
     UpdateStackSizeInput, User,
 };
@@ -15,27 +16,6 @@ use infra::repos::{
     table_seat_assignments::SeatAssignmentFilter, table_seat_assignments::UpdateSeatAssignment,
     tournaments, users,
 };
-
-// Helper function to check if tables need rebalancing
-fn needs_rebalancing(table_counts: &std::collections::HashMap<Uuid, usize>) -> bool {
-    if table_counts.is_empty() {
-        return false;
-    }
-
-    let min_count = *table_counts.values().min().unwrap_or(&0);
-    let max_count = *table_counts.values().max().unwrap_or(&0);
-
-    // Rebalance if difference is more than 2 players between tables
-    // OR if any table has less than 4 players (unless it's the only table)
-    (max_count - min_count > 2) || (min_count < 4 && table_counts.len() > 1)
-}
-
-async fn get_club_id_for_tournament(db: &infra::db::Db, tournament_id: Uuid) -> Result<Uuid> {
-    let tournament = tournaments::get_by_id(db, tournament_id)
-        .await?
-        .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
-    Ok(tournament.club_id)
-}
 
 #[derive(Default)]
 pub struct SeatingQuery;
@@ -55,21 +35,7 @@ impl SeatingQuery {
             .await?
             .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
 
-        let tournament = Tournament {
-            id: tournament_row.id.into(),
-            title: tournament_row.name.clone(),
-            description: tournament_row.description.clone(),
-            club_id: tournament_row.club_id.into(),
-            start_time: tournament_row.start_time,
-            end_time: tournament_row.end_time,
-            buy_in_cents: tournament_row.buy_in_cents,
-            seat_cap: tournament_row.seat_cap,
-            status: tournament_row.calculate_status().into(),
-            live_status: tournament_row.live_status.into(),
-            early_bird_bonus_chips: tournament_row.early_bird_bonus_chips,
-            created_at: tournament_row.created_at,
-            updated_at: tournament_row.updated_at,
-        };
+        let tournament: Tournament = tournament_row.into();
 
         // Get all active tables for the tournament
         let table_rows = club_tables::list_assigned_to_tournament(&state.db, tournament_id).await?;
@@ -95,29 +61,8 @@ impl SeatingQuery {
             let seats: Vec<SeatWithPlayer> = assignments_with_players
                 .into_iter()
                 .map(|ap| SeatWithPlayer {
-                    assignment: SeatAssignment {
-                        id: ap.assignment.id.into(),
-                        tournament_id: ap.assignment.tournament_id.into(),
-                        club_table_id: ap.assignment.club_table_id.into(),
-                        user_id: ap.assignment.user_id.into(),
-                        seat_number: ap.assignment.seat_number,
-                        stack_size: ap.assignment.stack_size,
-                        is_current: ap.assignment.is_current,
-                        assigned_at: ap.assignment.assigned_at,
-                        unassigned_at: ap.assignment.unassigned_at,
-                        assigned_by: ap.assignment.assigned_by.map(|id| id.into()),
-                        notes: ap.assignment.notes,
-                    },
-                    player: User {
-                        id: ap.player.id.into(),
-                        email: ap.player.email,
-                        username: ap.player.username,
-                        first_name: ap.player.first_name,
-                        last_name: ap.player.last_name,
-                        phone: ap.player.phone,
-                        is_active: ap.player.is_active,
-                        role: Role::from(ap.player.role),
-                    },
+                    assignment: ap.assignment.into(),
+                    player: ap.player.into(),
                 })
                 .collect();
 
@@ -127,19 +72,8 @@ impl SeatingQuery {
         // Get unassigned players
         let unassigned_player_rows =
             table_seat_assignments::list_unassigned_players(&state.db, tournament_id).await?;
-        let unassigned_players: Vec<User> = unassigned_player_rows
-            .into_iter()
-            .map(|p| User {
-                id: p.id.into(),
-                email: p.email,
-                username: p.username,
-                first_name: p.first_name,
-                last_name: p.last_name,
-                phone: p.phone,
-                is_active: p.is_active,
-                role: Role::from(p.role),
-            })
-            .collect();
+        let unassigned_players: Vec<User> =
+            unassigned_player_rows.into_iter().map(User::from).collect();
 
         Ok(TournamentSeatingChart {
             tournament,
@@ -186,29 +120,8 @@ impl SeatingQuery {
         Ok(assignments_with_players
             .into_iter()
             .map(|ap| SeatWithPlayer {
-                assignment: SeatAssignment {
-                    id: ap.assignment.id.into(),
-                    tournament_id: ap.assignment.tournament_id.into(),
-                    club_table_id: ap.assignment.club_table_id.into(),
-                    user_id: ap.assignment.user_id.into(),
-                    seat_number: ap.assignment.seat_number,
-                    stack_size: ap.assignment.stack_size,
-                    is_current: ap.assignment.is_current,
-                    assigned_at: ap.assignment.assigned_at,
-                    unassigned_at: ap.assignment.unassigned_at,
-                    assigned_by: ap.assignment.assigned_by.map(|id| id.into()),
-                    notes: ap.assignment.notes,
-                },
-                player: User {
-                    id: ap.player.id.into(),
-                    email: ap.player.email,
-                    username: ap.player.username,
-                    first_name: ap.player.first_name,
-                    last_name: ap.player.last_name,
-                    phone: ap.player.phone,
-                    is_active: ap.player.is_active,
-                    role: Role::from(ap.player.role),
-                },
+                assignment: ap.assignment.into(),
+                player: ap.player.into(),
             })
             .collect())
     }
@@ -235,19 +148,7 @@ impl SeatingQuery {
 
         Ok(assignment_rows
             .into_iter()
-            .map(|assignment| SeatAssignment {
-                id: assignment.id.into(),
-                tournament_id: assignment.tournament_id.into(),
-                club_table_id: assignment.club_table_id.into(),
-                user_id: assignment.user_id.into(),
-                seat_number: assignment.seat_number,
-                stack_size: assignment.stack_size,
-                is_current: assignment.is_current,
-                assigned_at: assignment.assigned_at,
-                unassigned_at: assignment.unassigned_at,
-                assigned_by: assignment.assigned_by.map(|id| id.into()),
-                notes: assignment.notes,
-            })
+            .map(SeatAssignment::from)
             .collect())
     }
 }
@@ -428,51 +329,19 @@ impl SeatingMutation {
         let player = users::get_by_id(&state.db, user_id).await?;
 
         // Publish seating change event
+        let result: SeatAssignment = assignment_row.into();
         let event = SeatingChangeEvent {
             event_type: SeatingEventType::PlayerAssigned,
-            tournament_id: assignment_row.tournament_id.into(),
+            tournament_id: result.tournament_id.clone(),
             club_id: club_id.into(),
-            affected_assignment: Some(SeatAssignment {
-                id: assignment_row.id.into(),
-                tournament_id: assignment_row.tournament_id.into(),
-                club_table_id: assignment_row.club_table_id.into(),
-                user_id: assignment_row.user_id.into(),
-                seat_number: assignment_row.seat_number,
-                stack_size: assignment_row.stack_size,
-                is_current: assignment_row.is_current,
-                assigned_at: assignment_row.assigned_at,
-                unassigned_at: assignment_row.unassigned_at,
-                assigned_by: assignment_row.assigned_by.map(|id| id.into()),
-                notes: assignment_row.notes.clone(),
-            }),
-            affected_player: player.map(|p| User {
-                id: p.id.into(),
-                email: p.email,
-                username: p.username,
-                first_name: p.first_name,
-                last_name: p.last_name,
-                phone: p.phone,
-                is_active: p.is_active,
-                role: Role::from(p.role),
-            }),
-            message: format!("Player assigned to seat {}", assignment_row.seat_number),
+            affected_assignment: Some(result.clone()),
+            affected_player: player.map(User::from),
+            message: format!("Player assigned to seat {}", result.seat_number),
             timestamp: chrono::Utc::now(),
         };
         publish_seating_event(event);
 
-        Ok(SeatAssignment {
-            id: assignment_row.id.into(),
-            tournament_id: assignment_row.tournament_id.into(),
-            club_table_id: assignment_row.club_table_id.into(),
-            user_id: assignment_row.user_id.into(),
-            seat_number: assignment_row.seat_number,
-            stack_size: assignment_row.stack_size,
-            is_current: assignment_row.is_current,
-            assigned_at: assignment_row.assigned_at,
-            unassigned_at: assignment_row.unassigned_at,
-            assigned_by: assignment_row.assigned_by.map(|id| id.into()),
-            notes: assignment_row.notes,
-        })
+        Ok(result)
     }
 
     /// Move a player to a different table/seat (managers only)
@@ -524,52 +393,20 @@ impl SeatingMutation {
         let player = users::get_by_id(&state.db, user_id).await?;
 
         // Publish seating change event
-        let club_id = get_club_id_for_tournament(&state.db, assignment_row.tournament_id).await?;
+        let result: SeatAssignment = assignment_row.into();
+        let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
         let event = SeatingChangeEvent {
             event_type: SeatingEventType::PlayerMoved,
-            tournament_id: assignment_row.tournament_id.into(),
+            tournament_id: result.tournament_id.clone(),
             club_id: club_id.into(),
-            affected_assignment: Some(SeatAssignment {
-                id: assignment_row.id.into(),
-                tournament_id: assignment_row.tournament_id.into(),
-                club_table_id: assignment_row.club_table_id.into(),
-                user_id: assignment_row.user_id.into(),
-                seat_number: assignment_row.seat_number,
-                stack_size: assignment_row.stack_size,
-                is_current: assignment_row.is_current,
-                assigned_at: assignment_row.assigned_at,
-                unassigned_at: assignment_row.unassigned_at,
-                assigned_by: assignment_row.assigned_by.map(|id| id.into()),
-                notes: assignment_row.notes.clone(),
-            }),
-            affected_player: player.map(|p| User {
-                id: p.id.into(),
-                email: p.email,
-                username: p.username,
-                first_name: p.first_name,
-                last_name: p.last_name,
-                phone: p.phone,
-                is_active: p.is_active,
-                role: Role::from(p.role),
-            }),
-            message: format!("Player moved to seat {}", assignment_row.seat_number),
+            affected_assignment: Some(result.clone()),
+            affected_player: player.map(User::from),
+            message: format!("Player moved to seat {}", result.seat_number),
             timestamp: chrono::Utc::now(),
         };
         publish_seating_event(event);
 
-        Ok(SeatAssignment {
-            id: assignment_row.id.into(),
-            tournament_id: assignment_row.tournament_id.into(),
-            club_table_id: assignment_row.club_table_id.into(),
-            user_id: assignment_row.user_id.into(),
-            seat_number: assignment_row.seat_number,
-            stack_size: assignment_row.stack_size,
-            is_current: assignment_row.is_current,
-            assigned_at: assignment_row.assigned_at,
-            unassigned_at: assignment_row.unassigned_at,
-            assigned_by: assignment_row.assigned_by.map(|id| id.into()),
-            notes: assignment_row.notes,
-        })
+        Ok(result)
     }
 
     /// Update a player's stack size (managers only)
@@ -578,15 +415,16 @@ impl SeatingMutation {
         ctx: &Context<'_>,
         input: UpdateStackSizeInput,
     ) -> Result<SeatAssignment> {
-        use crate::auth::permissions::require_role;
-
-        // Require manager role
-        let _manager = require_role(ctx, Role::Manager).await?;
+        use crate::auth::permissions::require_club_manager;
 
         let state = ctx.data::<AppState>()?;
 
         let tournament_id =
             Uuid::parse_str(input.tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+
+        // Get club ID for the tournament to verify permissions
+        let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
+        let _manager = require_club_manager(ctx, club_id).await?;
         let user_id = Uuid::parse_str(input.user_id.as_str()).gql_err("Invalid user ID")?;
 
         // Get current assignment for user
@@ -611,52 +449,20 @@ impl SeatingMutation {
         let player = users::get_by_id(&state.db, user_id).await?;
 
         // Publish seating change event
-        let club_id = get_club_id_for_tournament(&state.db, assignment_row.tournament_id).await?;
+        let result: SeatAssignment = assignment_row.into();
+        let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
         let event = SeatingChangeEvent {
             event_type: SeatingEventType::StackUpdated,
-            tournament_id: assignment_row.tournament_id.into(),
+            tournament_id: result.tournament_id.clone(),
             club_id: club_id.into(),
-            affected_assignment: Some(SeatAssignment {
-                id: assignment_row.id.into(),
-                tournament_id: assignment_row.tournament_id.into(),
-                club_table_id: assignment_row.club_table_id.into(),
-                user_id: assignment_row.user_id.into(),
-                seat_number: assignment_row.seat_number,
-                stack_size: assignment_row.stack_size,
-                is_current: assignment_row.is_current,
-                assigned_at: assignment_row.assigned_at,
-                unassigned_at: assignment_row.unassigned_at,
-                assigned_by: assignment_row.assigned_by.map(|id| id.into()),
-                notes: assignment_row.notes.clone(),
-            }),
-            affected_player: player.map(|p| User {
-                id: p.id.into(),
-                email: p.email,
-                username: p.username,
-                first_name: p.first_name,
-                last_name: p.last_name,
-                phone: p.phone,
-                is_active: p.is_active,
-                role: Role::from(p.role),
-            }),
+            affected_assignment: Some(result.clone()),
+            affected_player: player.map(User::from),
             message: format!("Stack updated to {}", input.new_stack_size),
             timestamp: chrono::Utc::now(),
         };
         publish_seating_event(event);
 
-        Ok(SeatAssignment {
-            id: assignment_row.id.into(),
-            tournament_id: assignment_row.tournament_id.into(),
-            club_table_id: assignment_row.club_table_id.into(),
-            user_id: assignment_row.user_id.into(),
-            seat_number: assignment_row.seat_number,
-            stack_size: assignment_row.stack_size,
-            is_current: assignment_row.is_current,
-            assigned_at: assignment_row.assigned_at,
-            unassigned_at: assignment_row.unassigned_at,
-            assigned_by: assignment_row.assigned_by.map(|id| id.into()),
-            notes: assignment_row.notes,
-        })
+        Ok(result)
     }
 
     /// Automatically balance tables (managers only)
@@ -665,175 +471,35 @@ impl SeatingMutation {
         ctx: &Context<'_>,
         input: BalanceTablesInput,
     ) -> Result<Vec<SeatAssignment>> {
-        use crate::auth::permissions::require_role;
-
-        // Require manager role
-        let manager = require_role(ctx, Role::Manager).await?;
+        use crate::auth::permissions::require_club_manager;
 
         let state = ctx.data::<AppState>()?;
 
         let tournament_id =
             Uuid::parse_str(input.tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+
+        // Auth
+        let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
+        let manager = require_club_manager(ctx, club_id).await?;
         let manager_id = Uuid::parse_str(manager.id.as_str()).gql_err("Invalid manager ID")?;
 
-        // Get all active tables (read before transaction)
-        let tables = club_tables::list_assigned_to_tournament(&state.db, tournament_id).await?;
-        if tables.is_empty() {
-            return Ok(Vec::new());
-        }
+        // Delegate to service
+        let params = super::service::BalanceParams {
+            tournament_id,
+            manager_id,
+            target_players_per_table: input.target_players_per_table,
+        };
 
-        // Begin transaction for all move operations
-        let mut tx = state
-            .db
-            .begin()
+        let result = super::service::balance_tables(&state.db, params)
             .await
-            .gql_err("Database operation failed")?;
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
 
-        // Get all current assignments within transaction
-        let assignments =
-            table_seat_assignments::list_current_for_tournament(&mut *tx, tournament_id)
-                .await
-                .gql_err("Database operation failed")?;
+        // Convert to GQL types
+        let moves: Vec<SeatAssignment> =
+            result.moves.into_iter().map(SeatAssignment::from).collect();
 
-        // Group players by table and count
-        let mut table_players: std::collections::HashMap<Uuid, Vec<_>> =
-            std::collections::HashMap::new();
-        for assignment in assignments {
-            table_players
-                .entry(assignment.club_table_id)
-                .or_default()
-                .push(assignment);
-        }
-
-        // Count players per table
-        let mut table_counts: std::collections::HashMap<Uuid, usize> =
-            std::collections::HashMap::new();
-        for (table_id, players) in &table_players {
-            table_counts.insert(*table_id, players.len());
-        }
-
-        // Check if rebalancing is needed
-        if !needs_rebalancing(&table_counts) {
-            return Ok(Vec::new()); // Tables are already balanced
-        }
-
-        let total_players = table_counts.values().sum::<usize>();
-        let target_per_table = input
-            .target_players_per_table
-            .unwrap_or(((total_players as f64) / (tables.len() as f64)).ceil() as i32);
-
-        // Create a plan for rebalancing
-        let mut moves = Vec::new();
-
-        // Find tables that need players and tables that have excess
-        let mut need_players: Vec<_> = tables
-            .iter()
-            .filter(|table| {
-                let current_count = table_players.get(&table.id).map(|v| v.len()).unwrap_or(0);
-                current_count < target_per_table as usize
-            })
-            .collect();
-
-        let mut excess_players: Vec<_> = Vec::new();
-        for table in &tables {
-            let empty_vec = Vec::new();
-            let players = table_players.get(&table.id).unwrap_or(&empty_vec);
-            if players.len() > target_per_table as usize {
-                let excess_count = players.len() - target_per_table as usize;
-                // Take the most recently assigned players for moving (they're likely less settled)
-                let mut sorted_players = players.clone();
-                sorted_players.sort_by(|a, b| b.assigned_at.cmp(&a.assigned_at));
-                excess_players.extend(sorted_players.into_iter().take(excess_count));
-            }
-        }
-
-        // Move excess players to tables that need them
-        for player in excess_players {
-            if let Some(target_table) = need_players.first() {
-                let current_count = table_players
-                    .get(&target_table.id)
-                    .map(|v| v.len())
-                    .unwrap_or(0);
-                if current_count < target_per_table as usize {
-                    // Get all occupied seats in one query instead of checking each seat
-                    let occupied_seats: std::collections::HashSet<i32> =
-                        table_seat_assignments::get_occupied_seats(&mut *tx, target_table.id)
-                            .await
-                            .gql_err("Database operation failed")?
-                            .into_iter()
-                            .collect();
-
-                    // Find the first available seat
-                    let available_seat =
-                        (1..=target_table.max_seats).find(|seat| !occupied_seats.contains(seat));
-
-                    if let Some(seat_num) = available_seat {
-                        // Unassign current seat and create new assignment
-                        table_seat_assignments::unassign_current_seat(
-                            &mut *tx,
-                            tournament_id,
-                            player.user_id,
-                            Some(manager_id),
-                        )
-                        .await
-                        .gql_err("Database operation failed")?;
-                        let new_assignment = table_seat_assignments::create(
-                            &mut *tx,
-                            CreateSeatAssignment {
-                                tournament_id,
-                                club_table_id: target_table.id,
-                                user_id: player.user_id,
-                                seat_number: seat_num,
-                                stack_size: player.stack_size,
-                                assigned_by: Some(manager_id),
-                                notes: Some("Balanced by system".to_string()),
-                            },
-                        )
-                        .await
-                        .gql_err("Database operation failed")?;
-
-                        let assignment_for_response = SeatAssignment {
-                            id: new_assignment.id.into(),
-                            tournament_id: new_assignment.tournament_id.into(),
-                            club_table_id: new_assignment.club_table_id.into(),
-                            user_id: new_assignment.user_id.into(),
-                            seat_number: new_assignment.seat_number,
-                            stack_size: new_assignment.stack_size,
-                            is_current: new_assignment.is_current,
-                            assigned_at: new_assignment.assigned_at,
-                            unassigned_at: new_assignment.unassigned_at,
-                            assigned_by: new_assignment.assigned_by.map(|id| id.into()),
-                            notes: new_assignment.notes.clone(),
-                        };
-
-                        moves.push(assignment_for_response);
-
-                        // Update our tracking
-                        table_players
-                            .entry(target_table.id)
-                            .or_default()
-                            .push(new_assignment);
-
-                        // Check if this table is now full
-                        if table_players
-                            .get(&target_table.id)
-                            .map(|v| v.len())
-                            .unwrap_or(0)
-                            >= target_per_table as usize
-                        {
-                            need_players.remove(0);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Commit transaction
-        tx.commit().await.gql_err("Database operation failed")?;
-
-        // Publish table balancing event after commit (side effects after successful commit)
+        // Publish event after successful commit
         if !moves.is_empty() {
-            let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
             let event = SeatingChangeEvent {
                 event_type: SeatingEventType::TablesBalanced,
                 tournament_id: tournament_id.into(),
@@ -857,15 +523,16 @@ impl SeatingMutation {
         user_id: ID,
         notes: Option<String>,
     ) -> Result<bool> {
-        use crate::auth::permissions::require_role;
-
-        // Require manager role
-        let manager = require_role(ctx, Role::Manager).await?;
+        use crate::auth::permissions::require_club_manager;
 
         let state = ctx.data::<AppState>()?;
 
         let tournament_uuid =
             Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+
+        // Get club ID for the tournament to verify permissions
+        let club_id = get_club_id_for_tournament(&state.db, tournament_uuid).await?;
+        let manager = require_club_manager(ctx, club_id).await?;
         let user_uuid = Uuid::parse_str(user_id.as_str()).gql_err("Invalid user ID")?;
         let manager_id = Uuid::parse_str(manager.id.as_str()).gql_err("Invalid manager ID")?;
 
@@ -908,16 +575,7 @@ impl SeatingMutation {
                     assigned_by: assignment.assigned_by.map(|id| id.into()),
                     notes: notes.or_else(|| Some("Player eliminated".to_string())),
                 }),
-                affected_player: player.map(|p| User {
-                    id: p.id.into(),
-                    email: p.email,
-                    username: p.username,
-                    first_name: p.first_name,
-                    last_name: p.last_name,
-                    phone: p.phone,
-                    is_active: p.is_active,
-                    role: Role::from(p.role),
-                }),
+                affected_player: player.map(User::from),
                 message: "Player eliminated from tournament".to_string(),
                 timestamp: chrono::Utc::now(),
             };
