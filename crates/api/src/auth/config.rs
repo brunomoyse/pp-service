@@ -13,7 +13,7 @@ pub struct AuthConfig {
 impl AuthConfig {
     pub fn from_env() -> Result<Self> {
         Ok(Self {
-            jwt_secret: env::var("JWT_SECRET").unwrap_or_else(|_| "your-secret-key".to_string()),
+            jwt_secret: env::var("JWT_SECRET").expect("JWT_SECRET must be set"),
             jwt_expiration_hours: env::var("JWT_EXPIRATION_HOURS")
                 .unwrap_or_else(|_| "24".to_string())
                 .parse()

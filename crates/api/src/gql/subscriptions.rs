@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::auth::jwt::Claims;
 use crate::gql::error::ResultExt;
 use crate::gql::types::{
-    PlayerRegistrationEvent, Role, SeatingChangeEvent, TournamentClock, UserNotification,
+    PlayerRegistrationEvent, SeatingChangeEvent, TournamentClock, UserNotification,
 };
 
 /// Per-tournament channels for real-time updates
@@ -137,12 +137,12 @@ impl SubscriptionRoot {
         ctx: &Context<'_>,
         club_id: async_graphql::ID,
     ) -> Result<impl Stream<Item = Result<SeatingChangeEvent, BroadcastStreamRecvError>>> {
-        use crate::auth::permissions::require_role;
-
-        // Require manager role
-        let _manager = require_role(ctx, Role::Manager).await?;
+        use crate::auth::permissions::require_club_manager;
 
         let club_uuid = Uuid::parse_str(club_id.as_str()).gql_err("Invalid club ID")?;
+
+        // Require manager of this specific club
+        let _manager = require_club_manager(ctx, club_uuid).await?;
 
         let receiver = {
             let mut channels = CHANNELS.lock();
