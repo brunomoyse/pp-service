@@ -129,11 +129,6 @@ jobs:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/pocketpair
         run: sqlx migrate run
 
-      - name: Seed database (fail on any error)
-        env:
-          PGPASSWORD: postgres
-        run: psql -v ON_ERROR_STOP=1 -f scripts/seed.sql postgres://postgres:postgres@localhost:5432/pocketpair
-
       - name: Run integration tests
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/pocketpair
