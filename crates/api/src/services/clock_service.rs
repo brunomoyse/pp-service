@@ -165,17 +165,7 @@ impl ClockService {
         .await
         .ok()
         .flatten()
-        .map(|s| TournamentStructure {
-            id: s.id.into(),
-            tournament_id: s.tournament_id.into(),
-            level_number: s.level_number,
-            small_blind: s.small_blind,
-            big_blind: s.big_blind,
-            ante: s.ante,
-            duration_minutes: s.duration_minutes,
-            is_break: s.is_break,
-            break_duration_minutes: s.break_duration_minutes,
-        });
+        .map(TournamentStructure::from);
 
         let clock_status = InfraClockStatus::from_str(&clock_row.clock_status)
             .ok()
@@ -213,17 +203,9 @@ impl ClockService {
             level_end_time: clock_row.level_end_time,
             total_pause_duration_seconds: total_pause_seconds,
             auto_advance: clock_row.auto_advance,
-            current_structure: structure.as_ref().map(|s| TournamentStructure {
-                id: s.id.into(),
-                tournament_id: s.tournament_id.into(),
-                level_number: s.level_number,
-                small_blind: s.small_blind,
-                big_blind: s.big_blind,
-                ante: s.ante,
-                duration_minutes: s.duration_minutes,
-                is_break: s.is_break,
-                break_duration_minutes: s.break_duration_minutes,
-            }),
+            current_structure: structure
+                .as_ref()
+                .map(|s| TournamentStructure::from(s.clone())),
             next_structure,
             small_blind: structure.as_ref().map(|s| s.small_blind),
             big_blind: structure.as_ref().map(|s| s.big_blind),

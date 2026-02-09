@@ -1,4 +1,9 @@
-use async_graphql::Enum;
+use async_graphql::{Enum, SimpleObject, ID};
+use chrono::{DateTime, Utc};
+
+// Notification title constants
+pub const TITLE_REGISTRATION_CONFIRMED: &str = "Registration Confirmed";
+pub const TITLE_TOURNAMENT_STARTING: &str = "Tournament Starting Soon";
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Role {
@@ -35,4 +40,22 @@ impl From<Role> for String {
             Role::Player => "player".to_string(),
         }
     }
+}
+
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
+pub enum NotificationType {
+    TournamentStartingSoon,
+    RegistrationConfirmed,
+    TournamentStatusChanged,
+}
+
+#[derive(SimpleObject, Clone, Debug)]
+pub struct UserNotification {
+    pub id: ID,
+    pub user_id: ID,
+    pub notification_type: NotificationType,
+    pub title: String,
+    pub message: String,
+    pub tournament_id: Option<ID>,
+    pub created_at: DateTime<Utc>,
 }

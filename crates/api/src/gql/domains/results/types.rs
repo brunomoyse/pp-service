@@ -15,6 +15,21 @@ pub struct TournamentResult {
     pub created_at: DateTime<Utc>,
 }
 
+impl From<infra::models::TournamentResultRow> for TournamentResult {
+    fn from(row: infra::models::TournamentResultRow) -> Self {
+        Self {
+            id: row.id.into(),
+            tournament_id: row.tournament_id.into(),
+            user_id: row.user_id.into(),
+            final_position: row.final_position,
+            prize_cents: row.prize_cents,
+            points: row.points,
+            notes: row.notes,
+            created_at: row.created_at,
+        }
+    }
+}
+
 #[derive(SimpleObject, Clone)]
 pub struct UserTournamentResult {
     pub result: TournamentResult,
