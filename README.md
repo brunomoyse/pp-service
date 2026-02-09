@@ -15,36 +15,52 @@ PocketPair is a poker tournament management platform backend built with Rust. Th
 ```
 .
 ├── crates/
-│   ├── api/                    # Main API application
+│   ├── api/                         # Main API application
 │   │   ├── src/
-│   │   │   ├── main.rs         # Entry point
-│   │   │   ├── app.rs          # Router & middleware setup
-│   │   │   ├── state.rs        # Shared application state
-│   │   │   ├── gql/            # GraphQL schema & resolvers
-│   │   │   │   ├── schema.rs   # Schema definition
-│   │   │   │   ├── queries.rs  # Query resolvers
-│   │   │   │   ├── mutations.rs# Mutation resolvers
+│   │   │   ├── main.rs              # Entry point
+│   │   │   ├── app.rs               # Router & middleware setup
+│   │   │   ├── state.rs             # Shared application state (PgPool, JWT, OAuth)
+│   │   │   ├── gql/                 # GraphQL layer
+│   │   │   │   ├── schema.rs        # Schema builder with DataLoaders
+│   │   │   │   ├── root/            # Query & mutation root resolvers
 │   │   │   │   ├── subscriptions.rs # Real-time subscriptions
-│   │   │   │   ├── types.rs    # GraphQL types
-│   │   │   │   └── loaders.rs  # DataLoaders (N+1 prevention)
-│   │   │   ├── auth/           # Authentication & authorization
-│   │   │   ├── routes/         # REST routes (OAuth)
-│   │   │   ├── middleware/     # JWT middleware
-│   │   │   └── services/       # Background services
-│   │   └── tests/              # Integration tests
+│   │   │   │   ├── types.rs         # Barrel re-export (all types in domains/)
+│   │   │   │   ├── loaders.rs       # DataLoaders (N+1 prevention)
+│   │   │   │   ├── common/          # Shared types (Role, notifications), helpers
+│   │   │   │   └── domains/         # Domain modules (see below)
+│   │   │   │       ├── auth/        # OAuth, JWT, client management
+│   │   │   │       ├── clubs/       # Club CRUD
+│   │   │   │       ├── entries/     # Buy-ins, rebuys, add-ons
+│   │   │   │       ├── leaderboards/# Scoring and rankings
+│   │   │   │       ├── registrations/ # Registration, check-in (+ service)
+│   │   │   │       ├── results/     # Positions, payouts, deals (+ service)
+│   │   │   │       ├── seating/     # Table assignments, rebalancing (+ service)
+│   │   │   │       ├── templates/   # Blind structure & payout templates
+│   │   │   │       ├── tournaments/ # Tournament CRUD, clock management
+│   │   │   │       └── users/       # Player CRUD
+│   │   │   ├── auth/                # Authentication & authorization
+│   │   │   ├── routes/              # REST routes (OAuth)
+│   │   │   ├── middleware/          # JWT middleware
+│   │   │   └── services/            # Background services (clock, notifications)
+│   │   └── tests/                   # Integration tests
 │   │
-│   └── infra/                  # Infrastructure/data layer
+│   └── infra/                       # Infrastructure/data layer
 │       └── src/
-│           ├── models.rs       # Database models
-│           ├── repos/          # Repository pattern
-│           └── db/             # Database utilities
+│           ├── models.rs            # Database models (FromRow structs)
+│           ├── repos/               # Repository pattern
+│           └── db/                  # Database utilities
 │
-├── migrations/                 # SQLx database migrations
-├── .sqlx/                      # SQLx offline query metadata
+├── migrations/                      # SQLx database migrations
+├── .sqlx/                           # SQLx offline query metadata
 ├── docker-compose.yml
 ├── Dockerfile
 └── README.md
 ```
+
+Each domain module under `domains/` contains:
+- **`types.rs`** - GraphQL types, enums, inputs, and `From<Row>` impls
+- **`resolvers.rs`** - Query and mutation resolvers (or `clock.rs` for tournaments)
+- **`service.rs`** (optional) - Complex business logic extracted from resolvers (registrations, seating, results)
 
 ---
 
@@ -52,17 +68,21 @@ PocketPair is a poker tournament management platform backend built with Rust. Th
 
 ### Key Patterns
 
-1. **Repository Pattern**: All database operations are in `crates/infra/src/repos/`. Each repository provides CRUD and domain-specific queries.
+1. **Domain-Based GraphQL Layer**: Each domain (auth, clubs, tournaments, etc.) has its own module with types, resolvers, and optional services. `gql/types.rs` is a barrel re-export file so all imports work unchanged.
 
-2. **GraphQL Layer**: Built with async-graphql, exposing queries, mutations, and subscriptions.
+2. **Repository Pattern**: All database operations in `crates/infra/src/repos/`. Each repository provides CRUD and domain-specific queries.
 
-3. **JWT Authentication**: Middleware validates tokens and injects claims into GraphQL context.
+3. **Domain Services**: Complex mutations (check-in, table balancing, results) are extracted into `service.rs` files that own transactions and return infra Row types. Resolvers handle auth, ID parsing, type conversions, and event publishing.
 
-4. **Role-Based Authorization**: Three roles - Admin, Manager, Player - with permission helpers.
+4. **Type Conversions**: Each domain's `types.rs` includes `From<Row>` impls (e.g., `From<TournamentRow> for Tournament`) for clean `.into()` conversions.
 
-5. **Background Services**: Tournament clock service auto-advances blind levels.
+5. **Club-Scoped Authorization**: Most mutations use `require_club_manager(ctx, club_id)` so managers can only act on their own clubs. Three roles: Admin, Manager, Player.
 
-6. **Real-time Updates**: GraphQL subscriptions for live tournament data via WebSockets.
+6. **JWT Authentication**: Middleware validates tokens and injects claims into GraphQL context.
+
+7. **Background Services**: Tournament clock service auto-advances blind levels every 5 seconds. Notification service sends pre-tournament alerts.
+
+8. **Real-time Updates**: GraphQL subscriptions over WebSocket for live tournament data (clock, seating, registrations, notifications).
 
 ### Database Concepts
 
@@ -125,7 +145,7 @@ SQLX_OFFLINE=true cargo check --all-features
 SQLX_OFFLINE=true cargo clippy --all-targets --all-features -- -D warnings
 
 # Format check
-SQLX_OFFLINE=true cargo fmt --all -- --check
+cargo fmt --all -- --check
 ```
 
 ### Running Tests
@@ -144,16 +164,24 @@ TEST_DATABASE_URL="..." cargo test --package api --test tournament_tests
 TEST_DATABASE_URL="..." cargo test --package api -- --nocapture
 ```
 
-**Test files:**
-- `auth_tests.rs` - Authentication and JWT
-- `tournament_tests.rs` - Tournament CRUD and lifecycle
-- `tournament_clock_tests.rs` - Clock state and level advancement
-- `tournament_entries_tests.rs` - Buy-ins, rebuys, add-ons
-- `tournament_results_tests.rs` - Results and leaderboard
-- `payouts_tests.rs` - Prize pool and payouts
-- `notification_tests.rs` - Real-time notifications
-- `permission_tests.rs` - Role-based access control
-- `table_seating_tests.rs` - Table and seat management
+**Test files** (`crates/api/tests/`):
+- `auth_tests` - Authentication and JWT
+- `tournament_tests` - Tournament CRUD and lifecycle
+- `tournament_clock_tests` - Clock state and level advancement
+- `clock_lifecycle_tests` - Full clock lifecycle scenarios
+- `tournament_entries_tests` - Buy-ins, rebuys, add-ons
+- `tournament_results_tests` - Results and leaderboard
+- `payouts_tests` - Prize pool and payouts
+- `notification_tests` - Real-time notifications
+- `permission_tests` - Role-based access control
+- `table_seating_tests` - Table and seat management
+- `check_in_tests` - Player check-in with auto-seating
+- `eliminate_player_tests` - Player elimination flow
+- `club_tests`, `club_tables_test` - Club CRUD and tables
+- `user_tests`, `player_management_tests` - User/player management
+- `unassign_table_tests` - Table unassignment
+- `query_coverage_tests` - GraphQL query coverage
+- `system_tests` - System-level integration
 
 ### Database Management
 
