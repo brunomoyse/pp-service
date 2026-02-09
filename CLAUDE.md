@@ -28,8 +28,8 @@ This is a Cargo workspace with two crates:
   - Entry point: `src/main.rs`
 
 - **`crates/infra/`**: Infrastructure/data layer
-  - Database models (`models.rs`) - 18 `FromRow` structs
-  - Repository pattern for data access (`repos/`) - 15 repositories
+  - Database models (`models.rs`) - `FromRow` structs
+  - Repository pattern for data access (`repos/`)
   - Database utilities (`db/`)
   - Pagination helpers
   - Scoring calculations (`scoring.rs`)
@@ -42,15 +42,37 @@ Note: `crates/telemetry/` and `crates/types/` directories exist but are empty st
 
 2. **GraphQL Layer** (`crates/api/src/gql/`):
    - `schema.rs` - Schema builder with DataLoaders
-   - `queries.rs` - QueryRoot resolvers
-   - `mutations.rs` - MutationRoot (50+ mutations)
-   - `subscriptions.rs` - SubscriptionRoot (5 subscription endpoints)
-   - `types.rs` - GraphQL type definitions and enums
+   - `root/query_root.rs` - QueryRoot resolvers
+   - `root/mutation_root.rs` - MutationRoot
+   - `subscriptions.rs` - SubscriptionRoot
+   - `types.rs` - Barrel re-export file; all types live in domain modules
    - `loaders.rs` - DataLoaders (ClubLoader, UserLoader, TournamentLoader)
-   - `tournament_clock.rs` - Clock type and resolvers
    - `scalars.rs` - Custom scalar types
+   - `error.rs` - GraphQL error helpers (`ResultExt` trait)
+   - `common/` - Shared types (Role, notifications), helpers (`get_club_id_for_tournament`)
+   - `domains/` - Domain-specific modules (see below)
 
-3. **State Management** (`crates/api/src/state.rs`):
+3. **Domain Modules** (`crates/api/src/gql/domains/`):
+   Each domain has its own directory with `types.rs`, `resolvers.rs`, and optionally `service.rs`:
+
+   | Domain | Files | Description |
+   |--------|-------|-------------|
+   | `auth/` | types, resolvers | OAuth login, JWT, client management |
+   | `clubs/` | types, resolvers | Club CRUD |
+   | `entries/` | types, resolvers | Buy-ins, rebuys, add-ons |
+   | `leaderboards/` | types, resolvers | Scoring and rankings |
+   | `registrations/` | types, resolvers, **service** | Player registration, check-in with seating |
+   | `results/` | types, resolvers, **service** | Final positions, payouts, deals |
+   | `seating/` | types, resolvers, **service** | Table assignments, rebalancing |
+   | `templates/` | types, resolvers | Blind structure and payout templates |
+   | `tournaments/` | types, `clock.rs` | Tournament CRUD, clock management |
+   | `users/` | types, resolvers | Player CRUD |
+
+   **Service files** extract complex business logic (transactions, multi-step mutations) out of resolvers. Services accept domain params, own the database transaction, and return infra Row types. Resolvers handle auth, ID parsing, `From` conversions, and event publishing.
+
+   **Type conversions**: Each domain's `types.rs` includes `From<Row>` impls (e.g., `From<TournamentRow> for Tournament`) to convert infra models into GraphQL types with `.into()`.
+
+4. **State Management** (`crates/api/src/state.rs`):
    ```rust
    pub struct AppState {
        pub db: PgPool,
@@ -59,23 +81,25 @@ Note: `crates/telemetry/` and `crates/types/` directories exist but are empty st
    }
    ```
 
-4. **Authentication & Authorization** (`crates/api/src/auth/`):
+5. **Authentication & Authorization** (`crates/api/src/auth/`):
    - `jwt.rs` - JWT token creation/verification (Claims: sub, email, iat, exp)
    - `oauth.rs` - External OAuth provider integration (Google)
    - `custom_oauth.rs` - Custom OAuth server (username/password login)
    - `password.rs` - bcrypt password hashing
-   - `permissions.rs` - Role-based access control (Admin, Manager, Player)
-   - Permission helpers: `require_role()`, `require_admin()`, `require_club_manager()`, `require_admin_if()`
+   - `config.rs` - Auth configuration
+   - `permissions.rs` - Role-based + club-scoped access control (Admin, Manager, Player)
+   - Permission helpers: `require_role()`, `require_admin()`, `require_club_manager()`, `require_manager_if()`
+   - Most mutations use `require_club_manager(ctx, club_id)` for club-scoped authorization
 
-5. **Background Services** (`crates/api/src/services/`):
+6. **Background Services** (`crates/api/src/services/`):
    - `clock_service.rs` - Checks every 5 seconds for tournament level advancement. Detects stale tournaments (24+ hours) every 5 minutes.
    - `notification_service.rs` - Sends "tournament starting soon" alerts.
 
-6. **Real-time Features**:
+7. **Real-time Features**:
    - GraphQL subscriptions over WebSocket
    - Uses Tokio broadcast channels (per-tournament, per-user, per-club) stored in static `Lazy<Arc<Mutex<HashMap>>>`
    - Publish functions: `publish_registration_event()`, `publish_seating_event()`, `publish_clock_update()`, `publish_user_notification()`
-   - 5 subscription endpoints: clock updates, registrations, seating changes (per-tournament and per-club), user notifications
+   - Subscription endpoints: clock updates, registrations, seating changes (per-tournament and per-club), user notifications
 
 ### Startup Flow (main.rs)
 
@@ -112,7 +136,7 @@ GET  /graphql                       GraphQL WebSocket subscriptions
 
 ### Migrations
 
-68 migration files in `./migrations/` (SQLx migration system). They run **automatically on startup** unless `SKIP_MIGRATIONS=true`.
+Migration files in `./migrations/` (SQLx migration system). They run **automatically on startup** unless `SKIP_MIGRATIONS=true`.
 
 - Custom ENUMs: `tournament_live_status`, `tournament_status`, `clock_status`
 - Triggers auto-create tournament clocks, structures, and payouts
@@ -185,8 +209,6 @@ TEST_DATABASE_URL="..." cargo test --package api --test tournament_tests
 TEST_DATABASE_URL="..." cargo test test_name --package api -- --nocapture
 ```
 
-**Test files:** `auth_tests`, `tournament_tests`, `tournament_clock_tests`, `tournament_entries_tests`, `tournament_results_tests`, `permission_tests`, `table_seating_tests`, `club_tests`, `club_tables_test`, `user_tests`, `system_tests`, `integration_tests`, `payouts_tests`, `notification_tests`
-
 **Test helpers** (`crates/api/tests/common/mod.rs`): `setup_test_db()`, `execute_graphql()`, `create_test_user()`, `create_test_club()`, `create_test_tournament()`, `create_club_manager()`, `create_test_club_table()`
 
 ### Database Management
@@ -235,10 +257,11 @@ The API is at `/graphql` (POST for queries/mutations, WebSocket for subscription
 // JWT claims injected by middleware into GraphQL context
 let claims = ctx.data::<Claims>()?;
 
-// Permission checks
-let user = require_role(ctx, Role::Manager).await?;
-let user = require_club_manager(ctx, club_id).await?;
-let user = require_admin_if(ctx, condition, "field_name").await?;
+// Permission checks (prefer club-scoped auth for most mutations)
+let user = require_club_manager(ctx, club_id).await?;  // Manager of specific club
+let user = require_admin(ctx).await?;                    // Admin only
+let user = require_role(ctx, Role::Manager).await?;      // Any manager (non-scoped)
+let user = require_manager_if(ctx, condition, "field_name").await?; // Conditional
 ```
 
 ### N+1 Prevention
@@ -260,7 +283,7 @@ SQLx verifies queries at compile time. For builds without a live database:
 
 ### Tournament Clock System
 
-Key files: `services/clock_service.rs`, `repos/tournament_clock.rs`, `gql/tournament_clock.rs`
+Key files: `services/clock_service.rs`, `repos/tournament_clock.rs`, `gql/domains/tournaments/clock.rs`
 
 The clock service runs every 5 seconds, advancing blind levels when `level_end_time` is reached. Stale tournaments (running 24+ hours) are auto-finished.
 
