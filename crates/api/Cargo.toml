@@ -60,6 +60,7 @@ reqwest = { version = "0.13.1", features = ["json"] }
 base64 = "0.22"
 rand = "0.10"
 bcrypt = "0.18"
+sha2 = "0.10"
 
 # HTTP client for OAuth
 url = "2.5"

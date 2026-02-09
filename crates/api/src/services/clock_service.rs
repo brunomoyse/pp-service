@@ -52,6 +52,11 @@ impl ClockService {
                 if let Err(e) = self.process_stale_tournaments().await {
                     error!("Error processing stale tournaments: {}", e);
                 }
+
+                // Clean up expired refresh tokens
+                if let Err(e) = infra::repos::refresh_tokens::delete_expired(&self.state.db).await {
+                    error!("Error cleaning up expired refresh tokens: {}", e);
+                }
             }
         }
     }

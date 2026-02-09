@@ -21,7 +21,7 @@ use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use crate::auth::Claims;
 use crate::error::AppError;
 use crate::middleware::jwt::jwt_middleware;
-use crate::routes::{auth, oauth_server, unified_auth};
+use crate::routes::{auth, oauth_server, token, unified_auth};
 use crate::state::AppState;
 
 /// Build the Axum router with health endpoint and GraphQL
@@ -59,6 +59,9 @@ where
         .route("/oauth/register", get(oauth_server::register_form))
         // Rate-limited auth routes
         .merge(rate_limited_routes)
+        // Refresh token and logout endpoints (no JWT auth required — uses cookie)
+        .route("/auth/refresh", post(token::refresh_handler))
+        .route("/auth/logout", post(token::logout_handler))
         // GraphQL endpoint with custom handler that includes JWT claims in context
         .route(
             "/graphql",
@@ -133,7 +136,12 @@ where
     // Execute the GraphQL request
     let gql_response = schema.execute(gql_request).await;
 
-    Ok(Json(gql_response).into_response())
+    let mut response = Json(&gql_response).into_response();
+    // Forward HTTP headers set by GraphQL resolvers (e.g. Set-Cookie for refresh tokens)
+    for (key, value) in gql_response.http_headers.iter() {
+        response.headers_mut().insert(key.clone(), value.clone());
+    }
+    Ok(response)
 }
 
 /// WebSocket handler for GraphQL subscriptions with JWT authentication.
