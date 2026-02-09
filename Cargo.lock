@@ -62,6 +62,7 @@ dependencies = [
  "reqwest 0.13.2",
  "serde",
  "serde_json",
+ "sha2",
  "sqlx",
  "testcontainers-modules",
  "thiserror 2.0.18",

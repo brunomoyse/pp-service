@@ -4,6 +4,7 @@ pub mod club_tables;
 pub mod clubs;
 pub mod payout_templates;
 pub mod player_deals;
+pub mod refresh_tokens;
 pub mod table_seat_assignments;
 pub mod tournament_clock;
 pub mod tournament_entries;

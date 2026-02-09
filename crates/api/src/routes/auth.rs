@@ -1,12 +1,13 @@
 use axum::{
     extract::{Path, Query, State},
+    http::header::SET_COOKIE,
     response::IntoResponse,
     Json,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::auth::{custom_oauth::CustomOAuthService, OAuthProvider};
+use crate::auth::{cookie::build_refresh_cookie, custom_oauth::CustomOAuthService, OAuthProvider};
 use crate::error::AppError;
 use crate::gql::types::User;
 use crate::state::AppState;
@@ -85,7 +86,27 @@ pub async fn callback(
         .jwt_service()
         .create_token(user_id, oauth_user.email.clone(), role_str)?;
 
-    Ok(Json(AuthResponse { token, user }))
+    // Create refresh token and set HttpOnly cookie
+    let auth_config = state.auth_config();
+    let raw_refresh = crate::auth::refresh::create_refresh_token(
+        &state.db,
+        user_id,
+        auth_config.refresh_token_expiration_days,
+    )
+    .await?;
+
+    let max_age_secs = auth_config.refresh_token_expiration_days * 24 * 60 * 60;
+    let cookie_value = build_refresh_cookie(&raw_refresh, max_age_secs, &auth_config.cookie_domain);
+
+    let mut response = Json(AuthResponse { token, user }).into_response();
+    response.headers_mut().insert(
+        SET_COOKIE,
+        cookie_value
+            .parse()
+            .map_err(|_| AppError::Internal("Failed to build cookie header".to_string()))?,
+    );
+
+    Ok(response)
 }
 
 async fn find_user_by_email(state: &AppState, email: &str) -> Result<Option<User>, AppError> {

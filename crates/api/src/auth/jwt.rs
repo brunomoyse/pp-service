@@ -16,9 +16,9 @@ pub struct Claims {
 }
 
 impl Claims {
-    pub fn new(user_id: Uuid, email: String, role: String, expiration_hours: u64) -> Self {
+    pub fn new(user_id: Uuid, email: String, role: String, expiration_minutes: u64) -> Self {
         let now = Utc::now();
-        let exp = now + Duration::hours(expiration_hours as i64);
+        let exp = now + Duration::minutes(expiration_minutes as i64);
 
         Self {
             sub: user_id.to_string(),
@@ -34,7 +34,7 @@ impl Claims {
 pub struct JwtService {
     encoding_key: EncodingKey,
     decoding_key: DecodingKey,
-    expiration_hours: u64,
+    expiration_minutes: u64,
 }
 
 impl JwtService {
@@ -43,7 +43,7 @@ impl JwtService {
         Self {
             encoding_key: EncodingKey::from_secret(secret),
             decoding_key: DecodingKey::from_secret(secret),
-            expiration_hours: config.jwt_expiration_hours,
+            expiration_minutes: config.access_token_expiration_minutes,
         }
     }
 
@@ -53,7 +53,7 @@ impl JwtService {
         email: String,
         role: String,
     ) -> Result<String, AppError> {
-        let claims = Claims::new(user_id, email, role, self.expiration_hours);
+        let claims = Claims::new(user_id, email, role, self.expiration_minutes);
         encode(&Header::default(), &claims, &self.encoding_key)
             .map_err(|e| AppError::Internal(e.to_string()))
     }

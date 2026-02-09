@@ -112,6 +112,24 @@ impl AuthMutation {
             .create_token(user_id, oauth_user.email.clone(), role_str)
             .gql_err("Database operation failed")?;
 
+        // Create refresh token and set HttpOnly cookie
+        let auth_config = state.auth_config();
+        let raw_refresh = crate::auth::refresh::create_refresh_token(
+            &state.db,
+            user_id,
+            auth_config.refresh_token_expiration_days,
+        )
+        .await
+        .gql_err("Failed to create refresh token")?;
+
+        let max_age_secs = auth_config.refresh_token_expiration_days * 24 * 60 * 60;
+        let cookie_value = crate::auth::cookie::build_refresh_cookie(
+            &raw_refresh,
+            max_age_secs,
+            &auth_config.cookie_domain,
+        );
+        ctx.insert_http_header("Set-Cookie", cookie_value);
+
         Ok(AuthPayload { token, user })
     }
 
@@ -275,6 +293,24 @@ impl AuthMutation {
             is_active: user_row.is_active,
             role,
         };
+
+        // Create refresh token and set HttpOnly cookie
+        let auth_config = state.auth_config();
+        let raw_refresh = crate::auth::refresh::create_refresh_token(
+            &state.db,
+            user_row.id,
+            auth_config.refresh_token_expiration_days,
+        )
+        .await
+        .gql_err("Failed to create refresh token")?;
+
+        let max_age_secs = auth_config.refresh_token_expiration_days * 24 * 60 * 60;
+        let cookie_value = crate::auth::cookie::build_refresh_cookie(
+            &raw_refresh,
+            max_age_secs,
+            &auth_config.cookie_domain,
+        );
+        ctx.insert_http_header("Set-Cookie", cookie_value);
 
         Ok(AuthPayload { token, user })
     }
