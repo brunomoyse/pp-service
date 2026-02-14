@@ -143,6 +143,37 @@ pub async fn list<'e>(
     .await
 }
 
+pub async fn count<'e>(
+    executor: impl PgExecutor<'e>,
+    filter: TournamentFilter,
+) -> SqlxResult<i64> {
+    sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM tournaments
+        WHERE ($1::uuid IS NULL OR club_id = $1)
+          AND ($2::timestamptz IS NULL OR start_time >= $2)
+          AND ($3::timestamptz IS NULL OR start_time <= $3)
+          AND (
+            $4::text IS NULL
+            OR ($4 = 'upcoming' AND start_time > NOW())
+            OR ($4 = 'ongoing' AND start_time <= NOW() AND (end_time IS NULL OR end_time > NOW()))
+            OR ($4 = 'ended' AND end_time IS NOT NULL AND end_time <= NOW())
+          )
+        "#,
+    )
+    .bind(filter.club_id)
+    .bind(filter.from)
+    .bind(filter.to)
+    .bind(filter.status.map(|s| match s {
+        TournamentStatus::Upcoming => "upcoming",
+        TournamentStatus::InProgress => "in_progress",
+        TournamentStatus::Completed => "completed",
+    }))
+    .fetch_one(executor)
+    .await
+}
+
 pub async fn update_live_status<'e>(
     executor: impl PgExecutor<'e>,
     id: Uuid,

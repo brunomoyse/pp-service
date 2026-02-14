@@ -1,10 +1,10 @@
 // Barrel re-export file: all types live in domain-specific modules.
 // Consumers continue to use `use crate::gql::types::X;` unchanged.
 
-// Common types (Role, notifications)
+// Common types (Role, notifications, pagination)
 pub use crate::gql::common::types::{
-    NotificationType, Role, UserNotification, TITLE_REGISTRATION_CONFIRMED,
-    TITLE_TOURNAMENT_STARTING,
+    NotificationType, PaginatedResponse, PaginationInput, Role, UserNotification,
+    TITLE_REGISTRATION_CONFIRMED, TITLE_TOURNAMENT_STARTING,
 };
 
 // Club types
@@ -55,9 +55,7 @@ pub use crate::gql::domains::results::types::{
 };
 
 // Leaderboard types
-pub use crate::gql::domains::leaderboards::types::{
-    LeaderboardEntry, LeaderboardPeriod, LeaderboardResponse,
-};
+pub use crate::gql::domains::leaderboards::types::{LeaderboardEntry, LeaderboardPeriod};
 
 // Template types
 pub use crate::gql::domains::templates::types::{BlindStructureLevel, BlindStructureTemplate};

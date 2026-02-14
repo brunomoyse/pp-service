@@ -66,6 +66,30 @@ pub async fn list(
     Ok(rows)
 }
 
+pub async fn count(pool: &PgPool, filter: UserFilter) -> Result<i64> {
+    let mut query = sqlx::QueryBuilder::new("SELECT COUNT(*) as count FROM users WHERE 1=1");
+
+    if let Some(search) = &filter.search {
+        let search_pattern = format!("%{}%", search.to_lowercase());
+        query.push(" AND (");
+        query.push("LOWER(username) LIKE ");
+        query.push_bind(search_pattern.clone());
+        query.push(" OR LOWER(first_name) LIKE ");
+        query.push_bind(search_pattern.clone());
+        query.push(" OR LOWER(last_name) LIKE ");
+        query.push_bind(search_pattern);
+        query.push(")");
+    }
+
+    if let Some(is_active) = filter.is_active {
+        query.push(" AND is_active = ");
+        query.push_bind(is_active);
+    }
+
+    let result: (i64,) = query.build_query_as().fetch_one(pool).await?;
+    Ok(result.0)
+}
+
 pub async fn get_by_id<'e>(executor: impl PgExecutor<'e>, id: Uuid) -> Result<Option<UserRow>> {
     let row = sqlx::query_as::<_, UserRow>(
         "SELECT id, email, username, first_name, last_name, phone, is_active, role, created_at, updated_at FROM users WHERE id = $1"

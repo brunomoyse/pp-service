@@ -5,7 +5,7 @@ use tokio::time::{interval, Interval};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::gql::subscriptions::publish_clock_update;
+use crate::gql::subscriptions::{cleanup_inactive_channels, publish_clock_update};
 use crate::gql::types::{ClockStatus, TournamentClock, TournamentStructure};
 use crate::AppState;
 use infra::repos::{
@@ -16,6 +16,8 @@ use infra::repos::{
 const STALE_CHECK_INTERVAL: u64 = 60;
 // Auto-finish tournaments that have been running for more than 24 hours
 const STALE_TOURNAMENT_HOURS: i32 = 24;
+// Remove subscription channels inactive for more than 2 hours
+const INACTIVE_CHANNEL_HOURS: i64 = 2;
 
 pub struct ClockService {
     state: AppState,
@@ -57,6 +59,9 @@ impl ClockService {
                 if let Err(e) = infra::repos::refresh_tokens::delete_expired(&self.state.db).await {
                     error!("Error cleaning up expired refresh tokens: {}", e);
                 }
+
+                // Clean up inactive subscription channels to prevent memory leaks
+                cleanup_inactive_channels(INACTIVE_CHANNEL_HOURS);
             }
         }
     }

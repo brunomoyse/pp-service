@@ -36,7 +36,7 @@ pub struct LeaderboardEntry {
     pub points: f64,         // Calculated leaderboard points
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum LeaderboardPeriod {
     AllTime,
     LastYear,
@@ -253,6 +253,7 @@ pub async fn get_leaderboard(
     pool: &PgPool,
     period: LeaderboardPeriod,
     limit: Option<i32>,
+    offset: Option<i32>,
     club_id: Option<Uuid>,
 ) -> Result<Vec<LeaderboardEntry>> {
     let (date_filter, _params_count) = match period {
@@ -280,10 +281,9 @@ pub async fn get_leaderboard(
         None => "".to_string(),
     };
 
-    let limit_clause = match limit {
-        Some(l) => format!("LIMIT {}", l.clamp(1, 500)),
-        None => "LIMIT 100".to_string(),
-    };
+    let limit_value = limit.unwrap_or(100).clamp(1, 500);
+    let offset_value = offset.unwrap_or(0).max(0);
+    let limit_clause = format!("LIMIT {} OFFSET {}", limit_value, offset_value);
 
     let query = format!(
         r#"
@@ -386,4 +386,58 @@ pub async fn get_leaderboard(
     }
 
     Ok(leaderboard)
+}
+
+/// Count total leaderboard entries for pagination
+pub async fn count_leaderboard(
+    pool: &PgPool,
+    period: LeaderboardPeriod,
+    club_id: Option<Uuid>,
+) -> Result<i64> {
+    let (date_filter, _params_count) = match period {
+        LeaderboardPeriod::AllTime => ("".to_string(), 0),
+        LeaderboardPeriod::LastYear => (
+            "AND t.start_time >= NOW() - INTERVAL '1 year'".to_string(),
+            0,
+        ),
+        LeaderboardPeriod::Last6Months => (
+            "AND t.start_time >= NOW() - INTERVAL '6 months'".to_string(),
+            0,
+        ),
+        LeaderboardPeriod::Last30Days => (
+            "AND t.start_time >= NOW() - INTERVAL '30 days'".to_string(),
+            0,
+        ),
+        LeaderboardPeriod::Last7Days => (
+            "AND t.start_time >= NOW() - INTERVAL '7 days'".to_string(),
+            0,
+        ),
+    };
+
+    let club_filter = match club_id {
+        Some(_) => "AND t.club_id = $1".to_string(),
+        None => "".to_string(),
+    };
+
+    let query = format!(
+        r#"
+        SELECT COUNT(DISTINCT u.id) as total
+        FROM users u
+        JOIN tournament_registrations reg ON u.id = reg.user_id
+        JOIN tournaments t ON reg.tournament_id = t.id
+        WHERE u.role = 'player' AND u.is_active = true
+            {} {}
+        "#,
+        date_filter, club_filter
+    );
+
+    let mut query_builder = sqlx::query_scalar::<_, i64>(&query);
+
+    if let Some(club_uuid) = club_id {
+        query_builder = query_builder.bind(club_uuid);
+    }
+
+    let count = query_builder.fetch_one(pool).await?;
+
+    Ok(count)
 }

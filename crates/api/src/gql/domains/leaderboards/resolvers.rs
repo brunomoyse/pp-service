@@ -1,10 +1,10 @@
 use async_graphql::{Context, Object, Result};
 use infra::repos::tournament_results;
 
-use crate::gql::types::{Role, User};
+use crate::gql::types::{PaginatedResponse, PaginationInput, Role, User};
 use crate::state::AppState;
 
-use super::types::{LeaderboardEntry, LeaderboardPeriod, LeaderboardResponse};
+use super::types::{LeaderboardEntry, LeaderboardPeriod};
 
 #[derive(Default)]
 pub struct LeaderboardQuery;
@@ -16,18 +16,34 @@ impl LeaderboardQuery {
         &self,
         ctx: &Context<'_>,
         period: Option<LeaderboardPeriod>,
-        limit: Option<i32>,
+        pagination: Option<PaginationInput>,
         club_id: Option<uuid::Uuid>,
-    ) -> Result<LeaderboardResponse> {
+    ) -> Result<PaginatedResponse<LeaderboardEntry>> {
         let state = ctx.data::<AppState>()?;
 
         let period = period.unwrap_or(LeaderboardPeriod::AllTime);
         let infra_period: infra::repos::tournament_results::LeaderboardPeriod = period.into();
 
-        let leaderboard_entries =
-            tournament_results::get_leaderboard(&state.db, infra_period, limit, club_id).await?;
+        let page_params = pagination.unwrap_or(PaginationInput {
+            limit: Some(100),
+            offset: Some(0),
+        });
+        let limit_offset = page_params.to_limit_offset();
 
-        // Convert to GraphQL types and add rank
+        // Fetch leaderboard and total count in parallel
+        let (leaderboard_entries, total_count) = tokio::try_join!(
+            tournament_results::get_leaderboard(
+                &state.db,
+                infra_period,
+                Some(limit_offset.limit as i32),
+                Some(limit_offset.offset as i32),
+                club_id
+            ),
+            tournament_results::count_leaderboard(&state.db, infra_period, club_id)
+        )?;
+
+        // Convert to GraphQL types and add rank based on offset
+        let offset = limit_offset.offset as i32;
         let entries: Vec<LeaderboardEntry> = leaderboard_entries
             .into_iter()
             .enumerate()
@@ -42,7 +58,7 @@ impl LeaderboardQuery {
                     is_active: entry.is_active,
                     role: Role::from(entry.role),
                 },
-                rank: (index + 1) as i32, // 1-based ranking
+                rank: offset + (index as i32) + 1, // 1-based ranking with offset
                 total_tournaments: entry.total_tournaments,
                 total_buy_ins: entry.total_buy_ins,
                 total_winnings: entry.total_winnings,
@@ -57,12 +73,15 @@ impl LeaderboardQuery {
             })
             .collect();
 
-        let total_players = entries.len() as i32;
+        let page_size = entries.len() as i32;
+        let has_next_page = (offset + page_size) < total_count as i32;
 
-        Ok(LeaderboardResponse {
-            entries,
-            total_players,
-            period,
+        Ok(PaginatedResponse {
+            items: entries,
+            total_count: total_count as i32,
+            page_size,
+            offset,
+            has_next_page,
         })
     }
 }

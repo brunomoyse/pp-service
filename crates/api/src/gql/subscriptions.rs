@@ -1,4 +1,5 @@
 use async_graphql::{Context, Result, Subscription};
+use chrono::{DateTime, Utc};
 use futures_util::Stream;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
@@ -19,6 +20,7 @@ struct TournamentChannels {
     registrations: broadcast::Sender<PlayerRegistrationEvent>,
     seating: broadcast::Sender<SeatingChangeEvent>,
     clock: broadcast::Sender<TournamentClock>,
+    last_activity: DateTime<Utc>,
 }
 
 impl TournamentChannels {
@@ -27,7 +29,31 @@ impl TournamentChannels {
             registrations: broadcast::channel(100).0,
             seating: broadcast::channel(100).0,
             clock: broadcast::channel(100).0,
+            last_activity: Utc::now(),
         }
+    }
+
+    fn update_activity(&mut self) {
+        self.last_activity = Utc::now();
+    }
+}
+
+/// Wrapper for broadcast sender with activity tracking
+struct ActivityTrackedSender<T: Clone> {
+    sender: broadcast::Sender<T>,
+    last_activity: DateTime<Utc>,
+}
+
+impl<T: Clone> ActivityTrackedSender<T> {
+    fn new(capacity: usize) -> Self {
+        Self {
+            sender: broadcast::channel(capacity).0,
+            last_activity: Utc::now(),
+        }
+    }
+
+    fn update_activity(&mut self) {
+        self.last_activity = Utc::now();
     }
 }
 
@@ -36,9 +62,9 @@ struct SubscriptionChannels {
     /// Per-tournament channels (registrations, seating, clock)
     tournaments: HashMap<Uuid, TournamentChannels>,
     /// Per-user notification channels
-    users: HashMap<Uuid, broadcast::Sender<UserNotification>>,
+    users: HashMap<Uuid, ActivityTrackedSender<UserNotification>>,
     /// Per-club seating channels (for managers watching all club tournaments)
-    clubs: HashMap<Uuid, broadcast::Sender<SeatingChangeEvent>>,
+    clubs: HashMap<Uuid, ActivityTrackedSender<SeatingChangeEvent>>,
 }
 
 impl SubscriptionChannels {
@@ -54,22 +80,63 @@ impl SubscriptionChannels {
         self.tournaments.remove(tournament_id);
     }
 
-    fn get_or_create_tournament(&mut self, tournament_id: Uuid) -> &TournamentChannels {
-        self.tournaments
+    fn get_or_create_tournament(&mut self, tournament_id: Uuid) -> &mut TournamentChannels {
+        let channels = self
+            .tournaments
             .entry(tournament_id)
-            .or_insert_with(TournamentChannels::new)
+            .or_insert_with(TournamentChannels::new);
+        channels.update_activity();
+        channels
     }
 
     fn get_or_create_user(&mut self, user_id: Uuid) -> &broadcast::Sender<UserNotification> {
-        self.users
+        let tracked = self
+            .users
             .entry(user_id)
-            .or_insert_with(|| broadcast::channel(100).0)
+            .or_insert_with(|| ActivityTrackedSender::new(100));
+        tracked.update_activity();
+        &tracked.sender
     }
 
     fn get_or_create_club(&mut self, club_id: Uuid) -> &broadcast::Sender<SeatingChangeEvent> {
-        self.clubs
+        let tracked = self
+            .clubs
             .entry(club_id)
-            .or_insert_with(|| broadcast::channel(100).0)
+            .or_insert_with(|| ActivityTrackedSender::new(100));
+        tracked.update_activity();
+        &tracked.sender
+    }
+
+    /// Remove inactive channels (no activity for more than the specified duration)
+    fn cleanup_inactive_channels(&mut self, inactive_duration_hours: i64) {
+        let cutoff_time = Utc::now() - chrono::Duration::hours(inactive_duration_hours);
+
+        // Clean up tournament channels
+        let initial_tournament_count = self.tournaments.len();
+        self.tournaments
+            .retain(|_, channels| channels.last_activity > cutoff_time);
+        let removed_tournaments = initial_tournament_count - self.tournaments.len();
+
+        // Clean up user channels
+        let initial_user_count = self.users.len();
+        self.users
+            .retain(|_, tracked| tracked.last_activity > cutoff_time);
+        let removed_users = initial_user_count - self.users.len();
+
+        // Clean up club channels
+        let initial_club_count = self.clubs.len();
+        self.clubs
+            .retain(|_, tracked| tracked.last_activity > cutoff_time);
+        let removed_clubs = initial_club_count - self.clubs.len();
+
+        if removed_tournaments > 0 || removed_users > 0 || removed_clubs > 0 {
+            tracing::info!(
+                "Cleaned up inactive channels: {} tournaments, {} users, {} clubs",
+                removed_tournaments,
+                removed_users,
+                removed_clubs
+            );
+        }
     }
 }
 
@@ -184,6 +251,7 @@ pub fn publish_registration_event(event: PlayerRegistrationEvent) {
 
     let mut channels = CHANNELS.lock();
     let tournament = channels.get_or_create_tournament(tournament_id);
+    // Activity is already updated by get_or_create_tournament
     let _ = tournament.registrations.send(event);
 }
 
@@ -200,11 +268,11 @@ pub fn publish_seating_event(event: SeatingChangeEvent) {
     };
 
     let mut channels = CHANNELS.lock();
-    // Send to tournament channel
+    // Send to tournament channel (activity is updated by get_or_create_tournament)
     let tournament = channels.get_or_create_tournament(tournament_id);
     let _ = tournament.seating.send(event.clone());
 
-    // Also send to club channel (for managers watching all club tournaments)
+    // Also send to club channel (activity is updated by get_or_create_club)
     let club_sender = channels.get_or_create_club(club_id);
     let _ = club_sender.send(event);
 }
@@ -213,6 +281,7 @@ pub fn publish_seating_event(event: SeatingChangeEvent) {
 pub fn publish_clock_update(tournament_id: Uuid, clock: TournamentClock) {
     let mut channels = CHANNELS.lock();
     let tournament = channels.get_or_create_tournament(tournament_id);
+    // Activity is already updated by get_or_create_tournament
     let _ = tournament.clock.send(clock);
 }
 
@@ -220,6 +289,13 @@ pub fn publish_clock_update(tournament_id: Uuid, clock: TournamentClock) {
 pub fn cleanup_tournament_channels(tournament_id: Uuid) {
     let mut channels = CHANNELS.lock();
     channels.remove_tournament(&tournament_id);
+}
+
+/// Cleanup inactive channels across all subscription types
+/// Removes channels that haven't had activity for the specified duration
+pub fn cleanup_inactive_channels(inactive_duration_hours: i64) {
+    let mut channels = CHANNELS.lock();
+    channels.cleanup_inactive_channels(inactive_duration_hours);
 }
 
 /// Publish a notification to a specific user's channel
