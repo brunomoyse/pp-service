@@ -10,7 +10,9 @@ use crate::error::AppError;
 use crate::state::AppState;
 
 /// JWT middleware that extracts and validates JWT tokens from Authorization header
-/// and adds claims to the request extensions for GraphQL context
+/// and adds claims to the request extensions for GraphQL context.
+/// If a token is present but invalid, logs the error but allows the request to proceed.
+/// Individual resolvers must enforce authentication as needed.
 pub async fn jwt_middleware(
     State(state): State<AppState>,
     mut request: Request,
@@ -27,16 +29,15 @@ pub async fn jwt_middleware(
                         // Add claims to request extensions so GraphQL can access them
                         request.extensions_mut().insert::<Claims>(claims);
                     }
-                    Err(_) => {
-                        return Err(AppError::Unauthorized(
-                            "Invalid or expired token".to_string(),
-                        ));
+                    Err(e) => {
+                        // Log the error but continue - let GraphQL resolvers enforce auth
+                        tracing::debug!("JWT validation failed: {}", e);
                     }
                 }
             }
         }
     }
 
-    // Continue to the next middleware/handler
+    // Continue to the next middleware/handler (with or without claims)
     Ok(next.run(request).await)
 }
