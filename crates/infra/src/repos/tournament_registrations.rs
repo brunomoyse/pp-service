@@ -87,6 +87,47 @@ pub async fn list_by_tournament<'e>(
     Ok(rows)
 }
 
+pub async fn list_by_tournament_paginated<'e>(
+    executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
+    page: crate::pagination::LimitOffset,
+) -> Result<Vec<TournamentRegistrationRow>> {
+    let rows = sqlx::query_as::<_, TournamentRegistrationRow>(
+        r#"
+        SELECT id, tournament_id, user_id, registration_time, status, notes, created_at, updated_at
+        FROM tournament_registrations
+        WHERE tournament_id = $1
+        ORDER BY registration_time ASC
+        LIMIT $2 OFFSET $3
+        "#,
+    )
+    .bind(tournament_id)
+    .bind(page.limit)
+    .bind(page.offset)
+    .fetch_all(executor)
+    .await?;
+
+    Ok(rows)
+}
+
+pub async fn count_by_tournament<'e>(
+    executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
+) -> Result<i64> {
+    let result = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM tournament_registrations
+        WHERE tournament_id = $1
+        "#,
+    )
+    .bind(tournament_id)
+    .fetch_one(executor)
+    .await?;
+
+    Ok(result)
+}
+
 pub async fn list_user_current<'e>(
     executor: impl PgExecutor<'e>,
     user_id: Uuid,

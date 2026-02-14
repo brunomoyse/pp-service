@@ -11,9 +11,10 @@ use crate::gql::subscriptions::{
 };
 use crate::gql::types::{
     AssignmentStrategy, CheckInPlayerInput, CheckInResponse, NotificationType,
-    PlayerRegistrationEvent, RegisterForTournamentInput, RegistrationEventType, SeatAssignment,
-    SeatingChangeEvent, SeatingEventType, TournamentPlayer, TournamentRegistration, User,
-    UserNotification, TITLE_REGISTRATION_CONFIRMED,
+    PaginatedResponse, PaginationInput, PlayerRegistrationEvent, RegisterForTournamentInput,
+    RegistrationEventType, SeatAssignment, SeatingChangeEvent, SeatingEventType,
+    TournamentPlayer, TournamentRegistration, User, UserNotification,
+    TITLE_REGISTRATION_CONFIRMED,
 };
 use crate::state::AppState;
 use infra::repos::{
@@ -30,7 +31,8 @@ impl RegistrationQuery {
         &self,
         ctx: &Context<'_>,
         tournament_id: Uuid,
-    ) -> Result<Vec<TournamentPlayer>> {
+        pagination: Option<PaginationInput>,
+    ) -> Result<PaginatedResponse<TournamentPlayer>> {
         use crate::auth::Claims;
 
         let _claims = ctx
@@ -39,9 +41,21 @@ impl RegistrationQuery {
 
         let state = ctx.data::<AppState>()?;
 
-        // Fetch all registrations for the tournament
-        let registrations =
-            tournament_registrations::list_by_tournament(&state.db, tournament_id).await?;
+        let page_params = pagination.unwrap_or(PaginationInput {
+            limit: Some(50),
+            offset: Some(0),
+        });
+        let limit_offset = page_params.to_limit_offset();
+
+        // Fetch registrations and total count in parallel
+        let (registrations, total_count) = tokio::try_join!(
+            tournament_registrations::list_by_tournament_paginated(
+                &state.db,
+                tournament_id,
+                limit_offset
+            ),
+            tournament_registrations::count_by_tournament(&state.db, tournament_id)
+        )?;
 
         // Collect all user IDs and batch load them using DataLoader
         let user_ids: Vec<Uuid> = registrations.iter().map(|r| r.user_id).collect();
@@ -62,7 +76,17 @@ impl RegistrationQuery {
             }
         }
 
-        Ok(players)
+        let page_size = players.len() as i32;
+        let offset = limit_offset.offset as i32;
+        let has_next_page = (offset + page_size) < total_count as i32;
+
+        Ok(PaginatedResponse {
+            items: players,
+            total_count: total_count as i32,
+            page_size,
+            offset,
+            has_next_page,
+        })
     }
 
     async fn my_tournament_registrations(

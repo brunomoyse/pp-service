@@ -8,7 +8,7 @@ use crate::gql::domains::registrations::RegistrationQuery;
 use crate::gql::domains::results::ResultQuery;
 use crate::gql::domains::seating::SeatingQuery;
 use crate::gql::domains::templates::TemplateQuery;
-use crate::gql::domains::tournaments::TournamentClockQuery;
+use crate::gql::domains::tournaments::{TournamentClockQuery, TournamentQuery};
 use crate::gql::domains::users::UserQuery;
 
 #[derive(MergedObject, Default)]
@@ -22,5 +22,6 @@ pub struct QueryRoot(
     SeatingQuery,
     TemplateQuery,
     TournamentClockQuery,
+    TournamentQuery,
     UserQuery,
 );

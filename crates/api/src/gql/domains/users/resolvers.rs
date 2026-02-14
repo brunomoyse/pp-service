@@ -2,14 +2,11 @@ use async_graphql::{Context, Object, Result, ID};
 use uuid::Uuid;
 
 use crate::gql::error::ResultExt;
-use crate::gql::types::{Role, User};
+use crate::gql::types::{PaginatedResponse, PaginationInput, Role, User};
 use crate::state::AppState;
-use infra::{
-    pagination::LimitOffset,
-    repos::{
-        users,
-        users::{CreateUserData, UpdateUserData, UserFilter},
-    },
+use infra::repos::{
+    users,
+    users::{CreateUserData, UpdateUserData, UserFilter},
 };
 
 use super::types::{CreatePlayerInput, UpdatePlayerInput};
@@ -24,17 +21,35 @@ impl UserQuery {
         ctx: &Context<'_>,
         search: Option<String>,
         is_active: Option<bool>,
-        limit: Option<i64>,
-        offset: Option<i64>,
-    ) -> Result<Vec<User>> {
+        pagination: Option<PaginationInput>,
+    ) -> Result<PaginatedResponse<User>> {
         let state = ctx.data::<AppState>()?;
         let filter = UserFilter { search, is_active };
-        let page = Some(LimitOffset {
-            limit: limit.unwrap_or(50).clamp(1, 200),
-            offset: offset.unwrap_or(0).max(0),
+
+        let page_params = pagination.unwrap_or(PaginationInput {
+            limit: Some(50),
+            offset: Some(0),
         });
-        let rows = users::list(&state.db, filter, page).await?;
-        Ok(rows.into_iter().map(User::from).collect())
+        let limit_offset = page_params.to_limit_offset();
+
+        // Fetch users and total count in parallel
+        let (rows, total_count) = tokio::try_join!(
+            users::list(&state.db, filter.clone(), Some(limit_offset)),
+            users::count(&state.db, filter)
+        )?;
+
+        let items: Vec<User> = rows.into_iter().map(User::from).collect();
+        let page_size = items.len() as i32;
+        let offset = limit_offset.offset as i32;
+        let has_next_page = (offset + page_size) < total_count as i32;
+
+        Ok(PaginatedResponse {
+            items,
+            total_count: total_count as i32,
+            page_size,
+            offset,
+            has_next_page,
+        })
     }
 }
 
