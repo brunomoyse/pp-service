@@ -13,13 +13,14 @@ use crate::gql::types::{
     AssignmentStrategy, CancelRegistrationInput, CancelRegistrationResponse, CheckInPlayerInput,
     CheckInResponse, NotificationType, PaginatedResponse, PaginationInput, PlayerRegistrationEvent,
     RegisterForTournamentInput, RegistrationEventType, SeatAssignment, SeatingChangeEvent,
-    SeatingEventType, TournamentPlayer, TournamentRegistration, User, UserNotification,
-    TITLE_REGISTRATION_CONFIRMED, TITLE_WAITLISTED, TITLE_WAITLIST_PROMOTED,
+    SeatingEventType, SelfCheckInInput, SelfCheckInResponse, TournamentPlayer,
+    TournamentRegistration, User, UserNotification, TITLE_REGISTRATION_CONFIRMED, TITLE_WAITLISTED,
+    TITLE_WAITLIST_PROMOTED,
 };
 use crate::state::AppState;
 use infra::repos::{
-    tournament_registrations, tournament_registrations::CreateTournamentRegistration, tournaments,
-    users,
+    table_seat_assignments, tournament_registrations,
+    tournament_registrations::CreateTournamentRegistration, tournaments, users,
 };
 
 #[derive(Default)]
@@ -155,12 +156,26 @@ impl RegistrationMutation {
 
         // Lock the tournament row to prevent concurrent registrations from racing
         let tournament = sqlx::query_as::<_, infra::models::TournamentRow>(
-            "SELECT id, club_id, name, description, start_time, end_time, buy_in_cents, seat_cap, live_status, early_bird_bonus_chips, created_at, updated_at FROM tournaments WHERE id = $1 FOR UPDATE",
+            "SELECT id, club_id, name, description, start_time, end_time, buy_in_cents, seat_cap, live_status, early_bird_bonus_chips, late_registration_level, created_at, updated_at FROM tournaments WHERE id = $1 FOR UPDATE",
         )
         .bind(tournament_id)
         .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
+
+        // Only allow registration during REGISTRATION_OPEN or LATE_REGISTRATION
+        {
+            use infra::repos::tournaments::TournamentLiveStatus;
+            match tournament.live_status {
+                TournamentLiveStatus::RegistrationOpen
+                | TournamentLiveStatus::LateRegistration => { /* allowed */ }
+                _ => {
+                    return Err(async_graphql::Error::new(
+                        "Registration is not open for this tournament",
+                    ));
+                }
+            }
+        }
 
         // Determine status based on seat capacity
         let is_waitlisted = if let Some(seat_cap) = tournament.seat_cap {
@@ -274,11 +289,14 @@ impl RegistrationMutation {
         let authenticated_user_id =
             Uuid::parse_str(&claims.sub).gql_err("Invalid authenticated user ID")?;
 
-        // If cancelling someone else's registration, require club manager
-        if authenticated_user_id != user_id {
+        // Determine if the caller is a manager
+        let is_manager = if authenticated_user_id != user_id {
             let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
             require_club_manager(ctx, club_id).await?;
-        }
+            true
+        } else {
+            false
+        };
 
         // Get current registration
         let registration =
@@ -286,19 +304,41 @@ impl RegistrationMutation {
                 .await?
                 .ok_or_else(|| async_graphql::Error::new("Registration not found"))?;
 
-        // Only allow cancellation from registered or waitlisted status
-        if registration.status != "registered" && registration.status != "waitlisted" {
+        // Players can only cancel from registered or waitlisted status;
+        // managers can cancel any status (e.g. to fix mistakes)
+        if !is_manager
+            && registration.status != "registered"
+            && registration.status != "waitlisted"
+        {
             return Err(async_graphql::Error::new(format!(
                 "Cannot cancel registration with status: {}",
                 registration.status
             )));
         }
 
-        let was_confirmed = registration.status == "registered";
+        let was_confirmed = registration.status != "waitlisted";
+        let was_seated = registration.status == "seated";
+
+        // Use a transaction to ensure status update and seat clearing are atomic
+        let mut tx = state
+            .db
+            .begin()
+            .await
+            .gql_err("Failed to begin transaction")?;
 
         // Update status to cancelled
-        tournament_registrations::update_status(&state.db, tournament_id, user_id, "cancelled")
+        tournament_registrations::update_status(&mut *tx, tournament_id, user_id, "cancelled")
             .await?;
+
+        // If the player was seated, clear their seat assignment
+        if was_seated {
+            table_seat_assignments::unassign_current_seat(&mut *tx, tournament_id, user_id, None)
+                .await?;
+        }
+
+        tx.commit()
+            .await
+            .gql_err("Failed to commit transaction")?;
 
         // Get updated registration
         let updated_row =
@@ -376,6 +416,89 @@ impl RegistrationMutation {
         Ok(CancelRegistrationResponse {
             registration: updated_registration,
             promoted_player,
+        })
+    }
+
+    /// Self check-in: a player scans a tournament QR code and checks themselves in.
+    /// If not registered, registers first then checks in.
+    async fn self_check_in(
+        &self,
+        ctx: &Context<'_>,
+        input: SelfCheckInInput,
+    ) -> Result<SelfCheckInResponse> {
+        use crate::auth::Claims;
+
+        let state = ctx.data::<AppState>()?;
+
+        let claims = ctx
+            .data::<Claims>()
+            .map_err(|_| async_graphql::Error::new("Authentication required"))?;
+        let user_id = Uuid::parse_str(&claims.sub).gql_err("Invalid user ID")?;
+        let tournament_id =
+            Uuid::parse_str(input.tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+
+        let params = super::service::SelfCheckInParams {
+            tournament_id,
+            user_id,
+            auto_assign: true,
+            assignment_strategy: AssignmentStrategy::Balanced,
+        };
+
+        let result = super::service::self_check_in(&state.db, params)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        let seat_assignment: Option<SeatAssignment> =
+            result.seat_assignment.map(SeatAssignment::from);
+
+        // Publish registration event if newly registered
+        if result.was_registered {
+            if let Some(user_row) = users::get_by_id(&state.db, user_id).await? {
+                let user: User = user_row.into();
+                let registration: TournamentRegistration =
+                    result.updated_registration.clone().into();
+
+                let player = TournamentPlayer {
+                    registration: registration.clone(),
+                    user,
+                };
+
+                let event = PlayerRegistrationEvent {
+                    tournament_id: tournament_id.into(),
+                    player,
+                    event_type: RegistrationEventType::PlayerRegistered,
+                };
+                publish_registration_event(event);
+            }
+        }
+
+        // Publish seating event if auto-assigned
+        if let Some(ref assignment) = seat_assignment {
+            let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
+            let user_loader = ctx.data::<DataLoader<UserLoader>>()?;
+            if let Some(user_row) = user_loader
+                .load_one(user_id)
+                .await
+                .gql_err("Database operation failed")?
+            {
+                let event = SeatingChangeEvent {
+                    event_type: SeatingEventType::PlayerAssigned,
+                    tournament_id: tournament_id.into(),
+                    club_id: club_id.into(),
+                    affected_assignment: Some(assignment.clone()),
+                    affected_player: Some(user_row.into()),
+                    message: result.message.clone(),
+                    timestamp: chrono::Utc::now(),
+                };
+                publish_seating_event(event);
+            }
+        }
+
+        Ok(SelfCheckInResponse {
+            registration: result.updated_registration.into(),
+            seat_assignment,
+            message: result.message,
+            was_registered: result.was_registered,
         })
     }
 
