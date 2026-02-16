@@ -14,7 +14,7 @@ use crate::state::AppState;
 use infra::repos::{
     club_tables, table_seat_assignments, table_seat_assignments::CreateSeatAssignment,
     table_seat_assignments::SeatAssignmentFilter, table_seat_assignments::UpdateSeatAssignment,
-    tournaments, users,
+    tournament_registrations, tournaments, users,
 };
 
 #[derive(Default)]
@@ -310,9 +310,12 @@ impl SeatingMutation {
         let user_id = Uuid::parse_str(input.user_id.as_str()).gql_err("Invalid user ID")?;
         let manager_id = Uuid::parse_str(manager.id.as_str()).gql_err("Invalid manager ID")?;
 
-        // Check if seat is available
+        // Use a transaction to ensure seat assignment and status update are atomic
+        let mut tx = state.db.begin().await.gql_err("Failed to begin transaction")?;
+
+        // Check if seat is available (inside transaction for consistency)
         let is_available =
-            table_seat_assignments::is_seat_available(&state.db, club_table_id, input.seat_number)
+            table_seat_assignments::is_seat_available(&mut *tx, club_table_id, input.seat_number)
                 .await?;
         if !is_available {
             return Err(async_graphql::Error::new("Seat is already occupied"));
@@ -328,7 +331,13 @@ impl SeatingMutation {
             notes: input.notes,
         };
 
-        let assignment_row = table_seat_assignments::create(&state.db, create_data).await?;
+        let assignment_row = table_seat_assignments::create(&mut *tx, create_data).await?;
+
+        // Update registration status to seated
+        tournament_registrations::update_status(&mut *tx, tournament_id, user_id, "seated")
+            .await?;
+
+        tx.commit().await.gql_err("Failed to commit transaction")?;
 
         // Get player info for the event
         let player = users::get_by_id(&state.db, user_id).await?;
@@ -393,6 +402,10 @@ impl SeatingMutation {
             input.notes,
         )
         .await?;
+
+        // Re-confirm registration status is seated after move
+        tournament_registrations::update_status(&state.db, tournament_id, user_id, "seated")
+            .await?;
 
         // Get player info for the event
         let player = users::get_by_id(&state.db, user_id).await?;
@@ -547,6 +560,9 @@ impl SeatingMutation {
                 .await?;
 
         if let Some(assignment) = current_assignment {
+            // Use a transaction to ensure all elimination steps are atomic
+            let mut tx = state.db.begin().await.gql_err("Failed to begin transaction")?;
+
             // Update the assignment with elimination notes and unassign
             let update_data = UpdateSeatAssignment {
                 stack_size: Some(0), // Set stack to 0 to indicate elimination
@@ -555,8 +571,19 @@ impl SeatingMutation {
                     .or_else(|| Some("Player eliminated".to_string())),
             };
 
-            table_seat_assignments::update(&state.db, assignment.id, update_data).await?;
-            table_seat_assignments::unassign(&state.db, assignment.id, Some(manager_id)).await?;
+            table_seat_assignments::update(&mut *tx, assignment.id, update_data).await?;
+            table_seat_assignments::unassign(&mut *tx, assignment.id, Some(manager_id)).await?;
+
+            // Update registration status to busted
+            tournament_registrations::update_status(
+                &mut *tx,
+                tournament_uuid,
+                user_uuid,
+                "busted",
+            )
+            .await?;
+
+            tx.commit().await.gql_err("Failed to commit transaction")?;
 
             // Get player info for the event
             let player = users::get_by_id(&state.db, user_uuid).await?;
@@ -585,6 +612,44 @@ impl SeatingMutation {
                 timestamp: chrono::Utc::now(),
             };
             publish_seating_event(event);
+
+            // Auto-detect final table: check if remaining players fit on one table
+            let remaining =
+                table_seat_assignments::list_current_for_tournament(&state.db, tournament_uuid)
+                    .await?;
+            let tables =
+                club_tables::list_assigned_to_tournament(&state.db, tournament_uuid).await?;
+            let max_table_seats = tables.iter().map(|t| t.max_seats).max().unwrap_or(0);
+
+            if !remaining.is_empty() && remaining.len() <= max_table_seats as usize {
+                let tournament_row =
+                    tournaments::get_by_id(&state.db, tournament_uuid).await?;
+                if let Some(t) = tournament_row {
+                    use infra::repos::tournaments::TournamentLiveStatus;
+                    if matches!(
+                        t.live_status,
+                        TournamentLiveStatus::InProgress | TournamentLiveStatus::Break
+                    ) {
+                        tournaments::update_live_status(
+                            &state.db,
+                            tournament_uuid,
+                            TournamentLiveStatus::FinalTable,
+                        )
+                        .await?;
+
+                        let ft_event = SeatingChangeEvent {
+                            event_type: SeatingEventType::TournamentStatusChanged,
+                            tournament_id: tournament_uuid.into(),
+                            club_id: club_id.into(),
+                            affected_assignment: None,
+                            affected_player: None,
+                            message: "Final table reached".to_string(),
+                            timestamp: chrono::Utc::now(),
+                        };
+                        publish_seating_event(ft_event);
+                    }
+                }
+            }
 
             Ok(true)
         } else {
