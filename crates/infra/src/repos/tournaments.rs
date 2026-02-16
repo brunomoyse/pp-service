@@ -72,6 +72,7 @@ pub struct CreateTournamentData {
     pub buy_in_cents: i32,
     pub seat_cap: Option<i32>,
     pub early_bird_bonus_chips: Option<i32>,
+    pub late_registration_level: Option<i32>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -83,6 +84,7 @@ pub struct UpdateTournamentData {
     pub buy_in_cents: Option<i32>,
     pub seat_cap: Option<i32>,
     pub early_bird_bonus_chips: Option<i32>,
+    pub late_registration_level: Option<i32>,
 }
 
 pub async fn get_by_id<'e>(
@@ -93,7 +95,7 @@ pub async fn get_by_id<'e>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
                buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
-               created_at, updated_at
+               late_registration_level, created_at, updated_at
         FROM tournaments
         WHERE id = $1
         "#,
@@ -114,7 +116,7 @@ pub async fn list<'e>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
                buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
-               created_at, updated_at
+               late_registration_level, created_at, updated_at
         FROM tournaments
         WHERE ($1::uuid IS NULL OR club_id = $1)
           AND ($2::timestamptz IS NULL OR start_time >= $2)
@@ -184,7 +186,7 @@ pub async fn update_live_status<'e>(
         WHERE id = $1
         RETURNING id, club_id, name, description, start_time, end_time,
                  buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
-                 created_at, updated_at
+                 late_registration_level, created_at, updated_at
         "#,
     )
     .bind(id)
@@ -201,7 +203,7 @@ pub async fn list_by_live_status<'e>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
                buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
-               created_at, updated_at
+               late_registration_level, created_at, updated_at
         FROM tournaments
         WHERE live_status = $1
         ORDER BY start_time ASC
@@ -217,7 +219,7 @@ pub async fn list_live<'e>(executor: impl PgExecutor<'e>) -> SqlxResult<Vec<Tour
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
                buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
-               created_at, updated_at
+               late_registration_level, created_at, updated_at
         FROM tournaments
         WHERE live_status IN ('in_progress', 'break', 'final_table')
         ORDER BY start_time ASC
@@ -235,7 +237,7 @@ pub async fn list_starting_soon<'e>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
                buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
-               created_at, updated_at
+               late_registration_level, created_at, updated_at
         FROM tournaments
         WHERE live_status IN ('not_started', 'registration_open')
           AND start_time > NOW()
@@ -260,7 +262,7 @@ pub async fn get_by_ids<'e>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
                buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
-               created_at, updated_at
+               late_registration_level, created_at, updated_at
         FROM tournaments
         WHERE id = ANY($1::uuid[])
         "#,
@@ -277,11 +279,12 @@ pub async fn create<'e>(
     sqlx::query_as::<_, TournamentRow>(
         r#"
         INSERT INTO tournaments (club_id, name, description, start_time, end_time,
-                                 buy_in_cents, seat_cap, early_bird_bonus_chips)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                                 buy_in_cents, seat_cap, early_bird_bonus_chips,
+                                 late_registration_level)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING id, club_id, name, description, start_time, end_time,
                   buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
-                  created_at, updated_at
+                  late_registration_level, created_at, updated_at
         "#,
     )
     .bind(data.club_id)
@@ -292,6 +295,7 @@ pub async fn create<'e>(
     .bind(data.buy_in_cents)
     .bind(data.seat_cap)
     .bind(data.early_bird_bonus_chips)
+    .bind(data.late_registration_level)
     .fetch_one(executor)
     .await
 }
@@ -311,11 +315,12 @@ pub async fn update<'e>(
             buy_in_cents = COALESCE($6, buy_in_cents),
             seat_cap = COALESCE($7, seat_cap),
             early_bird_bonus_chips = COALESCE($8, early_bird_bonus_chips),
+            late_registration_level = COALESCE($9, late_registration_level),
             updated_at = NOW()
         WHERE id = $1 AND live_status != 'finished'
         RETURNING id, club_id, name, description, start_time, end_time,
                   buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
-                  created_at, updated_at
+                  late_registration_level, created_at, updated_at
         "#,
     )
     .bind(id)
@@ -326,6 +331,7 @@ pub async fn update<'e>(
     .bind(data.buy_in_cents)
     .bind(data.seat_cap)
     .bind(data.early_bird_bonus_chips)
+    .bind(data.late_registration_level)
     .fetch_optional(executor)
     .await
 }
@@ -338,7 +344,7 @@ pub async fn list_stale<'e>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
                buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
-               created_at, updated_at
+               late_registration_level, created_at, updated_at
         FROM tournaments
         WHERE live_status IN ('in_progress', 'late_registration', 'break', 'final_table')
           AND updated_at < NOW() - ($1 || ' hours')::INTERVAL
@@ -363,7 +369,7 @@ pub async fn auto_finish<'e>(
         WHERE id = $1 AND live_status != 'finished'
         RETURNING id, club_id, name, description, start_time, end_time,
                   buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
-                  created_at, updated_at
+                  late_registration_level, created_at, updated_at
         "#,
     )
     .bind(id)

@@ -82,6 +82,17 @@ impl ClockService {
                     {
                         publish_clock_update(tournament_id, clock);
                     }
+
+                    // Auto-close late registration if configured
+                    if let Err(e) = self
+                        .check_late_registration_close(tournament_id, clock_row.current_level)
+                        .await
+                    {
+                        warn!(
+                            "Failed to check late registration close for tournament {}: {}",
+                            tournament_id, e
+                        );
+                    }
                 }
                 Err(e) => {
                     warn!(
@@ -151,6 +162,46 @@ impl ClockService {
                     );
                 }
             }
+        }
+
+        Ok(())
+    }
+
+    /// Check if late registration should be auto-closed after a level advance
+    async fn check_late_registration_close(
+        &self,
+        tournament_id: Uuid,
+        new_level: i32,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        use infra::repos::tournaments::TournamentLiveStatus;
+
+        let tournament = tournaments::get_by_id(&self.state.db, tournament_id)
+            .await?
+            .ok_or("Tournament not found")?;
+
+        // Only act if the tournament is in LateRegistration
+        if tournament.live_status != TournamentLiveStatus::LateRegistration {
+            return Ok(());
+        }
+
+        // Only act if late_registration_level is configured
+        let late_reg_level = match tournament.late_registration_level {
+            Some(level) => level,
+            None => return Ok(()),
+        };
+
+        // If we've passed the configured level, transition to InProgress
+        if new_level > late_reg_level {
+            info!(
+                "Auto-closing late registration for tournament {} (level {} > configured {})",
+                tournament_id, new_level, late_reg_level
+            );
+            tournaments::update_live_status(
+                &self.state.db,
+                tournament_id,
+                TournamentLiveStatus::InProgress,
+            )
+            .await?;
         }
 
         Ok(())
