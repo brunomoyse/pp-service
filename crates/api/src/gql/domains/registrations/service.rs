@@ -302,8 +302,8 @@ pub async fn self_check_in(
         None => {
             // Not registered - only allow new registrations during REGISTRATION_OPEN or LATE_REGISTRATION
             match tournament.live_status {
-                TournamentLiveStatus::RegistrationOpen
-                | TournamentLiveStatus::LateRegistration => { /* allowed */ }
+                TournamentLiveStatus::RegistrationOpen | TournamentLiveStatus::LateRegistration => { /* allowed */
+                }
                 _ => {
                     tx.commit().await?;
                     return Err("Registration is not open for this tournament".into());
