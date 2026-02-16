@@ -6,7 +6,9 @@ use crate::auth::permissions::require_club_manager;
 use crate::gql::error::ResultExt;
 use crate::gql::types::{PaginatedResponse, PaginationInput, Tournament, TournamentStatus};
 use crate::state::AppState;
-use infra::repos::tournaments::{self, CreateTournamentData, TournamentFilter, UpdateTournamentData};
+use infra::repos::tournaments::{
+    self, CreateTournamentData, TournamentFilter, UpdateTournamentData,
+};
 
 use super::types::{CreateTournamentInput, UpdateTournamentInput, UpdateTournamentStatusInput};
 
@@ -109,17 +111,15 @@ impl TournamentMutation {
 
         // Handle structure if provided
         if let Some(template_id) = input.template_id {
-            let template_uuid = Uuid::parse_str(template_id.as_str())
-                .gql_err("Invalid template ID")?;
+            let template_uuid =
+                Uuid::parse_str(template_id.as_str()).gql_err("Invalid template ID")?;
 
             // Fetch template
-            let template = infra::repos::blind_structure_templates::get_by_id(
-                &state.db,
-                template_uuid,
-            )
-            .await
-            .gql_err("Failed to fetch template")?
-            .ok_or_else(|| async_graphql::Error::new("Template not found"))?;
+            let template =
+                infra::repos::blind_structure_templates::get_by_id(&state.db, template_uuid)
+                    .await
+                    .gql_err("Failed to fetch template")?
+                    .ok_or_else(|| async_graphql::Error::new("Template not found"))?;
 
             // Deserialize levels from JSON
             let levels: Vec<crate::gql::domains::templates::types::BlindStructureLevel> =
@@ -177,8 +177,7 @@ impl TournamentMutation {
         input: UpdateTournamentInput,
     ) -> Result<Tournament> {
         let state = ctx.data::<AppState>()?;
-        let tournament_id = Uuid::parse_str(input.id.as_str())
-            .gql_err("Invalid tournament ID")?;
+        let tournament_id = Uuid::parse_str(input.id.as_str()).gql_err("Invalid tournament ID")?;
 
         // Get tournament to check club_id
         let existing = tournaments::get_by_id(&state.db, tournament_id)
@@ -207,17 +206,15 @@ impl TournamentMutation {
 
         // Handle structure updates if provided
         if let Some(template_id) = input.template_id {
-            let template_uuid = Uuid::parse_str(template_id.as_str())
-                .gql_err("Invalid template ID")?;
+            let template_uuid =
+                Uuid::parse_str(template_id.as_str()).gql_err("Invalid template ID")?;
 
             // Fetch template
-            let template = infra::repos::blind_structure_templates::get_by_id(
-                &state.db,
-                template_uuid,
-            )
-            .await
-            .gql_err("Failed to fetch template")?
-            .ok_or_else(|| async_graphql::Error::new("Template not found"))?;
+            let template =
+                infra::repos::blind_structure_templates::get_by_id(&state.db, template_uuid)
+                    .await
+                    .gql_err("Failed to fetch template")?
+                    .ok_or_else(|| async_graphql::Error::new("Template not found"))?;
 
             // Deserialize levels from JSON
             let levels: Vec<crate::gql::domains::templates::types::BlindStructureLevel> =
@@ -228,15 +225,17 @@ impl TournamentMutation {
             let structure_levels: Vec<infra::repos::tournament_clock::TournamentStructureLevel> =
                 levels
                     .into_iter()
-                    .map(|level| infra::repos::tournament_clock::TournamentStructureLevel {
-                        level_number: level.level_number,
-                        small_blind: level.small_blind,
-                        big_blind: level.big_blind,
-                        ante: level.ante,
-                        duration_minutes: level.duration_minutes,
-                        is_break: level.is_break,
-                        break_duration_minutes: level.break_duration_minutes,
-                    })
+                    .map(
+                        |level| infra::repos::tournament_clock::TournamentStructureLevel {
+                            level_number: level.level_number,
+                            small_blind: level.small_blind,
+                            big_blind: level.big_blind,
+                            ante: level.ante,
+                            duration_minutes: level.duration_minutes,
+                            is_break: level.is_break,
+                            break_duration_minutes: level.break_duration_minutes,
+                        },
+                    )
                     .collect();
 
             // Replace existing structure
@@ -252,15 +251,17 @@ impl TournamentMutation {
             let levels: Vec<infra::repos::tournament_clock::TournamentStructureLevel> =
                 custom_structure
                     .into_iter()
-                    .map(|level_input| infra::repos::tournament_clock::TournamentStructureLevel {
-                        level_number: level_input.level_number,
-                        small_blind: level_input.small_blind,
-                        big_blind: level_input.big_blind,
-                        ante: level_input.ante,
-                        duration_minutes: level_input.duration_minutes,
-                        is_break: level_input.is_break,
-                        break_duration_minutes: level_input.break_duration_minutes,
-                    })
+                    .map(
+                        |level_input| infra::repos::tournament_clock::TournamentStructureLevel {
+                            level_number: level_input.level_number,
+                            small_blind: level_input.small_blind,
+                            big_blind: level_input.big_blind,
+                            ante: level_input.ante,
+                            duration_minutes: level_input.duration_minutes,
+                            is_break: level_input.is_break,
+                            break_duration_minutes: level_input.break_duration_minutes,
+                        },
+                    )
                     .collect();
 
             infra::repos::tournament_clock::replace_structures(&state.db, tournament_id, levels)
@@ -278,8 +279,8 @@ impl TournamentMutation {
         input: UpdateTournamentStatusInput,
     ) -> Result<Tournament> {
         let state = ctx.data::<AppState>()?;
-        let tournament_id = Uuid::parse_str(input.tournament_id.as_str())
-            .gql_err("Invalid tournament ID")?;
+        let tournament_id =
+            Uuid::parse_str(input.tournament_id.as_str()).gql_err("Invalid tournament ID")?;
 
         // Get tournament to check club_id
         let existing = tournaments::get_by_id(&state.db, tournament_id)

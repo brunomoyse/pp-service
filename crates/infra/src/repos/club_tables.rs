@@ -199,7 +199,7 @@ pub async fn list_assigned_to_tournament<'e>(
         INNER JOIN tournament_table_assignments tta ON ct.id = tta.club_table_id
         WHERE tta.tournament_id = $1 AND tta.is_active = true
         ORDER BY ct.table_number ASC
-        "#
+        "#,
     )
     .bind(tournament_id)
     .fetch_all(executor)

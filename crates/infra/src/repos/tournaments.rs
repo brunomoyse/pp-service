@@ -143,10 +143,7 @@ pub async fn list<'e>(
     .await
 }
 
-pub async fn count<'e>(
-    executor: impl PgExecutor<'e>,
-    filter: TournamentFilter,
-) -> SqlxResult<i64> {
+pub async fn count<'e>(executor: impl PgExecutor<'e>, filter: TournamentFilter) -> SqlxResult<i64> {
     sqlx::query_scalar::<_, i64>(
         r#"
         SELECT COUNT(*)

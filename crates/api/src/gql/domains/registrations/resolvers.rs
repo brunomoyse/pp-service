@@ -11,10 +11,10 @@ use crate::gql::subscriptions::{
 };
 use crate::gql::types::{
     AssignmentStrategy, CancelRegistrationInput, CancelRegistrationResponse, CheckInPlayerInput,
-    CheckInResponse, NotificationType, PaginatedResponse, PaginationInput,
-    PlayerRegistrationEvent, RegisterForTournamentInput, RegistrationEventType, SeatAssignment,
-    SeatingChangeEvent, SeatingEventType, TournamentPlayer, TournamentRegistration, User,
-    UserNotification, TITLE_REGISTRATION_CONFIRMED, TITLE_WAITLISTED, TITLE_WAITLIST_PROMOTED,
+    CheckInResponse, NotificationType, PaginatedResponse, PaginationInput, PlayerRegistrationEvent,
+    RegisterForTournamentInput, RegistrationEventType, SeatAssignment, SeatingChangeEvent,
+    SeatingEventType, TournamentPlayer, TournamentRegistration, User, UserNotification,
+    TITLE_REGISTRATION_CONFIRMED, TITLE_WAITLISTED, TITLE_WAITLIST_PROMOTED,
 };
 use crate::state::AppState;
 use infra::repos::{
@@ -147,9 +147,7 @@ impl RegistrationMutation {
             Some(target_user_id) => {
                 Uuid::parse_str(target_user_id.as_str()).gql_err("Invalid target user ID")?
             }
-            None => {
-                Uuid::parse_str(authenticated_user.id.as_str()).gql_err("Invalid user ID")?
-            }
+            None => Uuid::parse_str(authenticated_user.id.as_str()).gql_err("Invalid user ID")?,
         };
 
         // Use a transaction with row-level locking to prevent race conditions
@@ -166,11 +164,9 @@ impl RegistrationMutation {
 
         // Determine status based on seat capacity
         let is_waitlisted = if let Some(seat_cap) = tournament.seat_cap {
-            let confirmed_count = tournament_registrations::count_confirmed_by_tournament(
-                &mut *tx,
-                tournament_id,
-            )
-            .await?;
+            let confirmed_count =
+                tournament_registrations::count_confirmed_by_tournament(&mut *tx, tournament_id)
+                    .await?;
             confirmed_count >= seat_cap as i64
         } else {
             false
@@ -222,14 +218,11 @@ impl RegistrationMutation {
         // Publish notification
         if is_waitlisted {
             // Get waitlist position for the notification
-            let position = tournament_registrations::get_waitlist_position(
-                &state.db,
-                tournament_id,
-                user_id,
-            )
-            .await
-            .unwrap_or(None)
-            .unwrap_or(0);
+            let position =
+                tournament_registrations::get_waitlist_position(&state.db, tournament_id, user_id)
+                    .await
+                    .unwrap_or(None)
+                    .unwrap_or(0);
 
             let notification = UserNotification {
                 id: ID::from(Uuid::new_v4().to_string()),
@@ -272,8 +265,7 @@ impl RegistrationMutation {
 
         let tournament_id =
             Uuid::parse_str(input.tournament_id.as_str()).gql_err("Invalid tournament ID")?;
-        let user_id =
-            Uuid::parse_str(input.user_id.as_str()).gql_err("Invalid user ID")?;
+        let user_id = Uuid::parse_str(input.user_id.as_str()).gql_err("Invalid user ID")?;
 
         // Get the current user's claims
         let claims = ctx
@@ -289,13 +281,10 @@ impl RegistrationMutation {
         }
 
         // Get current registration
-        let registration = tournament_registrations::get_by_tournament_and_user(
-            &state.db,
-            tournament_id,
-            user_id,
-        )
-        .await?
-        .ok_or_else(|| async_graphql::Error::new("Registration not found"))?;
+        let registration =
+            tournament_registrations::get_by_tournament_and_user(&state.db, tournament_id, user_id)
+                .await?
+                .ok_or_else(|| async_graphql::Error::new("Registration not found"))?;
 
         // Only allow cancellation from registered or waitlisted status
         if registration.status != "registered" && registration.status != "waitlisted" {
@@ -312,13 +301,10 @@ impl RegistrationMutation {
             .await?;
 
         // Get updated registration
-        let updated_row = tournament_registrations::get_by_tournament_and_user(
-            &state.db,
-            tournament_id,
-            user_id,
-        )
-        .await?
-        .ok_or_else(|| async_graphql::Error::new("Failed to get updated registration"))?;
+        let updated_row =
+            tournament_registrations::get_by_tournament_and_user(&state.db, tournament_id, user_id)
+                .await?
+                .ok_or_else(|| async_graphql::Error::new("Failed to get updated registration"))?;
 
         let updated_registration: TournamentRegistration = updated_row.into();
 
