@@ -5,7 +5,9 @@ use crate::state::AppState;
 use infra::repos::blind_structure_templates;
 use infra::repos::payout_templates;
 
-use super::types::{BlindStructureLevel, BlindStructureTemplate, PayoutStructureEntry, PayoutTemplate};
+use super::types::{
+    BlindStructureLevel, BlindStructureTemplate, PayoutStructureEntry, PayoutTemplate,
+};
 
 #[derive(Default)]
 pub struct TemplateQuery;

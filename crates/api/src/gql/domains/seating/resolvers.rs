@@ -190,8 +190,13 @@ impl SeatingMutation {
         }
 
         // Assign the table to the tournament
-        let _assignment =
-            club_tables::assign_to_tournament(&state.db, tournament_id, club_table_id, input.max_seats).await?;
+        let _assignment = club_tables::assign_to_tournament(
+            &state.db,
+            tournament_id,
+            club_table_id,
+            input.max_seats,
+        )
+        .await?;
 
         // Publish seating change event
         let event = SeatingChangeEvent {

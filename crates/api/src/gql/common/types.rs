@@ -30,8 +30,14 @@ impl PaginationInput {
 #[derive(SimpleObject, Debug, Clone)]
 #[graphql(concrete(name = "PaginatedUsers", params(crate::gql::types::User)))]
 #[graphql(concrete(name = "PaginatedTournaments", params(crate::gql::types::Tournament)))]
-#[graphql(concrete(name = "PaginatedTournamentPlayers", params(crate::gql::types::TournamentPlayer)))]
-#[graphql(concrete(name = "PaginatedLeaderboard", params(crate::gql::types::LeaderboardEntry)))]
+#[graphql(concrete(
+    name = "PaginatedTournamentPlayers",
+    params(crate::gql::types::TournamentPlayer)
+))]
+#[graphql(concrete(
+    name = "PaginatedLeaderboard",
+    params(crate::gql::types::LeaderboardEntry)
+))]
 pub struct PaginatedResponse<T: async_graphql::OutputType> {
     /// List of items for the current page
     pub items: Vec<T>,
