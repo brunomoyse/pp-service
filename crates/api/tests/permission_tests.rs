@@ -40,12 +40,11 @@ async fn test_role_based_permissions() {
         !response.errors.is_empty(),
         "Player should not have manager permissions"
     );
-    assert!(response.errors[0]
-        .message
-        .contains("Manager privileges required"));
-    assert!(response.errors[0]
-        .message
-        .contains("Your current role is Player"));
+    assert!(
+        response.errors[0].message.contains("Access denied"),
+        "Expected access denied error, got: '{}'",
+        response.errors[0].message
+    );
 
     // Manager should be able to advance tournament level (after creating clock and structures)
     let (manager_id, manager_claims) =
@@ -98,9 +97,7 @@ async fn test_role_based_permissions() {
     // This might fail due to missing tournament structures, but the authorization should pass
     if !response.errors.is_empty() {
         // Should not be an authorization error
-        assert!(!response.errors[0]
-            .message
-            .contains("Manager privileges required"));
+        assert!(!response.errors[0].message.contains("Access denied"));
     }
 }
 
@@ -115,16 +112,19 @@ async fn test_admin_vs_manager_permissions() {
 
     // Test users query - admin should have access
     let users_query = r#"
-        query GetUsers($limit: Int) {
-            users(limit: $limit) {
-                id
-                email
+        query GetUsers($pagination: PaginationInput) {
+            users(pagination: $pagination) {
+                items {
+                    id
+                    email
+                }
+                totalCount
             }
         }
     "#;
 
     let variables = Variables::from_json(json!({
-        "limit": 5
+        "pagination": { "limit": 5, "offset": 0 }
     }));
 
     // Admin should be able to access users
@@ -198,8 +198,6 @@ async fn test_club_manager_restrictions() {
         response_b.errors[0]
             .message
             .contains("not authorized to manage this club")
-            || response_b.errors[0]
-                .message
-                .contains("Manager privileges required")
+            || response_b.errors[0].message.contains("Access denied")
     );
 }

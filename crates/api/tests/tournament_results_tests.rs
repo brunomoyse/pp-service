@@ -158,9 +158,9 @@ async fn test_leaderboard_query() {
 
     // Query leaderboard
     let query = r#"
-        query GetLeaderboard($clubId: ID, $period: LeaderboardPeriod, $limit: Int) {
-            leaderboard(clubId: $clubId, period: $period, limit: $limit) {
-                entries {
+        query GetLeaderboard($clubId: ID, $period: LeaderboardPeriod, $pagination: PaginationInput) {
+            leaderboard(clubId: $clubId, period: $period, pagination: $pagination) {
+                items {
                     user {
                         id
                         email
@@ -170,8 +170,7 @@ async fn test_leaderboard_query() {
                     totalTournaments
                     firstPlaces
                 }
-                totalPlayers
-                period
+                totalCount
             }
         }
     "#;
@@ -179,7 +178,7 @@ async fn test_leaderboard_query() {
     let variables = Variables::from_json(json!({
         "clubId": club_id.to_string(),
         "period": "LAST_30_DAYS",
-        "limit": 10
+        "pagination": { "limit": 10, "offset": 0 }
     }));
 
     let response = execute_graphql(&schema, query, Some(variables), None).await;
@@ -194,14 +193,7 @@ async fn test_leaderboard_query() {
     let leaderboard = &data["leaderboard"];
 
     // Leaderboard response structure should be valid
-    assert!(
-        leaderboard["entries"].is_array(),
-        "Entries should be an array"
-    );
-    assert!(
-        leaderboard["period"].is_string(),
-        "Period should be present"
-    );
+    assert!(leaderboard["items"].is_array(), "Items should be an array");
 }
 
 #[tokio::test]

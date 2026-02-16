@@ -371,10 +371,8 @@ async fn test_start_clock_unauthorized() {
         "Player should not be able to start clock"
     );
     assert!(
-        response.errors[0]
-            .message
-            .contains("Manager privileges required"),
-        "Expected manager privileges error, got: '{}'",
+        response.errors[0].message.contains("Access denied"),
+        "Expected access denied error, got: '{}'",
         response.errors[0].message
     );
 }

@@ -46,6 +46,12 @@ fn get_db_url() -> &'static str {
 }
 
 pub async fn setup_test_db() -> AppState {
+    // Load .env if present (local dev), then set a fallback for CI
+    dotenvy::dotenv().ok();
+    if std::env::var("JWT_SECRET").is_err() {
+        std::env::set_var("JWT_SECRET", "test-secret-for-ci-only");
+    }
+
     // Each test gets its own pool connected to the shared container.
     // We don't share the pool across tests because each #[tokio::test]
     // creates a separate runtime, and SQLx pool background tasks are

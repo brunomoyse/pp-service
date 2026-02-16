@@ -328,7 +328,5 @@ async fn test_tournament_clock_unauthorized() {
         !response.errors.is_empty(),
         "Player should not be able to create tournament clock"
     );
-    assert!(response.errors[0]
-        .message
-        .contains("Manager privileges required"));
+    assert!(response.errors[0].message.contains("Access denied"));
 }

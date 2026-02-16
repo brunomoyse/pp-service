@@ -301,10 +301,8 @@ async fn test_check_in_unauthorized() {
         "Player should not be able to check in others"
     );
     assert!(
-        response.errors[0]
-            .message
-            .contains("Manager privileges required"),
-        "Expected manager privileges error, got: '{}'",
+        response.errors[0].message.contains("Access denied"),
+        "Expected access denied error, got: '{}'",
         response.errors[0].message
     );
 }

@@ -167,10 +167,8 @@ async fn test_eliminate_player_unauthorized() {
         "Player should not be able to eliminate"
     );
     assert!(
-        response.errors[0]
-            .message
-            .contains("Manager privileges required"),
-        "Expected manager privileges error, got: '{}'",
+        response.errors[0].message.contains("Access denied"),
+        "Expected access denied error, got: '{}'",
         response.errors[0].message
     );
 }
