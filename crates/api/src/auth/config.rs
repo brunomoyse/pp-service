@@ -7,6 +7,7 @@ pub struct AuthConfig {
     pub access_token_expiration_minutes: u64,
     pub refresh_token_expiration_days: u64,
     pub cookie_domain: Option<String>,
+    pub cookie_secure: bool,
     pub google_client_id: String,
     pub google_client_secret: String,
     pub redirect_base_url: String,
@@ -25,6 +26,10 @@ impl AuthConfig {
                 .parse()
                 .unwrap_or(7),
             cookie_domain: env::var("COOKIE_DOMAIN").ok(),
+            cookie_secure: env::var("COOKIE_SECURE")
+                .unwrap_or_else(|_| "true".to_string())
+                .parse()
+                .unwrap_or(true),
             google_client_id: env::var("GOOGLE_CLIENT_ID").unwrap_or_default(),
             google_client_secret: env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default(),
             redirect_base_url: env::var("REDIRECT_BASE_URL")

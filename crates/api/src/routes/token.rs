@@ -50,11 +50,13 @@ pub async fn refresh_handler(
         .create_token(result.user_id, user_row.email, role_str)?;
 
     // Build new refresh cookie
-    let max_age_secs = state.auth_config().refresh_token_expiration_days * 24 * 60 * 60;
+    let auth_config = state.auth_config();
+    let max_age_secs = auth_config.refresh_token_expiration_days * 24 * 60 * 60;
     let cookie_value = build_refresh_cookie(
         &result.new_raw_token,
         max_age_secs,
-        &state.auth_config().cookie_domain,
+        &auth_config.cookie_domain,
+        auth_config.cookie_secure,
     );
 
     let mut response = Json(RefreshResponse { token }).into_response();
@@ -81,7 +83,8 @@ pub async fn logout_handler(
     }
 
     // Clear the cookie
-    let cookie_value = build_clear_cookie(&state.auth_config().cookie_domain);
+    let auth_config = state.auth_config();
+    let cookie_value = build_clear_cookie(&auth_config.cookie_domain, auth_config.cookie_secure);
 
     let mut response = axum::http::StatusCode::OK.into_response();
     response.headers_mut().insert(
