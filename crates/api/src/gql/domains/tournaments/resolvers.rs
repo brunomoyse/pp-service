@@ -102,6 +102,7 @@ impl TournamentMutation {
             buy_in_cents: input.buy_in_cents,
             seat_cap: input.seat_cap,
             early_bird_bonus_chips: input.early_bird_bonus_chips,
+            late_registration_level: input.late_registration_level,
         };
 
         // Create tournament
@@ -197,6 +198,7 @@ impl TournamentMutation {
             buy_in_cents: input.buy_in_cents,
             seat_cap: input.seat_cap,
             early_bird_bonus_chips: input.early_bird_bonus_chips,
+            late_registration_level: input.late_registration_level,
         };
 
         let updated_row = tournaments::update(&state.db, tournament_id, data)

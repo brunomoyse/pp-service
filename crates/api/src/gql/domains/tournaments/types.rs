@@ -182,6 +182,7 @@ pub struct Tournament {
     pub status: TournamentStatus, // Calculated: UPCOMING, LIVE, COMPLETED
     pub live_status: TournamentLiveStatus, // Direct from DB: NOT_STARTED, IN_PROGRESS, FINISHED, etc.
     pub early_bird_bonus_chips: Option<i32>, // Extra chips for players present at tournament start
+    pub late_registration_level: Option<i32>, // Blind level until which late registration stays open
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -230,6 +231,7 @@ impl From<infra::models::TournamentRow> for Tournament {
             status,
             live_status: row.live_status.into(),
             early_bird_bonus_chips: row.early_bird_bonus_chips,
+            late_registration_level: row.late_registration_level,
             created_at: row.created_at,
             updated_at: row.updated_at,
         }
@@ -361,6 +363,7 @@ pub struct CreateTournamentInput {
     pub buy_in_cents: i32,
     pub seat_cap: Option<i32>,
     pub early_bird_bonus_chips: Option<i32>,
+    pub late_registration_level: Option<i32>,
     /// Blind structure template ID - if provided, copies levels from template
     pub template_id: Option<ID>,
     /// Custom blind structure levels - only used if template_id is not provided
@@ -377,6 +380,7 @@ pub struct UpdateTournamentInput {
     pub buy_in_cents: Option<i32>,
     pub seat_cap: Option<i32>,
     pub early_bird_bonus_chips: Option<i32>,
+    pub late_registration_level: Option<i32>,
     /// Blind structure template ID - if provided, replaces structure with template levels
     pub template_id: Option<ID>,
     /// Custom blind structure levels - only used if template_id is not provided
