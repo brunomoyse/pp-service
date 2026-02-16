@@ -13,21 +13,23 @@ async fn test_get_users_query() {
     let (_, claims) = create_test_user(&app_state, "adminuser@test.com", "admin").await;
 
     let query = r#"
-        query GetUsers($limit: Int, $offset: Int) {
-            users(limit: $limit, offset: $offset) {
-                id
-                email
-                firstName
-                lastName
-                role
-                isActive
+        query GetUsers($pagination: PaginationInput) {
+            users(pagination: $pagination) {
+                items {
+                    id
+                    email
+                    firstName
+                    lastName
+                    role
+                    isActive
+                }
+                totalCount
             }
         }
     "#;
 
     let variables = Variables::from_json(json!({
-        "limit": 10,
-        "offset": 0
+        "pagination": { "limit": 10, "offset": 0 }
     }));
 
     let response = execute_graphql(&schema, query, Some(variables), Some(claims)).await;
@@ -39,7 +41,7 @@ async fn test_get_users_query() {
     );
 
     let data = response.data.into_json().unwrap();
-    let users = data["users"].as_array().unwrap();
+    let users = data["users"]["items"].as_array().unwrap();
 
     assert!(!users.is_empty(), "Should return at least one user");
 }
@@ -52,18 +54,20 @@ async fn test_get_user_by_id() {
     let (user_id, claims) = create_test_user(&app_state, "specificuser@test.com", "admin").await;
 
     let query = r#"
-        query GetUsers($limit: Int, $offset: Int) {
-            users(limit: $limit, offset: $offset) {
-                id
-                email
-                role
+        query GetUsers($pagination: PaginationInput) {
+            users(pagination: $pagination) {
+                items {
+                    id
+                    email
+                    role
+                }
+                totalCount
             }
         }
     "#;
 
     let variables = Variables::from_json(json!({
-        "limit": 100,
-        "offset": 0
+        "pagination": { "limit": 100, "offset": 0 }
     }));
 
     let response = execute_graphql(&schema, query, Some(variables), Some(claims)).await;
@@ -75,7 +79,7 @@ async fn test_get_user_by_id() {
     );
 
     let data = response.data.into_json().unwrap();
-    let users = data["users"].as_array().unwrap();
+    let users = data["users"]["items"].as_array().unwrap();
 
     // Find our specific user
     let user = users

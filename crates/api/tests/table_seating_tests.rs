@@ -109,7 +109,7 @@ async fn test_create_table_unauthorized() {
     // The actual error message should contain information about requiring manager permissions
     let error_msg = &response.errors[0].message;
     assert!(
-        error_msg.contains("Manager privileges required")
+        error_msg.contains("Access denied")
             || error_msg.contains("not authorized to manage this club")
             || error_msg.contains("Unauthorized")
             || error_msg.contains("forbidden")

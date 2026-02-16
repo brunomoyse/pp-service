@@ -454,18 +454,21 @@ async fn test_users_search_filter() {
 
     // Test search filter (searches by first_name, last_name, username)
     let query = r#"
-        query Users($search: String, $isActive: Boolean, $limit: Int) {
-            users(search: $search, isActive: $isActive, limit: $limit) {
-                id
-                email
-                isActive
+        query Users($search: String, $isActive: Boolean, $pagination: PaginationInput) {
+            users(search: $search, isActive: $isActive, pagination: $pagination) {
+                items {
+                    id
+                    email
+                    isActive
+                }
+                totalCount
             }
         }
     "#;
 
     let variables = Variables::from_json(json!({
         "search": format!("Findable{unique}"),
-        "limit": 10
+        "pagination": { "limit": 10, "offset": 0 }
     }));
 
     let response =
@@ -478,7 +481,7 @@ async fn test_users_search_filter() {
     );
 
     let data = response.data.into_json().unwrap();
-    let users = data["users"].as_array().unwrap();
+    let users = data["users"]["items"].as_array().unwrap();
     assert!(
         !users.is_empty(),
         "Should find at least one user matching search by first_name"
@@ -487,7 +490,7 @@ async fn test_users_search_filter() {
     // Test isActive filter
     let variables = Variables::from_json(json!({
         "isActive": false,
-        "limit": 100
+        "pagination": { "limit": 100, "offset": 0 }
     }));
 
     let response = execute_graphql(&schema, query, Some(variables), Some(admin_claims)).await;
@@ -499,7 +502,7 @@ async fn test_users_search_filter() {
     );
 
     let data = response.data.into_json().unwrap();
-    let users = data["users"].as_array().unwrap();
+    let users = data["users"]["items"].as_array().unwrap();
 
     // All returned users should be inactive
     for user in users {

@@ -194,7 +194,7 @@ async fn test_unassign_table_unauthorized() {
     );
     let error_msg = &response.errors[0].message;
     assert!(
-        error_msg.contains("Manager privileges required")
+        error_msg.contains("Access denied")
             || error_msg.contains("not authorized to manage this club"),
         "Expected authorization error, got: '{}'",
         error_msg
