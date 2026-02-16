@@ -1,6 +1,25 @@
 use async_graphql::{SimpleObject, ID};
 use chrono::{DateTime, Utc};
 
+/// A payout structure entry within a payout template
+#[derive(SimpleObject, Clone, Debug, serde::Deserialize)]
+pub struct PayoutStructureEntry {
+    pub position: i32,
+    pub percentage: f64,
+}
+
+/// A reusable payout template defining prize distribution percentages
+#[derive(SimpleObject, Clone)]
+pub struct PayoutTemplate {
+    pub id: ID,
+    pub name: String,
+    pub description: Option<String>,
+    pub min_players: i32,
+    pub max_players: Option<i32>,
+    pub payout_structure: Vec<PayoutStructureEntry>,
+    pub created_at: DateTime<Utc>,
+}
+
 /// A blind structure level without tournament_id (for templates)
 #[derive(SimpleObject, Clone, Debug, serde::Deserialize)]
 pub struct BlindStructureLevel {
