@@ -167,8 +167,8 @@ impl RegistrationMutation {
         {
             use infra::repos::tournaments::TournamentLiveStatus;
             match tournament.live_status {
-                TournamentLiveStatus::RegistrationOpen
-                | TournamentLiveStatus::LateRegistration => { /* allowed */ }
+                TournamentLiveStatus::RegistrationOpen | TournamentLiveStatus::LateRegistration => { /* allowed */
+                }
                 _ => {
                     return Err(async_graphql::Error::new(
                         "Registration is not open for this tournament",
@@ -306,9 +306,7 @@ impl RegistrationMutation {
 
         // Players can only cancel from registered or waitlisted status;
         // managers can cancel any status (e.g. to fix mistakes)
-        if !is_manager
-            && registration.status != "registered"
-            && registration.status != "waitlisted"
+        if !is_manager && registration.status != "registered" && registration.status != "waitlisted"
         {
             return Err(async_graphql::Error::new(format!(
                 "Cannot cancel registration with status: {}",
@@ -336,9 +334,7 @@ impl RegistrationMutation {
                 .await?;
         }
 
-        tx.commit()
-            .await
-            .gql_err("Failed to commit transaction")?;
+        tx.commit().await.gql_err("Failed to commit transaction")?;
 
         // Get updated registration
         let updated_row =

@@ -311,7 +311,11 @@ impl SeatingMutation {
         let manager_id = Uuid::parse_str(manager.id.as_str()).gql_err("Invalid manager ID")?;
 
         // Use a transaction to ensure seat assignment and status update are atomic
-        let mut tx = state.db.begin().await.gql_err("Failed to begin transaction")?;
+        let mut tx = state
+            .db
+            .begin()
+            .await
+            .gql_err("Failed to begin transaction")?;
 
         // Check if seat is available (inside transaction for consistency)
         let is_available =
@@ -334,8 +338,7 @@ impl SeatingMutation {
         let assignment_row = table_seat_assignments::create(&mut *tx, create_data).await?;
 
         // Update registration status to seated
-        tournament_registrations::update_status(&mut *tx, tournament_id, user_id, "seated")
-            .await?;
+        tournament_registrations::update_status(&mut *tx, tournament_id, user_id, "seated").await?;
 
         tx.commit().await.gql_err("Failed to commit transaction")?;
 
@@ -561,7 +564,11 @@ impl SeatingMutation {
 
         if let Some(assignment) = current_assignment {
             // Use a transaction to ensure all elimination steps are atomic
-            let mut tx = state.db.begin().await.gql_err("Failed to begin transaction")?;
+            let mut tx = state
+                .db
+                .begin()
+                .await
+                .gql_err("Failed to begin transaction")?;
 
             // Update the assignment with elimination notes and unassign
             let update_data = UpdateSeatAssignment {
@@ -575,13 +582,8 @@ impl SeatingMutation {
             table_seat_assignments::unassign(&mut *tx, assignment.id, Some(manager_id)).await?;
 
             // Update registration status to busted
-            tournament_registrations::update_status(
-                &mut *tx,
-                tournament_uuid,
-                user_uuid,
-                "busted",
-            )
-            .await?;
+            tournament_registrations::update_status(&mut *tx, tournament_uuid, user_uuid, "busted")
+                .await?;
 
             tx.commit().await.gql_err("Failed to commit transaction")?;
 
@@ -622,8 +624,7 @@ impl SeatingMutation {
             let max_table_seats = tables.iter().map(|t| t.max_seats).max().unwrap_or(0);
 
             if !remaining.is_empty() && remaining.len() <= max_table_seats as usize {
-                let tournament_row =
-                    tournaments::get_by_id(&state.db, tournament_uuid).await?;
+                let tournament_row = tournaments::get_by_id(&state.db, tournament_uuid).await?;
                 if let Some(t) = tournament_row {
                     use infra::repos::tournaments::TournamentLiveStatus;
                     if matches!(
