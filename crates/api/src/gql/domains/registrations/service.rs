@@ -185,3 +185,80 @@ pub async fn check_in_player(
         message,
     })
 }
+
+/// Result of a waitlist promotion.
+pub struct PromotionResult {
+    pub promoted_registration: infra::models::TournamentRegistrationRow,
+}
+
+/// Promote the next waitlisted player if there is capacity.
+/// Returns the promoted player's registration, or None if no promotion needed/possible.
+pub async fn promote_next_waitlisted(
+    pool: &sqlx::PgPool,
+    tournament_id: Uuid,
+) -> Result<Option<PromotionResult>, Box<dyn std::error::Error + Send + Sync>> {
+    let mut tx = pool.begin().await?;
+
+    // Lock the tournament row
+    let tournament = sqlx::query_as::<_, infra::models::TournamentRow>(
+        "SELECT id, club_id, name, description, start_time, end_time, buy_in_cents, seat_cap, live_status, early_bird_bonus_chips, created_at, updated_at FROM tournaments WHERE id = $1 FOR UPDATE",
+    )
+    .bind(tournament_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or("Tournament not found")?;
+
+    let seat_cap = match tournament.seat_cap {
+        Some(cap) => cap as i64,
+        None => {
+            // No seat cap, no promotion needed
+            tx.commit().await?;
+            return Ok(None);
+        }
+    };
+
+    let confirmed_count =
+        tournament_registrations::count_confirmed_by_tournament(&mut *tx, tournament_id).await?;
+
+    if confirmed_count >= seat_cap {
+        // Still full, no promotion
+        tx.commit().await?;
+        return Ok(None);
+    }
+
+    // Get the next waitlisted player
+    let next_waitlisted =
+        tournament_registrations::get_next_waitlisted(&mut *tx, tournament_id).await?;
+
+    match next_waitlisted {
+        Some(waitlisted) => {
+            // Promote to registered
+            tournament_registrations::update_status(
+                &mut *tx,
+                tournament_id,
+                waitlisted.user_id,
+                "registered",
+            )
+            .await?;
+
+            // Get updated registration
+            let updated = tournament_registrations::get_by_tournament_and_user(
+                &mut *tx,
+                tournament_id,
+                waitlisted.user_id,
+            )
+            .await?
+            .ok_or("Failed to get updated registration")?;
+
+            tx.commit().await?;
+
+            Ok(Some(PromotionResult {
+                promoted_registration: updated,
+            }))
+        }
+        None => {
+            tx.commit().await?;
+            Ok(None)
+        }
+    }
+}

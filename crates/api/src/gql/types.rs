@@ -4,7 +4,8 @@
 // Common types (Role, notifications, pagination)
 pub use crate::gql::common::types::{
     NotificationType, PaginatedResponse, PaginationInput, Role, UserNotification,
-    TITLE_REGISTRATION_CONFIRMED, TITLE_TOURNAMENT_STARTING,
+    TITLE_REGISTRATION_CONFIRMED, TITLE_TOURNAMENT_STARTING, TITLE_WAITLISTED,
+    TITLE_WAITLIST_PROMOTED,
 };
 
 // Club types
@@ -15,9 +16,9 @@ pub use crate::gql::domains::users::types::{CreatePlayerInput, UpdatePlayerInput
 
 // Registration types
 pub use crate::gql::domains::registrations::types::{
-    AssignmentStrategy, CheckInPlayerInput, CheckInResponse, PlayerRegistrationEvent,
-    RegisterForTournamentInput, RegistrationEventType, RegistrationStatus, TournamentPlayer,
-    TournamentRegistration, UpdateRegistrationStatusInput,
+    AssignmentStrategy, CancelRegistrationInput, CancelRegistrationResponse, CheckInPlayerInput,
+    CheckInResponse, PlayerRegistrationEvent, RegisterForTournamentInput, RegistrationEventType,
+    RegistrationStatus, TournamentPlayer, TournamentRegistration, UpdateRegistrationStatusInput,
 };
 
 // Seating types

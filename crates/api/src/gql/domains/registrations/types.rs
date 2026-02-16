@@ -7,6 +7,7 @@ use crate::gql::domains::seating::types::SeatAssignment;
 use crate::gql::domains::users::types::User;
 use crate::gql::error::ResultExt;
 use crate::gql::loaders::UserLoader;
+use crate::state::AppState;
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum RegistrationStatus {
@@ -65,6 +66,8 @@ impl From<RegistrationStatus> for String {
 pub enum RegistrationEventType {
     PlayerRegistered,
     PlayerUnregistered,
+    PlayerWaitlisted,
+    PlayerPromoted,
 }
 
 #[derive(SimpleObject, Clone)]
@@ -106,6 +109,28 @@ impl TournamentRegistration {
             Some(user) => Ok(Some(user.into())),
             None => Ok(None),
         }
+    }
+
+    /// Returns the player's position in the waitlist (1-based). Null if not waitlisted.
+    async fn waitlist_position(&self, ctx: &Context<'_>) -> async_graphql::Result<Option<i32>> {
+        if self.status != RegistrationStatus::Waitlisted {
+            return Ok(None);
+        }
+
+        let state = ctx.data::<AppState>()?;
+        let tournament_id =
+            Uuid::parse_str(self.tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+        let user_id = Uuid::parse_str(self.user_id.as_str()).gql_err("Invalid user ID")?;
+
+        let position = infra::repos::tournament_registrations::get_waitlist_position(
+            &state.db,
+            tournament_id,
+            user_id,
+        )
+        .await
+        .gql_err("Failed to get waitlist position")?;
+
+        Ok(position.map(|p| p as i32))
     }
 }
 
@@ -166,4 +191,16 @@ pub struct CheckInResponse {
     pub registration: TournamentRegistration,
     pub seat_assignment: Option<SeatAssignment>,
     pub message: String,
+}
+
+#[derive(InputObject)]
+pub struct CancelRegistrationInput {
+    pub tournament_id: ID,
+    pub user_id: ID,
+}
+
+#[derive(SimpleObject)]
+pub struct CancelRegistrationResponse {
+    pub registration: TournamentRegistration,
+    pub promoted_player: Option<TournamentPlayer>,
 }
