@@ -127,6 +127,7 @@ impl AuthMutation {
             &raw_refresh,
             max_age_secs,
             &auth_config.cookie_domain,
+            auth_config.cookie_secure,
         );
         ctx.insert_http_header("Set-Cookie", cookie_value);
 
@@ -309,6 +310,7 @@ impl AuthMutation {
             &raw_refresh,
             max_age_secs,
             &auth_config.cookie_domain,
+            auth_config.cookie_secure,
         );
         ctx.insert_http_header("Set-Cookie", cookie_value);
 
