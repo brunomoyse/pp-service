@@ -204,3 +204,17 @@ pub struct CancelRegistrationResponse {
     pub registration: TournamentRegistration,
     pub promoted_player: Option<TournamentPlayer>,
 }
+
+#[derive(InputObject)]
+pub struct SelfCheckInInput {
+    pub tournament_id: ID,
+}
+
+#[derive(SimpleObject)]
+pub struct SelfCheckInResponse {
+    pub registration: TournamentRegistration,
+    pub seat_assignment: Option<SeatAssignment>,
+    pub message: String,
+    /// True if the user was newly registered (not previously registered)
+    pub was_registered: bool,
+}
