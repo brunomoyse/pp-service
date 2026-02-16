@@ -94,7 +94,7 @@ async fn test_club_tables_system() {
     let table1_id = tables[0].id;
 
     // Assign table 1 to the tournament
-    let assignment = club_tables::assign_to_tournament(pool, tournament_id, table1_id)
+    let assignment = club_tables::assign_to_tournament(pool, tournament_id, table1_id, None)
         .await
         .expect("Should be able to assign table to tournament");
 

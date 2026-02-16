@@ -144,21 +144,24 @@ pub async fn assign_to_tournament<'e>(
     executor: impl PgExecutor<'e>,
     tournament_id: Uuid,
     club_table_id: Uuid,
+    max_seats_override: Option<i32>,
 ) -> SqlxResult<TournamentTableAssignmentRow> {
     sqlx::query_as::<_, TournamentTableAssignmentRow>(
         r#"
-        INSERT INTO tournament_table_assignments (tournament_id, club_table_id)
-        VALUES ($1, $2)
+        INSERT INTO tournament_table_assignments (tournament_id, club_table_id, max_seats_override)
+        VALUES ($1, $2, $3)
         ON CONFLICT (tournament_id, club_table_id) DO UPDATE SET
             is_active = true,
             assigned_at = NOW(),
             deactivated_at = NULL,
+            max_seats_override = $3,
             updated_at = NOW()
-        RETURNING id, tournament_id, club_table_id, is_active, assigned_at, deactivated_at, created_at, updated_at
+        RETURNING id, tournament_id, club_table_id, is_active, assigned_at, deactivated_at, max_seats_override, created_at, updated_at
         "#
     )
     .bind(tournament_id)
     .bind(club_table_id)
+    .bind(max_seats_override)
     .fetch_one(executor)
     .await
 }
@@ -189,7 +192,9 @@ pub async fn list_assigned_to_tournament<'e>(
 ) -> SqlxResult<Vec<ClubTableRow>> {
     sqlx::query_as::<_, ClubTableRow>(
         r#"
-        SELECT ct.id, ct.club_id, ct.table_number, ct.max_seats, ct.is_active, ct.created_at, ct.updated_at
+        SELECT ct.id, ct.club_id, ct.table_number,
+               COALESCE(tta.max_seats_override, ct.max_seats) as max_seats,
+               ct.is_active, ct.created_at, ct.updated_at
         FROM club_tables ct
         INNER JOIN tournament_table_assignments tta ON ct.id = tta.club_table_id
         WHERE tta.tournament_id = $1 AND tta.is_active = true

@@ -1,0 +1,2 @@
+ALTER TABLE tournament_table_assignments
+ADD COLUMN max_seats_override INTEGER;
