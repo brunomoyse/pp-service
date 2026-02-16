@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 // Notification title constants
 pub const TITLE_REGISTRATION_CONFIRMED: &str = "Registration Confirmed";
 pub const TITLE_TOURNAMENT_STARTING: &str = "Tournament Starting Soon";
+pub const TITLE_WAITLIST_PROMOTED: &str = "Waitlist Promoted";
+pub const TITLE_WAITLISTED: &str = "Added to Waitlist";
 
 // Pagination types
 
@@ -84,6 +86,7 @@ impl From<Role> for String {
 pub enum NotificationType {
     TournamentStartingSoon,
     RegistrationConfirmed,
+    WaitlistPromoted,
     TournamentStatusChanged,
 }
 

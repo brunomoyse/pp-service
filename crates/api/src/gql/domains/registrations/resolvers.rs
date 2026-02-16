@@ -10,11 +10,11 @@ use crate::gql::subscriptions::{
     publish_registration_event, publish_seating_event, publish_user_notification,
 };
 use crate::gql::types::{
-    AssignmentStrategy, CheckInPlayerInput, CheckInResponse, NotificationType,
-    PaginatedResponse, PaginationInput, PlayerRegistrationEvent, RegisterForTournamentInput,
-    RegistrationEventType, SeatAssignment, SeatingChangeEvent, SeatingEventType,
-    TournamentPlayer, TournamentRegistration, User, UserNotification,
-    TITLE_REGISTRATION_CONFIRMED,
+    AssignmentStrategy, CancelRegistrationInput, CancelRegistrationResponse, CheckInPlayerInput,
+    CheckInResponse, NotificationType, PaginatedResponse, PaginationInput,
+    PlayerRegistrationEvent, RegisterForTournamentInput, RegistrationEventType, SeatAssignment,
+    SeatingChangeEvent, SeatingEventType, TournamentPlayer, TournamentRegistration, User,
+    UserNotification, TITLE_REGISTRATION_CONFIRMED, TITLE_WAITLISTED, TITLE_WAITLIST_PROMOTED,
 };
 use crate::state::AppState;
 use infra::repos::{
@@ -118,7 +118,7 @@ pub struct RegistrationMutation;
 
 #[Object]
 impl RegistrationMutation {
-    /// Register a user for a tournament.
+    /// Register a user for a tournament. Auto-waitlists if tournament is full.
     async fn register_for_tournament(
         &self,
         ctx: &Context<'_>,
@@ -145,22 +145,53 @@ impl RegistrationMutation {
         // Determine which user to register
         let user_id = match input.user_id {
             Some(target_user_id) => {
-                // Manager is registering another user
                 Uuid::parse_str(target_user_id.as_str()).gql_err("Invalid target user ID")?
             }
             None => {
-                // User registering themselves
                 Uuid::parse_str(authenticated_user.id.as_str()).gql_err("Invalid user ID")?
             }
+        };
+
+        // Use a transaction with row-level locking to prevent race conditions
+        let mut tx = state.db.begin().await?;
+
+        // Lock the tournament row to prevent concurrent registrations from racing
+        let tournament = sqlx::query_as::<_, infra::models::TournamentRow>(
+            "SELECT id, club_id, name, description, start_time, end_time, buy_in_cents, seat_cap, live_status, early_bird_bonus_chips, created_at, updated_at FROM tournaments WHERE id = $1 FOR UPDATE",
+        )
+        .bind(tournament_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
+
+        // Determine status based on seat capacity
+        let is_waitlisted = if let Some(seat_cap) = tournament.seat_cap {
+            let confirmed_count = tournament_registrations::count_confirmed_by_tournament(
+                &mut *tx,
+                tournament_id,
+            )
+            .await?;
+            confirmed_count >= seat_cap as i64
+        } else {
+            false
+        };
+
+        let status = if is_waitlisted {
+            Some("waitlisted".to_string())
+        } else {
+            None // defaults to 'registered'
         };
 
         let create_data = CreateTournamentRegistration {
             tournament_id,
             user_id,
             notes: input.notes.clone(),
+            status,
         };
 
-        let row = tournament_registrations::create(&state.db, create_data).await?;
+        let row = tournament_registrations::create(&mut *tx, create_data).await?;
+
+        tx.commit().await?;
 
         let tournament_registration: TournamentRegistration = row.into();
 
@@ -173,18 +204,47 @@ impl RegistrationMutation {
                 user,
             };
 
+            let event_type = if is_waitlisted {
+                RegistrationEventType::PlayerWaitlisted
+            } else {
+                RegistrationEventType::PlayerRegistered
+            };
+
             let event = PlayerRegistrationEvent {
                 tournament_id: tournament_id.into(),
                 player,
-                event_type: RegistrationEventType::PlayerRegistered,
+                event_type,
             };
 
             publish_registration_event(event);
         }
 
-        // Get tournament name for notification message
-        if let Ok(Some(tournament)) = tournaments::get_by_id(&state.db, tournament_id).await {
-            // Publish registration confirmed notification to the user
+        // Publish notification
+        if is_waitlisted {
+            // Get waitlist position for the notification
+            let position = tournament_registrations::get_waitlist_position(
+                &state.db,
+                tournament_id,
+                user_id,
+            )
+            .await
+            .unwrap_or(None)
+            .unwrap_or(0);
+
+            let notification = UserNotification {
+                id: ID::from(Uuid::new_v4().to_string()),
+                user_id: ID::from(user_id.to_string()),
+                notification_type: NotificationType::RegistrationConfirmed,
+                title: TITLE_WAITLISTED.to_string(),
+                message: format!(
+                    "You are on the waitlist for {} (position {})",
+                    tournament.name, position
+                ),
+                tournament_id: Some(ID::from(tournament_id.to_string())),
+                created_at: Utc::now(),
+            };
+            publish_user_notification(notification);
+        } else {
             let notification = UserNotification {
                 id: ID::from(Uuid::new_v4().to_string()),
                 user_id: ID::from(user_id.to_string()),
@@ -194,11 +254,143 @@ impl RegistrationMutation {
                 tournament_id: Some(ID::from(tournament_id.to_string())),
                 created_at: Utc::now(),
             };
-
             publish_user_notification(notification);
         }
 
         Ok(tournament_registration)
+    }
+
+    /// Cancel a registration. If the player was confirmed (not waitlisted), promotes the next waitlisted player.
+    async fn cancel_registration(
+        &self,
+        ctx: &Context<'_>,
+        input: CancelRegistrationInput,
+    ) -> Result<CancelRegistrationResponse> {
+        use crate::auth::permissions::require_club_manager;
+
+        let state = ctx.data::<AppState>()?;
+
+        let tournament_id =
+            Uuid::parse_str(input.tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+        let user_id =
+            Uuid::parse_str(input.user_id.as_str()).gql_err("Invalid user ID")?;
+
+        // Get the current user's claims
+        let claims = ctx
+            .data::<crate::auth::Claims>()
+            .map_err(|_| async_graphql::Error::new("Authentication required"))?;
+        let authenticated_user_id =
+            Uuid::parse_str(&claims.sub).gql_err("Invalid authenticated user ID")?;
+
+        // If cancelling someone else's registration, require club manager
+        if authenticated_user_id != user_id {
+            let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
+            require_club_manager(ctx, club_id).await?;
+        }
+
+        // Get current registration
+        let registration = tournament_registrations::get_by_tournament_and_user(
+            &state.db,
+            tournament_id,
+            user_id,
+        )
+        .await?
+        .ok_or_else(|| async_graphql::Error::new("Registration not found"))?;
+
+        // Only allow cancellation from registered or waitlisted status
+        if registration.status != "registered" && registration.status != "waitlisted" {
+            return Err(async_graphql::Error::new(format!(
+                "Cannot cancel registration with status: {}",
+                registration.status
+            )));
+        }
+
+        let was_confirmed = registration.status == "registered";
+
+        // Update status to cancelled
+        tournament_registrations::update_status(&state.db, tournament_id, user_id, "cancelled")
+            .await?;
+
+        // Get updated registration
+        let updated_row = tournament_registrations::get_by_tournament_and_user(
+            &state.db,
+            tournament_id,
+            user_id,
+        )
+        .await?
+        .ok_or_else(|| async_graphql::Error::new("Failed to get updated registration"))?;
+
+        let updated_registration: TournamentRegistration = updated_row.into();
+
+        // Emit unregistered event
+        if let Some(user_row) = users::get_by_id(&state.db, user_id).await? {
+            let user: User = user_row.into();
+            let player = TournamentPlayer {
+                registration: updated_registration.clone(),
+                user,
+            };
+            let event = PlayerRegistrationEvent {
+                tournament_id: tournament_id.into(),
+                player,
+                event_type: RegistrationEventType::PlayerUnregistered,
+            };
+            publish_registration_event(event);
+        }
+
+        // If the cancelled player was confirmed (not waitlisted), promote the next waitlisted player
+        let mut promoted_player: Option<TournamentPlayer> = None;
+        if was_confirmed {
+            if let Ok(Some(promotion)) =
+                super::service::promote_next_waitlisted(&state.db, tournament_id).await
+            {
+                let promoted_user_id = promotion.promoted_registration.user_id;
+                let promoted_registration: TournamentRegistration =
+                    promotion.promoted_registration.into();
+
+                if let Some(user_row) = users::get_by_id(&state.db, promoted_user_id).await? {
+                    let user: User = user_row.into();
+
+                    let player = TournamentPlayer {
+                        registration: promoted_registration,
+                        user,
+                    };
+
+                    // Emit promotion event
+                    let event = PlayerRegistrationEvent {
+                        tournament_id: tournament_id.into(),
+                        player: player.clone(),
+                        event_type: RegistrationEventType::PlayerPromoted,
+                    };
+                    publish_registration_event(event);
+
+                    // Notify the promoted player
+                    if let Ok(Some(tournament)) =
+                        tournaments::get_by_id(&state.db, tournament_id).await
+                    {
+                        let notification = UserNotification {
+                            id: ID::from(Uuid::new_v4().to_string()),
+                            user_id: ID::from(promoted_user_id.to_string()),
+                            notification_type: NotificationType::WaitlistPromoted,
+                            title: TITLE_WAITLIST_PROMOTED.to_string(),
+                            message: format!(
+                                "A spot opened up! You are now registered for {}",
+                                tournament.name
+                            ),
+                            tournament_id: Some(ID::from(tournament_id.to_string())),
+                            created_at: Utc::now(),
+                        };
+                        publish_user_notification(notification);
+                    }
+
+                    promoted_player = Some(player);
+                }
+            }
+        }
+
+        Ok(CancelRegistrationResponse {
+            registration: updated_registration,
+            promoted_player,
+        })
     }
 
     /// Check in a player for a tournament with optional auto-assignment

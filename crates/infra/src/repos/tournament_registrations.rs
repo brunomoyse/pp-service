@@ -8,6 +8,7 @@ pub struct CreateTournamentRegistration {
     pub tournament_id: Uuid,
     pub user_id: Uuid,
     pub notes: Option<String>,
+    pub status: Option<String>,
 }
 
 pub async fn create<'e>(
@@ -16,14 +17,15 @@ pub async fn create<'e>(
 ) -> Result<TournamentRegistrationRow> {
     let row = sqlx::query_as::<_, TournamentRegistrationRow>(
         r#"
-        INSERT INTO tournament_registrations (tournament_id, user_id, notes)
-        VALUES ($1, $2, $3)
+        INSERT INTO tournament_registrations (tournament_id, user_id, notes, status)
+        VALUES ($1, $2, $3, COALESCE($4, 'registered'))
         RETURNING id, tournament_id, user_id, registration_time, status, notes, created_at, updated_at
         "#
     )
     .bind(data.tournament_id)
     .bind(data.user_id)
     .bind(data.notes)
+    .bind(data.status)
     .fetch_one(executor)
     .await?;
 
@@ -163,4 +165,69 @@ pub async fn update_status<'e>(
     .execute(executor)
     .await?;
     Ok(())
+}
+
+/// Count confirmed registrations (those occupying a seat: registered, checked_in, seated, busted).
+/// Waitlisted, cancelled, and no_show do not count.
+pub async fn count_confirmed_by_tournament<'e>(
+    executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
+) -> Result<i64> {
+    let result = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM tournament_registrations
+        WHERE tournament_id = $1 AND status IN ('registered', 'checked_in', 'seated', 'busted')
+        "#,
+    )
+    .bind(tournament_id)
+    .fetch_one(executor)
+    .await?;
+
+    Ok(result)
+}
+
+/// Get the next waitlisted player (FIFO by registration_time).
+pub async fn get_next_waitlisted<'e>(
+    executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
+) -> Result<Option<TournamentRegistrationRow>> {
+    let row = sqlx::query_as::<_, TournamentRegistrationRow>(
+        r#"
+        SELECT id, tournament_id, user_id, registration_time, status, notes, created_at, updated_at
+        FROM tournament_registrations
+        WHERE tournament_id = $1 AND status = 'waitlisted'
+        ORDER BY registration_time ASC
+        LIMIT 1
+        "#,
+    )
+    .bind(tournament_id)
+    .fetch_optional(executor)
+    .await?;
+
+    Ok(row)
+}
+
+/// Get a player's position in the waitlist (1-based). Returns None if not waitlisted.
+pub async fn get_waitlist_position<'e>(
+    executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<i64>> {
+    let result = sqlx::query_scalar::<_, Option<i64>>(
+        r#"
+        SELECT position FROM (
+            SELECT user_id, ROW_NUMBER() OVER (ORDER BY registration_time ASC) as position
+            FROM tournament_registrations
+            WHERE tournament_id = $1 AND status = 'waitlisted'
+        ) ranked
+        WHERE user_id = $2
+        "#,
+    )
+    .bind(tournament_id)
+    .bind(user_id)
+    .fetch_optional(executor)
+    .await?;
+
+    Ok(result.flatten())
 }
