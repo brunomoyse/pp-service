@@ -58,4 +58,6 @@ pub use crate::gql::domains::results::types::{
 pub use crate::gql::domains::leaderboards::types::{LeaderboardEntry, LeaderboardPeriod};
 
 // Template types
-pub use crate::gql::domains::templates::types::{BlindStructureLevel, BlindStructureTemplate};
+pub use crate::gql::domains::templates::types::{
+    BlindStructureLevel, BlindStructureTemplate, PayoutStructureEntry, PayoutTemplate,
+};
