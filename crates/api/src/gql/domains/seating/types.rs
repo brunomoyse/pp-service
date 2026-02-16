@@ -129,6 +129,7 @@ pub struct UpdateStackSizeInput {
 pub struct AssignTableToTournamentInput {
     pub tournament_id: ID,
     pub club_table_id: ID,
+    pub max_seats: Option<i32>,
 }
 
 #[derive(InputObject)]

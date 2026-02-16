@@ -143,6 +143,7 @@ pub struct TournamentTableAssignmentRow {
     pub is_active: bool,
     pub assigned_at: DateTime<Utc>,
     pub deactivated_at: Option<DateTime<Utc>>,
+    pub max_seats_override: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
