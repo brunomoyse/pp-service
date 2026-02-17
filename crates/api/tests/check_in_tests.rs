@@ -71,7 +71,8 @@ async fn test_check_in_player_basic() {
     let data = response.data.into_json().unwrap();
     let result = &data["checkInPlayer"];
 
-    assert_eq!(result["registration"]["status"], "CHECKED_IN");
+    // With auto-assign (default) and a table available, the player is seated directly
+    assert_eq!(result["registration"]["status"], "SEATED");
     assert_eq!(result["registration"]["userId"], player_id.to_string());
     // With auto-assign (default), seat assignment should be populated
     assert!(
