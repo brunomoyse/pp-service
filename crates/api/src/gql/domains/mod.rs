@@ -1,6 +1,7 @@
 // Domain modules will be added here incrementally during migration
 // Each domain contains: mod.rs, resolvers.rs, types.rs
 
+pub mod activity_log;
 pub mod auth;
 pub mod clubs;
 pub mod entries;

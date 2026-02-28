@@ -423,7 +423,7 @@ pub async fn replace_structures(
     Ok(results)
 }
 
-/// Log clock event
+/// Log clock event into the unified activity log
 async fn log_event(
     pool: &PgPool,
     tournament_id: Uuid,
@@ -432,17 +432,24 @@ async fn log_event(
     manager_id: Option<Uuid>,
     metadata: serde_json::Value,
 ) -> SqlxResult<()> {
-    sqlx::query(
-        "INSERT INTO tournament_clock_events
-         (tournament_id, event_type, level_number, manager_id, metadata)
-         VALUES ($1, $2, $3, $4, $5)",
+    let merged_metadata = if let Some(level) = level_number {
+        let mut m = metadata;
+        m.as_object_mut()
+            .map(|obj| obj.insert("level_number".to_string(), serde_json::json!(level)));
+        m
+    } else {
+        metadata
+    };
+
+    crate::repos::activity_log::log_activity(
+        pool,
+        tournament_id,
+        "clock",
+        event_type,
+        manager_id,
+        None,
+        merged_metadata,
     )
-    .bind(tournament_id)
-    .bind(event_type)
-    .bind(level_number)
-    .bind(manager_id)
-    .bind(metadata)
-    .execute(pool)
     .await?;
 
     Ok(())

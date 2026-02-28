@@ -300,6 +300,21 @@ impl TournamentMutation {
             .gql_err("Failed to update tournament status")?
             .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
 
+        // Log activity
+        {
+            let db = state.db.clone();
+            let from_status = format!("{:?}", existing.live_status);
+            let to_status = format!("{:?}", updated_row.live_status);
+            let manager_id = Uuid::parse_str(_user.id.as_str()).ok();
+            tokio::spawn(async move {
+                crate::gql::domains::activity_log::log_and_publish(
+                    &db, tournament_id, "tournament", "status_changed",
+                    manager_id, None,
+                    serde_json::json!({"from_status": from_status, "to_status": to_status}),
+                ).await;
+            });
+        }
+
         Ok(Tournament::from(updated_row))
     }
 }
