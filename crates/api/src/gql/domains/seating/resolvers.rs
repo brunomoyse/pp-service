@@ -217,10 +217,15 @@ impl SeatingMutation {
             let manager_uuid = Uuid::parse_str(_manager.id.as_str()).ok();
             tokio::spawn(async move {
                 crate::gql::domains::activity_log::log_and_publish(
-                    &db, tournament_id, "seating", "table_assigned",
-                    manager_uuid, None,
+                    &db,
+                    tournament_id,
+                    "seating",
+                    "table_assigned",
+                    manager_uuid,
+                    None,
                     serde_json::json!({"table_number": table_num}),
-                ).await;
+                )
+                .await;
             });
         }
 
@@ -305,10 +310,15 @@ impl SeatingMutation {
             let manager_uuid = Uuid::parse_str(_manager.id.as_str()).ok();
             tokio::spawn(async move {
                 crate::gql::domains::activity_log::log_and_publish(
-                    &db, tournament_id, "seating", "table_unassigned",
-                    manager_uuid, None,
+                    &db,
+                    tournament_id,
+                    "seating",
+                    "table_unassigned",
+                    manager_uuid,
+                    None,
                     serde_json::json!({"table_number": table_num}),
-                ).await;
+                )
+                .await;
             });
         }
 
@@ -392,10 +402,15 @@ impl SeatingMutation {
             let seat_num = result.seat_number;
             tokio::spawn(async move {
                 crate::gql::domains::activity_log::log_and_publish(
-                    &db, tournament_id, "seating", "player_seated",
-                    Some(manager_id), Some(user_id),
+                    &db,
+                    tournament_id,
+                    "seating",
+                    "player_seated",
+                    Some(manager_id),
+                    Some(user_id),
                     serde_json::json!({"seat_number": seat_num}),
-                ).await;
+                )
+                .await;
             });
         }
 
@@ -474,10 +489,15 @@ impl SeatingMutation {
             let seat_num = result.seat_number;
             tokio::spawn(async move {
                 crate::gql::domains::activity_log::log_and_publish(
-                    &db, tournament_id, "seating", "player_moved",
-                    Some(manager_id), Some(user_id),
+                    &db,
+                    tournament_id,
+                    "seating",
+                    "player_moved",
+                    Some(manager_id),
+                    Some(user_id),
                     serde_json::json!({"seat_number": seat_num}),
-                ).await;
+                )
+                .await;
             });
         }
 
@@ -544,10 +564,15 @@ impl SeatingMutation {
             let manager_uuid = Uuid::parse_str(_manager.id.as_str()).ok();
             tokio::spawn(async move {
                 crate::gql::domains::activity_log::log_and_publish(
-                    &db, tournament_id, "seating", "stack_updated",
-                    manager_uuid, Some(user_id),
+                    &db,
+                    tournament_id,
+                    "seating",
+                    "stack_updated",
+                    manager_uuid,
+                    Some(user_id),
                     serde_json::json!({"stack_size": new_stack}),
-                ).await;
+                )
+                .await;
             });
         }
 
@@ -607,10 +632,15 @@ impl SeatingMutation {
             let move_count = moves.len();
             tokio::spawn(async move {
                 crate::gql::domains::activity_log::log_and_publish(
-                    &db, tournament_id, "seating", "tables_balanced",
-                    Some(manager_id), None,
+                    &db,
+                    tournament_id,
+                    "seating",
+                    "tables_balanced",
+                    Some(manager_id),
+                    None,
                     serde_json::json!({"players_moved": move_count}),
-                ).await;
+                )
+                .await;
             });
         }
 
@@ -738,10 +768,15 @@ impl SeatingMutation {
                 let db = state.db.clone();
                 tokio::spawn(async move {
                     crate::gql::domains::activity_log::log_and_publish(
-                        &db, tournament_uuid, "seating", "player_eliminated",
-                        Some(manager_id), Some(user_uuid),
+                        &db,
+                        tournament_uuid,
+                        "seating",
+                        "player_eliminated",
+                        Some(manager_id),
+                        Some(user_uuid),
                         serde_json::json!({}),
-                    ).await;
+                    )
+                    .await;
                 });
             }
 

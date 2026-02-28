@@ -308,10 +308,15 @@ impl TournamentMutation {
             let manager_id = Uuid::parse_str(_user.id.as_str()).ok();
             tokio::spawn(async move {
                 crate::gql::domains::activity_log::log_and_publish(
-                    &db, tournament_id, "tournament", "status_changed",
-                    manager_id, None,
+                    &db,
+                    tournament_id,
+                    "tournament",
+                    "status_changed",
+                    manager_id,
+                    None,
                     serde_json::json!({"from_status": from_status, "to_status": to_status}),
-                ).await;
+                )
+                .await;
             });
         }
 

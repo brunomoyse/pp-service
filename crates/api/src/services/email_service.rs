@@ -412,19 +412,12 @@ impl EmailService {
         let t = i18n(locale);
         let safe_name = encode_text(to_name);
         let safe_tournament = encode_text(tournament_name);
-        let subject = format!(
-            "{} \u{2660} {}",
-            t.reg_subject_prefix, tournament_name
-        );
+        let subject = format!("{} \u{2660} {}", t.reg_subject_prefix, tournament_name);
 
         let body_html = format!(
             "{}{}{}",
             paragraph(&format!("{} {},", t.hi, safe_name)),
-            paragraph(&format!(
-                "{} {}.",
-                t.reg_body_tpl,
-                gold(&safe_tournament)
-            )),
+            paragraph(&format!("{} {}.", t.reg_body_tpl, gold(&safe_tournament))),
             paragraph(t.good_luck),
         );
 
@@ -455,19 +448,12 @@ impl EmailService {
         let t = i18n(locale);
         let safe_name = encode_text(to_name);
         let safe_tournament = encode_text(tournament_name);
-        let subject = format!(
-            "{} \u{2666} {}",
-            t.wl_subject_prefix, tournament_name
-        );
+        let subject = format!("{} \u{2666} {}", t.wl_subject_prefix, tournament_name);
 
         let body_html = format!(
             "{}{}{}",
             paragraph(&format!("{} {},", t.hi, safe_name)),
-            paragraph(&format!(
-                "{} {}.",
-                t.wl_body_tpl,
-                gold(&safe_tournament)
-            )),
+            paragraph(&format!("{} {}.", t.wl_body_tpl, gold(&safe_tournament))),
             paragraph(t.good_luck),
         );
 
@@ -503,11 +489,7 @@ impl EmailService {
         let body_html = format!(
             "{}{}{}",
             paragraph(&format!("{} {},", t.hi, safe_name)),
-            paragraph(&format!(
-                "{} {}",
-                gold(&safe_tournament),
-                t.soon_body_tpl
-            )),
+            paragraph(&format!("{} {}", gold(&safe_tournament), t.soon_body_tpl)),
             paragraph(t.soon_ready),
         );
 

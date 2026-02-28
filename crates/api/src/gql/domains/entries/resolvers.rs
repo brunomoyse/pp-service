@@ -102,10 +102,15 @@ impl EntryMutation {
             let entry_type_str = String::from(input.entry_type);
             tokio::spawn(async move {
                 crate::gql::domains::activity_log::log_and_publish(
-                    &db, tournament_id, "entry", "added",
-                    Some(manager_id), Some(user_id),
+                    &db,
+                    tournament_id,
+                    "entry",
+                    "added",
+                    Some(manager_id),
+                    Some(user_id),
                     serde_json::json!({"entry_type": entry_type_str, "amount_cents": amount_cents}),
-                ).await;
+                )
+                .await;
             });
         }
 
@@ -148,10 +153,15 @@ impl EntryMutation {
             let amount = entry.amount_cents;
             tokio::spawn(async move {
                 crate::gql::domains::activity_log::log_and_publish(
-                    &db, t_id, "entry", "deleted",
-                    manager_id, Some(u_id),
+                    &db,
+                    t_id,
+                    "entry",
+                    "deleted",
+                    manager_id,
+                    Some(u_id),
                     serde_json::json!({"entry_type": entry_type, "amount_cents": amount}),
-                ).await;
+                )
+                .await;
             });
         }
 
