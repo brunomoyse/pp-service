@@ -1,10 +1,9 @@
 use async_graphql::{Context, Result, Subscription};
 use chrono::{DateTime, Utc};
 use futures_util::Stream;
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::{errors::BroadcastStreamRecvError, BroadcastStream};
 use uuid::Uuid;
@@ -140,8 +139,8 @@ impl SubscriptionChannels {
     }
 }
 
-static CHANNELS: Lazy<Arc<Mutex<SubscriptionChannels>>> =
-    Lazy::new(|| Arc::new(Mutex::new(SubscriptionChannels::new())));
+static CHANNELS: LazyLock<Arc<Mutex<SubscriptionChannels>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(SubscriptionChannels::new())));
 
 pub struct SubscriptionRoot;
 
