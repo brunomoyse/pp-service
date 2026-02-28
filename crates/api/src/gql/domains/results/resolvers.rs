@@ -251,10 +251,15 @@ impl ResultMutation {
             let player_count = results.len();
             tokio::spawn(async move {
                 crate::gql::domains::activity_log::log_and_publish(
-                    &db, tournament_id, "result", "results_entered",
-                    Some(manager_id), None,
+                    &db,
+                    tournament_id,
+                    "result",
+                    "results_entered",
+                    Some(manager_id),
+                    None,
                     serde_json::json!({"player_count": player_count}),
-                ).await;
+                )
+                .await;
             });
         }
 

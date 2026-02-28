@@ -255,13 +255,11 @@ impl AuthMutation {
         let state = ctx.data::<AppState>()?;
 
         // Find user by email — only fetch id + password_hash for auth check
-        let auth_row = sqlx::query(
-            "SELECT id, password_hash FROM users WHERE email = $1",
-        )
-        .bind(&input.email)
-        .fetch_optional(&state.db)
-        .await
-        .gql_err("Database operation failed")?;
+        let auth_row = sqlx::query("SELECT id, password_hash FROM users WHERE email = $1")
+            .bind(&input.email)
+            .fetch_optional(&state.db)
+            .await
+            .gql_err("Database operation failed")?;
 
         let auth_row = match auth_row {
             Some(row) => row,
@@ -359,8 +357,7 @@ impl AuthMutation {
         let user = find_user_by_email(state, &input.email).await?;
 
         if let Some(user) = user {
-            let user_id =
-                Uuid::parse_str(user.id.as_str()).gql_err("Invalid user ID")?;
+            let user_id = Uuid::parse_str(user.id.as_str()).gql_err("Invalid user ID")?;
 
             // Invalidate any existing pending tokens for this user
             infra::repos::password_reset_tokens::invalidate_for_user(&state.db, user_id)
