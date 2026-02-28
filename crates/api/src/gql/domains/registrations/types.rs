@@ -4,9 +4,10 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::gql::domains::seating::types::SeatAssignment;
+use crate::gql::domains::tournaments::types::Tournament;
 use crate::gql::domains::users::types::User;
 use crate::gql::error::ResultExt;
-use crate::gql::loaders::UserLoader;
+use crate::gql::loaders::{TournamentLoader, UserLoader};
 use crate::state::AppState;
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
@@ -107,6 +108,22 @@ impl TournamentRegistration {
             .gql_err("Loading user failed")?
         {
             Some(user) => Ok(Some(user.into())),
+            None => Ok(None),
+        }
+    }
+
+    async fn tournament(&self, ctx: &Context<'_>) -> async_graphql::Result<Option<Tournament>> {
+        let tournament_id =
+            Uuid::parse_str(self.tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+
+        let loader = ctx.data::<DataLoader<TournamentLoader>>()?;
+
+        match loader
+            .load_one(tournament_id)
+            .await
+            .gql_err("Loading tournament failed")?
+        {
+            Some(tournament) => Ok(Some(tournament.into())),
             None => Ok(None),
         }
     }
