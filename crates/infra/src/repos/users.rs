@@ -35,7 +35,7 @@ pub async fn list(
     let page = page.unwrap_or_default();
 
     let mut query = sqlx::QueryBuilder::new(
-        "SELECT id, email, username, first_name, last_name, phone, is_active, role, created_at, updated_at FROM users WHERE 1=1"
+        "SELECT id, email, username, first_name, last_name, phone, is_active, role, locale, created_at, updated_at FROM users WHERE 1=1"
     );
 
     if let Some(search) = &filter.search {
@@ -92,7 +92,7 @@ pub async fn count(pool: &PgPool, filter: UserFilter) -> Result<i64> {
 
 pub async fn get_by_id<'e>(executor: impl PgExecutor<'e>, id: Uuid) -> Result<Option<UserRow>> {
     let row = sqlx::query_as::<_, UserRow>(
-        "SELECT id, email, username, first_name, last_name, phone, is_active, role, created_at, updated_at FROM users WHERE id = $1"
+        "SELECT id, email, username, first_name, last_name, phone, is_active, role, locale, created_at, updated_at FROM users WHERE id = $1"
     )
     .bind(id)
     .fetch_optional(executor)
@@ -106,7 +106,7 @@ pub async fn create<'e>(executor: impl PgExecutor<'e>, data: CreateUserData) -> 
         r#"
         INSERT INTO users (email, first_name, last_name, username, phone, role, is_active)
         VALUES ($1, $2, $3, $4, $5, 'player', true)
-        RETURNING id, email, username, first_name, last_name, phone, is_active, role, created_at, updated_at
+        RETURNING id, email, username, first_name, last_name, phone, is_active, role, locale, created_at, updated_at
         "#,
     )
     .bind(&data.email)
@@ -135,7 +135,7 @@ pub async fn update<'e>(
             phone = COALESCE($6, phone),
             updated_at = NOW()
         WHERE id = $1
-        RETURNING id, email, username, first_name, last_name, phone, is_active, role, created_at, updated_at
+        RETURNING id, email, username, first_name, last_name, phone, is_active, role, locale, created_at, updated_at
         "#,
     )
     .bind(id)
@@ -156,7 +156,7 @@ pub async fn deactivate<'e>(executor: impl PgExecutor<'e>, id: Uuid) -> Result<O
         UPDATE users
         SET is_active = false, updated_at = NOW()
         WHERE id = $1
-        RETURNING id, email, username, first_name, last_name, phone, is_active, role, created_at, updated_at
+        RETURNING id, email, username, first_name, last_name, phone, is_active, role, locale, created_at, updated_at
         "#,
     )
     .bind(id)
@@ -172,7 +172,7 @@ pub async fn reactivate<'e>(executor: impl PgExecutor<'e>, id: Uuid) -> Result<O
         UPDATE users
         SET is_active = true, updated_at = NOW()
         WHERE id = $1
-        RETURNING id, email, username, first_name, last_name, phone, is_active, role, created_at, updated_at
+        RETURNING id, email, username, first_name, last_name, phone, is_active, role, locale, created_at, updated_at
         "#,
     )
     .bind(id)

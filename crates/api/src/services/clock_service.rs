@@ -60,6 +60,13 @@ impl ClockService {
                     error!("Error cleaning up expired refresh tokens: {}", e);
                 }
 
+                // Clean up expired password reset tokens
+                if let Err(e) =
+                    infra::repos::password_reset_tokens::delete_expired(&self.state.db).await
+                {
+                    error!("Error cleaning up expired password reset tokens: {}", e);
+                }
+
                 // Clean up inactive subscription channels to prevent memory leaks
                 cleanup_inactive_channels(INACTIVE_CHANNEL_HOURS);
             }

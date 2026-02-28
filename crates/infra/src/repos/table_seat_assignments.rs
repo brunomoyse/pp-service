@@ -182,6 +182,7 @@ pub async fn list_current_with_players_for_table<'e>(
         phone: Option<String>,
         is_active: bool,
         role: Option<String>,
+        locale: String,
         user_created_at: DateTime<Utc>,
         user_updated_at: DateTime<Utc>,
     }
@@ -193,7 +194,7 @@ pub async fn list_current_with_players_for_table<'e>(
             tsa.stack_size, tsa.is_current, tsa.assigned_at, tsa.unassigned_at,
             tsa.assigned_by, tsa.notes, tsa.created_at, tsa.updated_at,
             u.email, u.username, u.first_name, u.last_name, u.phone, u.is_active, u.role,
-            u.created_at as user_created_at, u.updated_at as user_updated_at
+            u.locale, u.created_at as user_created_at, u.updated_at as user_updated_at
         FROM table_seat_assignments tsa
         JOIN users u ON tsa.user_id = u.id
         WHERE tsa.club_table_id = $1 AND tsa.is_current = true
@@ -231,6 +232,7 @@ pub async fn list_current_with_players_for_table<'e>(
                 phone: row.phone,
                 is_active: row.is_active,
                 role: row.role,
+                locale: row.locale,
                 created_at: row.user_created_at,
                 updated_at: row.user_updated_at,
             },
@@ -421,7 +423,7 @@ pub async fn list_unassigned_players<'e>(
     sqlx::query_as::<_, UserRow>(
         r#"
         SELECT u.id, u.email, u.username, u.first_name, u.last_name, u.phone,
-               u.is_active, u.role, u.created_at, u.updated_at
+               u.is_active, u.role, u.locale, u.created_at, u.updated_at
         FROM users u
         JOIN tournament_registrations tr ON u.id = tr.user_id
         LEFT JOIN table_seat_assignments tsa ON u.id = tsa.user_id

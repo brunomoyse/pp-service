@@ -15,6 +15,7 @@ pub struct User {
     pub phone: Option<String>,
     pub is_active: bool,
     pub role: Role,
+    pub locale: String,
 }
 
 impl From<infra::models::UserRow> for User {
@@ -28,6 +29,7 @@ impl From<infra::models::UserRow> for User {
             phone: row.phone,
             is_active: row.is_active,
             role: Role::from(row.role),
+            locale: row.locale,
         }
     }
 }

@@ -11,7 +11,8 @@ use crate::state::AppState;
 
 use super::types::{
     AuthPayload, CreateOAuthClientInput, CreateOAuthClientResponse, OAuthCallbackInput,
-    OAuthClient, OAuthUrlResponse, UserLoginInput, UserRegistrationInput,
+    OAuthClient, OAuthUrlResponse, RequestPasswordResetInput, RequestPasswordResetResponse,
+    ResetPasswordInput, ResetPasswordResponse, UserLoginInput, UserRegistrationInput,
 };
 
 // ── Queries ──────────────────────────────────────────────────────────
@@ -122,7 +123,7 @@ impl AuthMutation {
         .await
         .gql_err("Failed to create refresh token")?;
 
-        let max_age_secs = auth_config.refresh_token_expiration_days * 24 * 60 * 60;
+        let max_age_secs = Some(auth_config.refresh_token_expiration_days * 24 * 60 * 60);
         let cookie_value = crate::auth::cookie::build_refresh_cookie(
             &raw_refresh,
             max_age_secs,
@@ -243,30 +244,36 @@ impl AuthMutation {
             phone: None,
             is_active: true,
             role: crate::gql::types::Role::Player,
+            locale: "en".to_string(),
         })
     }
 
     /// Login user with password (returns JWT token)
     async fn login_user(&self, ctx: &Context<'_>, input: UserLoginInput) -> Result<AuthPayload> {
+        use sqlx::Row;
+
         let state = ctx.data::<AppState>()?;
 
-        // Find user by email
-        let user_row = sqlx::query!(
-            "SELECT id, email, username, first_name, last_name, phone, is_active, password_hash, role FROM users WHERE email = $1",
-            input.email
+        // Find user by email — only fetch id + password_hash for auth check
+        let auth_row = sqlx::query(
+            "SELECT id, password_hash FROM users WHERE email = $1",
         )
+        .bind(&input.email)
         .fetch_optional(&state.db)
         .await
         .gql_err("Database operation failed")?;
 
-        let user_row = match user_row {
+        let auth_row = match auth_row {
             Some(row) => row,
             None => return Err(async_graphql::Error::new("Invalid credentials")),
         };
 
+        let user_id: Uuid = auth_row.get("id");
+        let password_hash: Option<String> = auth_row.get("password_hash");
+
         // Verify password
-        if let Some(ref password_hash) = user_row.password_hash {
-            if !PasswordService::verify_password(&input.password, password_hash)
+        if let Some(ref hash) = password_hash {
+            if !PasswordService::verify_password(&input.password, hash)
                 .gql_err("Database operation failed")?
             {
                 return Err(async_graphql::Error::new("Invalid credentials"));
@@ -275,37 +282,36 @@ impl AuthMutation {
             return Err(async_graphql::Error::new("User has no password set"));
         }
 
-        let role = crate::gql::types::Role::from(user_row.role);
-        let role_str: String = role.into();
+        // Fetch full user data via repo (includes locale)
+        let user: User = infra::repos::users::get_by_id(&state.db, user_id)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("User not found"))?
+            .into();
+
+        let role_str: String = user.role.into();
 
         // Generate JWT token
         let token = state
             .jwt_service()
-            .create_token(user_row.id, user_row.email.clone(), role_str)
+            .create_token(user_id, user.email.clone(), role_str)
             .gql_err("Database operation failed")?;
-
-        let user = User {
-            id: user_row.id.into(),
-            email: user_row.email,
-            username: user_row.username,
-            first_name: user_row.first_name,
-            last_name: user_row.last_name,
-            phone: user_row.phone,
-            is_active: user_row.is_active,
-            role,
-        };
 
         // Create refresh token and set HttpOnly cookie
         let auth_config = state.auth_config();
         let raw_refresh = crate::auth::refresh::create_refresh_token(
             &state.db,
-            user_row.id,
+            user_id,
             auth_config.refresh_token_expiration_days,
         )
         .await
         .gql_err("Failed to create refresh token")?;
 
-        let max_age_secs = auth_config.refresh_token_expiration_days * 24 * 60 * 60;
+        // "Remember me" → persistent cookie with Max-Age; otherwise session cookie
+        let max_age_secs = if input.remember_me {
+            Some(auth_config.refresh_token_expiration_days * 24 * 60 * 60)
+        } else {
+            None
+        };
         let cookie_value = crate::auth::cookie::build_refresh_cookie(
             &raw_refresh,
             max_age_secs,
@@ -337,6 +343,124 @@ impl AuthMutation {
             csrf_token,
         })
     }
+
+    /// Request a password reset email (unauthenticated)
+    async fn request_password_reset(
+        &self,
+        ctx: &Context<'_>,
+        input: RequestPasswordResetInput,
+    ) -> Result<RequestPasswordResetResponse> {
+        use chrono::{Duration, Utc};
+        use rand::RngExt;
+
+        let state = ctx.data::<AppState>()?;
+
+        // Look up user by email
+        let user = find_user_by_email(state, &input.email).await?;
+
+        if let Some(user) = user {
+            let user_id =
+                Uuid::parse_str(user.id.as_str()).gql_err("Invalid user ID")?;
+
+            // Invalidate any existing pending tokens for this user
+            infra::repos::password_reset_tokens::invalidate_for_user(&state.db, user_id)
+                .await
+                .gql_err("Database operation failed")?;
+
+            // Generate a 64-char random token
+            let raw_token: String = rand::rng()
+                .sample_iter(&Alphanumeric)
+                .take(64)
+                .map(char::from)
+                .collect();
+
+            // Hash and store
+            let token_hash = crate::auth::refresh::hash_token(&raw_token);
+            let expires_at = Utc::now() + Duration::hours(1);
+
+            infra::repos::password_reset_tokens::create(
+                &state.db,
+                &token_hash,
+                user_id,
+                expires_at,
+            )
+            .await
+            .gql_err("Database operation failed")?;
+
+            // Send email (awaited, not fire-and-forget)
+            if let Some(email_service) = state.email_service() {
+                let display_name = user.first_name.clone();
+                let locale = crate::services::email_service::Locale::from_str_lossy(
+                    input.locale.as_deref().unwrap_or(&user.locale),
+                );
+                if let Err(e) = email_service
+                    .send_password_reset(&user.email, &display_name, &raw_token, locale)
+                    .await
+                {
+                    tracing::error!("Failed to send password reset email: {}", e);
+                }
+            }
+        }
+
+        // Always return success to prevent user enumeration
+        Ok(RequestPasswordResetResponse {
+            success: true,
+            message: "If an account with that email exists, a password reset link has been sent."
+                .to_string(),
+        })
+    }
+
+    /// Reset password using a token (unauthenticated)
+    async fn reset_password(
+        &self,
+        ctx: &Context<'_>,
+        input: ResetPasswordInput,
+    ) -> Result<ResetPasswordResponse> {
+        let state = ctx.data::<AppState>()?;
+
+        // Validate password strength
+        PasswordService::validate_password_strength(&input.new_password)
+            .gql_err("Password validation failed")?;
+
+        // Hash the incoming token and look up
+        let token_hash = crate::auth::refresh::hash_token(&input.token);
+        let token_row =
+            infra::repos::password_reset_tokens::find_valid_by_hash(&state.db, &token_hash)
+                .await
+                .gql_err("Database operation failed")?;
+
+        let token_row = match token_row {
+            Some(row) => row,
+            None => {
+                return Ok(ResetPasswordResponse {
+                    success: false,
+                    message: "Invalid or expired reset token.".to_string(),
+                });
+            }
+        };
+
+        // Hash new password
+        let password_hash = PasswordService::hash_password(&input.new_password)
+            .gql_err("Password hashing failed")?;
+
+        // Update user password
+        sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2")
+            .bind(&password_hash)
+            .bind(token_row.user_id)
+            .execute(&state.db)
+            .await
+            .gql_err("Database operation failed")?;
+
+        // Mark token as used
+        infra::repos::password_reset_tokens::mark_used(&state.db, token_row.id)
+            .await
+            .gql_err("Database operation failed")?;
+
+        Ok(ResetPasswordResponse {
+            success: true,
+            message: "Password has been reset successfully.".to_string(),
+        })
+    }
 }
 
 // ── Helper functions ─────────────────────────────────────────────────
@@ -361,27 +485,15 @@ fn generate_client_secret() -> String {
 }
 
 async fn find_user_by_email(state: &AppState, email: &str) -> Result<Option<User>> {
-    let row = sqlx::query!(
-        "SELECT id, email, username, first_name, last_name, phone, is_active, role FROM users WHERE email = $1",
-        email
+    let row = sqlx::query_as::<_, infra::models::UserRow>(
+        "SELECT id, email, username, first_name, last_name, phone, is_active, role, locale, created_at, updated_at FROM users WHERE email = $1",
     )
+    .bind(email)
     .fetch_optional(&state.db)
     .await
     .gql_err("Database operation failed")?;
 
-    match row {
-        Some(row) => Ok(Some(User {
-            id: row.id.into(),
-            email: row.email,
-            username: row.username,
-            first_name: row.first_name,
-            last_name: row.last_name,
-            phone: row.phone,
-            is_active: row.is_active,
-            role: crate::gql::types::Role::from(row.role),
-        })),
-        None => Ok(None),
-    }
+    Ok(row.map(User::from))
 }
 
 async fn create_user_from_oauth(
@@ -411,22 +523,10 @@ async fn create_user_from_oauth(
 }
 
 async fn get_user_by_id(state: &AppState, user_id: Uuid) -> Result<User> {
-    let row = sqlx::query!(
-        "SELECT id, email, username, first_name, last_name, phone, is_active, role FROM users WHERE id = $1",
-        user_id
-    )
-    .fetch_one(&state.db)
-    .await
-    .gql_err("Database operation failed")?;
+    let row = infra::repos::users::get_by_id(&state.db, user_id)
+        .await
+        .gql_err("Database operation failed")?
+        .ok_or_else(|| async_graphql::Error::new("User not found"))?;
 
-    Ok(User {
-        id: row.id.into(),
-        email: row.email,
-        username: row.username,
-        first_name: row.first_name,
-        last_name: row.last_name,
-        phone: row.phone,
-        is_active: row.is_active,
-        role: crate::gql::types::Role::from(row.role),
-    })
+    Ok(User::from(row))
 }

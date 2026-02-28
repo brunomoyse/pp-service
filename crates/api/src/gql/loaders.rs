@@ -80,7 +80,7 @@ impl Loader<Uuid> for UserLoader {
             let rows: Vec<UserRow> = sqlx::query_as::<_, UserRow>(
                 r#"
                 SELECT id, email, username, first_name, last_name, phone,
-                       is_active, role, created_at, updated_at
+                       is_active, role, locale, created_at, updated_at
                 FROM users
                 WHERE id = ANY($1::uuid[])
                 "#,

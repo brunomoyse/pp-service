@@ -1,6 +1,6 @@
 pub fn build_refresh_cookie(
     raw_token: &str,
-    max_age_secs: u64,
+    max_age_secs: Option<u64>,
     cookie_domain: &Option<String>,
     secure: bool,
 ) -> String {
@@ -8,9 +8,15 @@ pub fn build_refresh_cookie(
     let same_site = if secure { "Strict" } else { "Lax" };
 
     let mut cookie = format!(
-        "refresh_token={}; HttpOnly{}; SameSite={}; Path=/auth; Max-Age={}",
-        raw_token, secure_flag, same_site, max_age_secs
+        "refresh_token={}; HttpOnly{}; SameSite={}; Path=/auth",
+        raw_token, secure_flag, same_site
     );
+
+    // When max_age is Some, the cookie persists across browser sessions ("remember me").
+    // When None, it becomes a session cookie that expires when the browser closes.
+    if let Some(secs) = max_age_secs {
+        cookie.push_str(&format!("; Max-Age={}", secs));
+    }
 
     if let Some(domain) = cookie_domain {
         cookie.push_str(&format!("; Domain={}", domain));

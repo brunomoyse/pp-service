@@ -95,7 +95,7 @@ pub async fn callback(
     )
     .await?;
 
-    let max_age_secs = auth_config.refresh_token_expiration_days * 24 * 60 * 60;
+    let max_age_secs = Some(auth_config.refresh_token_expiration_days * 24 * 60 * 60);
     let cookie_value = build_refresh_cookie(
         &raw_refresh,
         max_age_secs,
@@ -115,26 +115,14 @@ pub async fn callback(
 }
 
 async fn find_user_by_email(state: &AppState, email: &str) -> Result<Option<User>, AppError> {
-    let row = sqlx::query!(
-        "SELECT id, email, username, first_name, last_name, phone, is_active, role FROM users WHERE email = $1",
-        email
+    let row = sqlx::query_as::<_, infra::models::UserRow>(
+        "SELECT id, email, username, first_name, last_name, phone, is_active, role, locale, created_at, updated_at FROM users WHERE email = $1",
     )
+    .bind(email)
     .fetch_optional(&state.db)
     .await?;
 
-    match row {
-        Some(row) => Ok(Some(User {
-            id: row.id.into(),
-            email: row.email,
-            username: row.username,
-            first_name: row.first_name,
-            last_name: row.last_name,
-            phone: row.phone,
-            is_active: row.is_active,
-            role: crate::gql::types::Role::from(row.role),
-        })),
-        None => Ok(None),
-    }
+    Ok(row.map(User::from))
 }
 
 async fn create_user_from_oauth(
@@ -163,21 +151,9 @@ async fn create_user_from_oauth(
 }
 
 async fn get_user_by_id(state: &AppState, user_id: Uuid) -> Result<User, AppError> {
-    let row = sqlx::query!(
-        "SELECT id, email, username, first_name, last_name, phone, is_active, role FROM users WHERE id = $1",
-        user_id
-    )
-    .fetch_one(&state.db)
-    .await?;
+    let row = infra::repos::users::get_by_id(&state.db, user_id)
+        .await?
+        .ok_or_else(|| AppError::Internal("User not found".to_string()))?;
 
-    Ok(User {
-        id: row.id.into(),
-        email: row.email,
-        username: row.username,
-        first_name: row.first_name,
-        last_name: row.last_name,
-        phone: row.phone,
-        is_active: row.is_active,
-        role: crate::gql::types::Role::from(row.role),
-    })
+    Ok(User::from(row))
 }

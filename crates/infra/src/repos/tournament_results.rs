@@ -23,6 +23,7 @@ pub struct LeaderboardEntry {
     pub phone: Option<String>,
     pub is_active: bool,
     pub role: Option<String>,
+    pub locale: String,
     pub total_tournaments: i32,
     pub total_buy_ins: i32,  // Total amount spent (cents)
     pub total_winnings: i32, // Total amount won (cents)
@@ -297,6 +298,7 @@ pub async fn get_leaderboard(
                 u.phone,
                 u.is_active,
                 u.role,
+                u.locale,
                 COUNT(DISTINCT reg.tournament_id) as total_tournaments,
                 COALESCE(SUM(t.buy_in_cents), 0) as total_buy_ins,
                 COALESCE(SUM(tr.prize_cents), 0) as total_winnings,
@@ -311,7 +313,7 @@ pub async fn get_leaderboard(
             LEFT JOIN tournament_results tr ON u.id = tr.user_id AND t.id = tr.tournament_id
             WHERE u.role = 'player' AND u.is_active = true
                 {} {}
-            GROUP BY u.id, u.username, u.first_name, u.last_name, u.email, u.phone, u.is_active, u.role
+            GROUP BY u.id, u.username, u.first_name, u.last_name, u.email, u.phone, u.is_active, u.role, u.locale
             HAVING COUNT(DISTINCT reg.tournament_id) > 0
         )
         SELECT
@@ -323,6 +325,7 @@ pub async fn get_leaderboard(
             phone,
             is_active,
             role,
+            locale,
             total_tournaments,
             total_buy_ins,
             total_winnings,
@@ -370,6 +373,7 @@ pub async fn get_leaderboard(
             phone: row.try_get("phone")?,
             is_active: row.try_get("is_active")?,
             role: row.try_get("role")?,
+            locale: row.try_get("locale")?,
             total_tournaments: row.try_get::<i64, _>("total_tournaments")? as i32,
             total_buy_ins: row.try_get::<i64, _>("total_buy_ins")? as i32,
             total_winnings: row.try_get::<i64, _>("total_winnings")? as i32,
