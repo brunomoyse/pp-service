@@ -57,6 +57,7 @@ impl LeaderboardQuery {
                     phone: entry.phone,
                     is_active: entry.is_active,
                     role: Role::from(entry.role),
+                    locale: entry.locale,
                 },
                 rank: offset + (index as i32) + 1, // 1-based ranking with offset
                 total_tournaments: entry.total_tournaments,

@@ -54,27 +54,15 @@ pub async fn require_manager_if(
 }
 
 async fn get_user_by_id_with_role(state: &AppState, user_id: Uuid) -> Result<User> {
-    let row = sqlx::query!(
-        "SELECT id, email, username, first_name, last_name, phone, is_active, role FROM users WHERE id = $1",
-        user_id
-    )
-    .fetch_one(&state.db)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to retrieve user {}: {}", user_id, e);
-        Error::new("Failed to retrieve user")
-    })?;
+    let row = infra::repos::users::get_by_id(&state.db, user_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to retrieve user {}: {}", user_id, e);
+            Error::new("Failed to retrieve user")
+        })?
+        .ok_or_else(|| Error::new("User not found"))?;
 
-    Ok(User {
-        id: row.id.into(),
-        email: row.email,
-        username: row.username,
-        first_name: row.first_name,
-        last_name: row.last_name,
-        phone: row.phone,
-        is_active: row.is_active,
-        role: crate::gql::types::Role::from(row.role),
-    })
+    Ok(User::from(row))
 }
 
 /// Check if the authenticated user is a manager for a specific club

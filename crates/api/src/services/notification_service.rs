@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::gql::subscriptions::publish_user_notification;
 use crate::gql::types::{NotificationType, UserNotification, TITLE_TOURNAMENT_STARTING};
 use crate::AppState;
-use infra::repos::{tournament_registrations, tournaments};
+use infra::repos::{tournament_registrations, tournaments, users};
 
 const NOTIFICATION_WINDOW_MINUTES: i32 = 16; // Check for tournaments starting within 16 minutes
 const CHECK_INTERVAL_SECONDS: u64 = 60; // Check every minute
@@ -81,6 +81,24 @@ impl NotificationService {
                 };
 
                 publish_user_notification(notification);
+
+                // Send email notification (fire-and-forget)
+                if let Some(email_service) = self.state.email_service() {
+                    if let Ok(Some(user_row)) =
+                        users::get_by_id(&self.state.db, registration.user_id).await
+                    {
+                        let locale = super::email_service::Locale::from_str_lossy(&user_row.locale);
+                        super::email_service::spawn_email(
+                            email_service.clone(),
+                            user_row.email,
+                            user_row.first_name,
+                            super::email_service::EmailType::TournamentStartingSoon {
+                                tournament_name: tournament.name.clone(),
+                                locale,
+                            },
+                        );
+                    }
+                }
             }
 
             // Mark this tournament as notified

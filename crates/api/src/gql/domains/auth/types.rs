@@ -57,4 +57,32 @@ pub struct UserRegistrationInput {
 pub struct UserLoginInput {
     pub email: String,
     pub password: String,
+    /// When true, the refresh cookie persists across browser sessions.
+    #[graphql(default = false)]
+    pub remember_me: bool,
+}
+
+#[derive(InputObject)]
+pub struct RequestPasswordResetInput {
+    pub email: String,
+    /// Optional locale for the email (e.g. "en", "fr", "nl"). Defaults to "en".
+    pub locale: Option<String>,
+}
+
+#[derive(SimpleObject)]
+pub struct RequestPasswordResetResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+#[derive(InputObject)]
+pub struct ResetPasswordInput {
+    pub token: String,
+    pub new_password: String,
+}
+
+#[derive(SimpleObject)]
+pub struct ResetPasswordResponse {
+    pub success: bool,
+    pub message: String,
 }
