@@ -96,6 +96,19 @@ impl EntryMutation {
 
         let entry_row = tournament_entries::create(&state.db, create_data).await?;
 
+        // Log activity
+        {
+            let db = state.db.clone();
+            let entry_type_str = String::from(input.entry_type);
+            tokio::spawn(async move {
+                crate::gql::domains::activity_log::log_and_publish(
+                    &db, tournament_id, "entry", "added",
+                    Some(manager_id), Some(user_id),
+                    serde_json::json!({"entry_type": entry_type_str, "amount_cents": amount_cents}),
+                ).await;
+            });
+        }
+
         Ok(entry_row.into())
     }
 
@@ -119,10 +132,29 @@ impl EntryMutation {
         let club_id = tournament.club_id;
 
         // Require manager role for this specific club
-        let _manager = require_club_manager(ctx, club_id).await?;
+        let manager = require_club_manager(ctx, club_id).await?;
+        let manager_id = Uuid::parse_str(manager.id.as_str()).ok();
 
-        tournament_entries::delete(&state.db, entry_id)
+        let result = tournament_entries::delete(&state.db, entry_id)
             .await
-            .gql_err("Failed to delete entry")
+            .gql_err("Failed to delete entry")?;
+
+        // Log activity
+        {
+            let db = state.db.clone();
+            let t_id = entry.tournament_id;
+            let u_id = entry.user_id;
+            let entry_type = entry.entry_type.clone();
+            let amount = entry.amount_cents;
+            tokio::spawn(async move {
+                crate::gql::domains::activity_log::log_and_publish(
+                    &db, t_id, "entry", "deleted",
+                    manager_id, Some(u_id),
+                    serde_json::json!({"entry_type": entry_type, "amount_cents": amount}),
+                ).await;
+            });
+        }
+
+        Ok(result)
     }
 }

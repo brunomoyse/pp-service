@@ -1,7 +1,9 @@
+pub mod activity_log;
 pub mod blind_structure_templates;
 pub mod club_managers;
 pub mod club_tables;
 pub mod clubs;
+pub mod password_reset_tokens;
 pub mod payout_templates;
 pub mod player_deals;
 pub mod refresh_tokens;

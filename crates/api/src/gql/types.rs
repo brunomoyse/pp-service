@@ -8,6 +8,9 @@ pub use crate::gql::common::types::{
     TITLE_WAITLIST_PROMOTED,
 };
 
+// Activity log types
+pub use crate::gql::domains::activity_log::types::{ActivityEventCategory, ActivityLogEntry};
+
 // Club types
 pub use crate::gql::domains::clubs::types::{Club, ClubTable};
 
@@ -40,7 +43,8 @@ pub use crate::gql::domains::tournaments::types::{
 // Auth types
 pub use crate::gql::domains::auth::types::{
     AuthPayload, CreateOAuthClientInput, CreateOAuthClientResponse, OAuthCallbackInput,
-    OAuthClient, OAuthUrlResponse, UserLoginInput, UserRegistrationInput,
+    OAuthClient, OAuthUrlResponse, RequestPasswordResetInput, RequestPasswordResetResponse,
+    ResetPasswordInput, ResetPasswordResponse, UserLoginInput, UserRegistrationInput,
 };
 
 // Entry types

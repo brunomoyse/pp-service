@@ -1,5 +1,6 @@
 use async_graphql::MergedObject;
 
+use crate::gql::domains::activity_log::ActivityLogQuery;
 use crate::gql::domains::auth::AuthQuery;
 use crate::gql::domains::clubs::ClubQuery;
 use crate::gql::domains::entries::EntryQuery;
@@ -13,6 +14,7 @@ use crate::gql::domains::users::UserQuery;
 
 #[derive(MergedObject, Default)]
 pub struct QueryRoot(
+    ActivityLogQuery,
     AuthQuery,
     ClubQuery,
     EntryQuery,

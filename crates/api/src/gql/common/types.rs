@@ -38,6 +38,10 @@ impl PaginationInput {
     name = "PaginatedLeaderboard",
     params(crate::gql::types::LeaderboardEntry)
 ))]
+#[graphql(concrete(
+    name = "PaginatedActivityLog",
+    params(crate::gql::types::ActivityLogEntry)
+))]
 pub struct PaginatedResponse<T: async_graphql::OutputType> {
     /// List of items for the current page
     pub items: Vec<T>,

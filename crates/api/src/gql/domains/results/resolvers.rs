@@ -245,6 +245,19 @@ impl ResultMutation {
             None
         };
 
+        // Log activity
+        {
+            let db = state.db.clone();
+            let player_count = results.len();
+            tokio::spawn(async move {
+                crate::gql::domains::activity_log::log_and_publish(
+                    &db, tournament_id, "result", "results_entered",
+                    Some(manager_id), None,
+                    serde_json::json!({"player_count": player_count}),
+                ).await;
+            });
+        }
+
         Ok(EnterTournamentResultsResponse {
             success: true,
             results,

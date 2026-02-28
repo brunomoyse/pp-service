@@ -11,7 +11,8 @@ use uuid::Uuid;
 use crate::auth::jwt::Claims;
 use crate::gql::error::ResultExt;
 use crate::gql::types::{
-    PlayerRegistrationEvent, SeatingChangeEvent, TournamentClock, UserNotification,
+    ActivityLogEntry, PlayerRegistrationEvent, SeatingChangeEvent, TournamentClock,
+    UserNotification,
 };
 
 /// Per-tournament channels for real-time updates
@@ -19,6 +20,7 @@ struct TournamentChannels {
     registrations: broadcast::Sender<PlayerRegistrationEvent>,
     seating: broadcast::Sender<SeatingChangeEvent>,
     clock: broadcast::Sender<TournamentClock>,
+    activity: broadcast::Sender<ActivityLogEntry>,
     last_activity: DateTime<Utc>,
 }
 
@@ -28,6 +30,7 @@ impl TournamentChannels {
             registrations: broadcast::channel(100).0,
             seating: broadcast::channel(100).0,
             clock: broadcast::channel(100).0,
+            activity: broadcast::channel(100).0,
             last_activity: Utc::now(),
         }
     }
@@ -235,6 +238,23 @@ impl SubscriptionRoot {
 
         Ok(BroadcastStream::new(receiver))
     }
+
+    /// Subscribe to tournament activity log entries in real time
+    async fn tournament_activity(
+        &self,
+        tournament_id: async_graphql::ID,
+    ) -> Result<impl Stream<Item = Result<ActivityLogEntry, BroadcastStreamRecvError>>> {
+        let tournament_uuid =
+            Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+
+        let receiver = {
+            let mut channels = CHANNELS.lock();
+            let tournament = channels.get_or_create_tournament(tournament_uuid);
+            tournament.activity.subscribe()
+        };
+
+        Ok(BroadcastStream::new(receiver))
+    }
 }
 
 // ============================================================================
@@ -307,4 +327,11 @@ pub fn publish_user_notification(notification: UserNotification) {
     let mut channels = CHANNELS.lock();
     let user_sender = channels.get_or_create_user(user_id);
     let _ = user_sender.send(notification);
+}
+
+/// Publish an activity log entry to a tournament's activity channel
+pub fn publish_activity_event(tournament_id: Uuid, entry: ActivityLogEntry) {
+    let mut channels = CHANNELS.lock();
+    let tournament = channels.get_or_create_tournament(tournament_id);
+    let _ = tournament.activity.send(entry);
 }

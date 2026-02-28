@@ -58,6 +58,7 @@ pub struct UserRow {
     pub phone: Option<String>,
     pub is_active: bool,
     pub role: Option<String>,
+    pub locale: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -197,15 +198,15 @@ pub struct TournamentClockRow {
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
-pub struct TournamentClockEventRow {
+pub struct TournamentActivityLogRow {
     pub id: Uuid,
     pub tournament_id: Uuid,
-    pub event_type: String,
-    pub level_number: Option<i32>,
-    pub manager_id: Option<Uuid>,
+    pub event_category: String,
+    pub event_action: String,
+    pub actor_id: Option<Uuid>,
+    pub subject_id: Option<Uuid>,
     pub event_time: DateTime<Utc>,
     pub metadata: serde_json::Value,
-    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]

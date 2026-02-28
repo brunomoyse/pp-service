@@ -230,6 +230,16 @@ impl RegistrationMutation {
             publish_registration_event(event);
         }
 
+        // Log activity
+        let action = if is_waitlisted { "waitlisted" } else { "registered" };
+        let db = state.db.clone();
+        tokio::spawn(async move {
+            crate::gql::domains::activity_log::log_and_publish(
+                &db, tournament_id, "registration", action,
+                Some(user_id), Some(user_id), serde_json::json!({}),
+            ).await;
+        });
+
         // Publish notification
         if is_waitlisted {
             // Get waitlist position for the notification
@@ -263,6 +273,22 @@ impl RegistrationMutation {
                 created_at: Utc::now(),
             };
             publish_user_notification(notification);
+
+            // Send confirmation email (fire-and-forget)
+            if let Some(email_service) = state.email_service() {
+                if let Some(user_row) = users::get_by_id(&state.db, user_id).await? {
+                    let locale = crate::services::email_service::Locale::from_str_lossy(&user_row.locale);
+                    crate::services::email_service::spawn_email(
+                        email_service.clone(),
+                        user_row.email,
+                        user_row.first_name,
+                        crate::services::email_service::EmailType::RegistrationConfirmed {
+                            tournament_name: tournament.name.clone(),
+                            locale,
+                        },
+                    );
+                }
+            }
         }
 
         Ok(tournament_registration)
@@ -402,11 +428,48 @@ impl RegistrationMutation {
                             created_at: Utc::now(),
                         };
                         publish_user_notification(notification);
+
+                        // Send waitlist promotion email (fire-and-forget)
+                        if let Some(email_service) = state.email_service() {
+                            if let Some(promoted_user_row) =
+                                users::get_by_id(&state.db, promoted_user_id).await?
+                            {
+                                let locale = crate::services::email_service::Locale::from_str_lossy(&promoted_user_row.locale);
+                                crate::services::email_service::spawn_email(
+                                    email_service.clone(),
+                                    promoted_user_row.email,
+                                    promoted_user_row.first_name,
+                                    crate::services::email_service::EmailType::WaitlistPromoted {
+                                        tournament_name: tournament.name.clone(),
+                                        locale,
+                                    },
+                                );
+                            }
+                        }
                     }
 
                     promoted_player = Some(player);
                 }
             }
+        }
+
+        // Log activity
+        {
+            let db = state.db.clone();
+            let promoted = promoted_player.is_some();
+            tokio::spawn(async move {
+                crate::gql::domains::activity_log::log_and_publish(
+                    &db, tournament_id, "registration", "cancelled",
+                    Some(authenticated_user_id), Some(user_id), serde_json::json!({}),
+                ).await;
+                if promoted {
+                    // The promoted player activity is also logged
+                    crate::gql::domains::activity_log::log_and_publish(
+                        &db, tournament_id, "registration", "promoted",
+                        None, None, serde_json::json!({}),
+                    ).await;
+                }
+            });
         }
 
         Ok(CancelRegistrationResponse {
@@ -490,6 +553,19 @@ impl RegistrationMutation {
             }
         }
 
+        // Log activity
+        {
+            let db = state.db.clone();
+            let auto_seated = seat_assignment.is_some();
+            tokio::spawn(async move {
+                crate::gql::domains::activity_log::log_and_publish(
+                    &db, tournament_id, "registration", "self_check_in",
+                    Some(user_id), Some(user_id),
+                    serde_json::json!({"auto_seated": auto_seated}),
+                ).await;
+            });
+        }
+
         Ok(SelfCheckInResponse {
             registration: result.updated_registration.into(),
             seat_assignment,
@@ -556,6 +632,19 @@ impl RegistrationMutation {
                 };
                 publish_seating_event(event);
             }
+        }
+
+        // Log activity
+        {
+            let db = state.db.clone();
+            let auto_seated = seat_assignment.is_some();
+            tokio::spawn(async move {
+                crate::gql::domains::activity_log::log_and_publish(
+                    &db, tournament_id, "registration", "check_in",
+                    Some(manager_id), Some(user_id),
+                    serde_json::json!({"auto_seated": auto_seated}),
+                ).await;
+            });
         }
 
         Ok(CheckInResponse {
