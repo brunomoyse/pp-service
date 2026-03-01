@@ -24,6 +24,7 @@ pub struct TournamentEntryStats {
     pub rebuy_count: i64,
     pub re_entry_count: i64,
     pub addon_count: i64,
+    pub total_rake_cents: i64,
 }
 
 pub async fn create<'e>(
@@ -119,18 +120,23 @@ pub async fn get_stats<'e>(
     executor: impl PgExecutor<'e>,
     tournament_id: Uuid,
 ) -> Result<TournamentEntryStats> {
-    let row = sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, i64)>(
+    let row = sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, i64, i64)>(
         r#"
         SELECT
             COUNT(*) as total_entries,
-            COALESCE(SUM(amount_cents), 0) as total_amount_cents,
-            COUNT(DISTINCT user_id) as unique_players,
-            COUNT(*) FILTER (WHERE entry_type = 'initial') as initial_count,
-            COUNT(*) FILTER (WHERE entry_type = 'rebuy') as rebuy_count,
-            COUNT(*) FILTER (WHERE entry_type = 're_entry') as re_entry_count,
-            COUNT(*) FILTER (WHERE entry_type = 'addon') as addon_count
-        FROM tournament_entries
-        WHERE tournament_id = $1
+            COALESCE(SUM(e.amount_cents), 0) as total_amount_cents,
+            COUNT(DISTINCT e.user_id) as unique_players,
+            COUNT(*) FILTER (WHERE e.entry_type = 'initial') as initial_count,
+            COUNT(*) FILTER (WHERE e.entry_type = 'rebuy') as rebuy_count,
+            COUNT(*) FILTER (WHERE e.entry_type = 're_entry') as re_entry_count,
+            COUNT(*) FILTER (WHERE e.entry_type = 'addon') as addon_count,
+            COALESCE(
+                COUNT(*) FILTER (WHERE e.entry_type IN ('initial', 're_entry'))
+                * (SELECT rake_cents FROM tournaments WHERE id = $1),
+                0
+            ) as total_rake_cents
+        FROM tournament_entries e
+        WHERE e.tournament_id = $1
         "#,
     )
     .bind(tournament_id)
@@ -146,6 +152,7 @@ pub async fn get_stats<'e>(
         rebuy_count: row.4,
         re_entry_count: row.5,
         addon_count: row.6,
+        total_rake_cents: row.7,
     })
 }
 

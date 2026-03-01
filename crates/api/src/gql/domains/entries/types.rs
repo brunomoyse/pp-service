@@ -73,6 +73,7 @@ pub struct TournamentEntryStats {
     pub rebuy_count: i32,
     pub re_entry_count: i32,
     pub addon_count: i32,
+    pub total_rake_cents: i32,
 }
 
 #[derive(InputObject)]

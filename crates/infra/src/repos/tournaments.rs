@@ -70,6 +70,7 @@ pub struct CreateTournamentData {
     pub start_time: DateTime<Utc>,
     pub end_time: Option<DateTime<Utc>>,
     pub buy_in_cents: i32,
+    pub rake_cents: Option<i32>,
     pub seat_cap: Option<i32>,
     pub early_bird_bonus_chips: Option<i32>,
     pub late_registration_level: Option<i32>,
@@ -82,6 +83,7 @@ pub struct UpdateTournamentData {
     pub start_time: Option<DateTime<Utc>>,
     pub end_time: Option<DateTime<Utc>>,
     pub buy_in_cents: Option<i32>,
+    pub rake_cents: Option<i32>,
     pub seat_cap: Option<i32>,
     pub early_bird_bonus_chips: Option<i32>,
     pub late_registration_level: Option<i32>,
@@ -94,7 +96,7 @@ pub async fn get_by_id<'e>(
     sqlx::query_as::<_, TournamentRow>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
-               buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+               buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips,
                late_registration_level, created_at, updated_at
         FROM tournaments
         WHERE id = $1
@@ -115,7 +117,7 @@ pub async fn list<'e>(
     sqlx::query_as::<_, TournamentRow>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
-               buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+               buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips,
                late_registration_level, created_at, updated_at
         FROM tournaments
         WHERE ($1::uuid IS NULL OR club_id = $1)
@@ -185,7 +187,7 @@ pub async fn update_live_status<'e>(
             updated_at = NOW()
         WHERE id = $1
         RETURNING id, club_id, name, description, start_time, end_time,
-                 buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+                 buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips,
                  late_registration_level, created_at, updated_at
         "#,
     )
@@ -202,7 +204,7 @@ pub async fn list_by_live_status<'e>(
     sqlx::query_as::<_, TournamentRow>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
-               buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+               buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips,
                late_registration_level, created_at, updated_at
         FROM tournaments
         WHERE live_status = $1
@@ -218,7 +220,7 @@ pub async fn list_live<'e>(executor: impl PgExecutor<'e>) -> SqlxResult<Vec<Tour
     sqlx::query_as::<_, TournamentRow>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
-               buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+               buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips,
                late_registration_level, created_at, updated_at
         FROM tournaments
         WHERE live_status IN ('in_progress', 'break', 'final_table')
@@ -236,7 +238,7 @@ pub async fn list_starting_soon<'e>(
     sqlx::query_as::<_, TournamentRow>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
-               buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+               buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips,
                late_registration_level, created_at, updated_at
         FROM tournaments
         WHERE live_status IN ('not_started', 'registration_open')
@@ -261,7 +263,7 @@ pub async fn get_by_ids<'e>(
     sqlx::query_as::<_, TournamentRow>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
-               buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+               buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips,
                late_registration_level, created_at, updated_at
         FROM tournaments
         WHERE id = ANY($1::uuid[])
@@ -279,11 +281,11 @@ pub async fn create<'e>(
     sqlx::query_as::<_, TournamentRow>(
         r#"
         INSERT INTO tournaments (club_id, name, description, start_time, end_time,
-                                 buy_in_cents, seat_cap, early_bird_bonus_chips,
+                                 buy_in_cents, rake_cents, seat_cap, early_bird_bonus_chips,
                                  late_registration_level)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 0), $8, $9, $10)
         RETURNING id, club_id, name, description, start_time, end_time,
-                  buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+                  buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips,
                   late_registration_level, created_at, updated_at
         "#,
     )
@@ -293,6 +295,7 @@ pub async fn create<'e>(
     .bind(data.start_time)
     .bind(data.end_time)
     .bind(data.buy_in_cents)
+    .bind(data.rake_cents)
     .bind(data.seat_cap)
     .bind(data.early_bird_bonus_chips)
     .bind(data.late_registration_level)
@@ -313,13 +316,14 @@ pub async fn update<'e>(
             start_time = COALESCE($4, start_time),
             end_time = COALESCE($5, end_time),
             buy_in_cents = COALESCE($6, buy_in_cents),
-            seat_cap = COALESCE($7, seat_cap),
-            early_bird_bonus_chips = COALESCE($8, early_bird_bonus_chips),
-            late_registration_level = COALESCE($9, late_registration_level),
+            rake_cents = COALESCE($7, rake_cents),
+            seat_cap = COALESCE($8, seat_cap),
+            early_bird_bonus_chips = COALESCE($9, early_bird_bonus_chips),
+            late_registration_level = COALESCE($10, late_registration_level),
             updated_at = NOW()
         WHERE id = $1 AND live_status != 'finished'
         RETURNING id, club_id, name, description, start_time, end_time,
-                  buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+                  buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips,
                   late_registration_level, created_at, updated_at
         "#,
     )
@@ -329,6 +333,7 @@ pub async fn update<'e>(
     .bind(data.start_time)
     .bind(data.end_time)
     .bind(data.buy_in_cents)
+    .bind(data.rake_cents)
     .bind(data.seat_cap)
     .bind(data.early_bird_bonus_chips)
     .bind(data.late_registration_level)
@@ -343,7 +348,7 @@ pub async fn list_stale<'e>(
     sqlx::query_as::<_, TournamentRow>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
-               buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+               buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips,
                late_registration_level, created_at, updated_at
         FROM tournaments
         WHERE live_status IN ('in_progress', 'late_registration', 'break', 'final_table')
@@ -368,7 +373,7 @@ pub async fn auto_finish<'e>(
             updated_at = NOW()
         WHERE id = $1 AND live_status != 'finished'
         RETURNING id, club_id, name, description, start_time, end_time,
-                  buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
+                  buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips,
                   late_registration_level, created_at, updated_at
         "#,
     )

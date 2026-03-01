@@ -23,6 +23,7 @@ pub struct TournamentRow {
     pub start_time: DateTime<Utc>,
     pub end_time: Option<DateTime<Utc>>,
     pub buy_in_cents: i32,
+    pub rake_cents: i32,
     pub seat_cap: Option<i32>,
     pub live_status: TournamentLiveStatus,
     pub early_bird_bonus_chips: Option<i32>,
