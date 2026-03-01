@@ -178,6 +178,7 @@ pub struct Tournament {
     pub start_time: DateTime<Utc>,
     pub end_time: Option<DateTime<Utc>>,
     pub buy_in_cents: i32,
+    pub rake_cents: i32,
     pub seat_cap: Option<i32>,
     pub status: TournamentStatus, // Calculated: UPCOMING, LIVE, COMPLETED
     pub live_status: TournamentLiveStatus, // Direct from DB: NOT_STARTED, IN_PROGRESS, FINISHED, etc.
@@ -227,6 +228,7 @@ impl From<infra::models::TournamentRow> for Tournament {
             start_time: row.start_time,
             end_time: row.end_time,
             buy_in_cents: row.buy_in_cents,
+            rake_cents: row.rake_cents,
             seat_cap: row.seat_cap,
             status,
             live_status: row.live_status.into(),
@@ -361,6 +363,7 @@ pub struct CreateTournamentInput {
     pub start_time: DateTime<Utc>,
     pub end_time: Option<DateTime<Utc>>,
     pub buy_in_cents: i32,
+    pub rake_cents: Option<i32>,
     pub seat_cap: Option<i32>,
     pub early_bird_bonus_chips: Option<i32>,
     pub late_registration_level: Option<i32>,
@@ -378,6 +381,7 @@ pub struct UpdateTournamentInput {
     pub start_time: Option<DateTime<Utc>>,
     pub end_time: Option<DateTime<Utc>>,
     pub buy_in_cents: Option<i32>,
+    pub rake_cents: Option<i32>,
     pub seat_cap: Option<i32>,
     pub early_bird_bonus_chips: Option<i32>,
     pub late_registration_level: Option<i32>,

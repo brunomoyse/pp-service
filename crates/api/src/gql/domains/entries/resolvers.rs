@@ -48,6 +48,7 @@ impl EntryQuery {
             rebuy_count: stats.rebuy_count as i32,
             re_entry_count: stats.re_entry_count as i32,
             addon_count: stats.addon_count as i32,
+            total_rake_cents: stats.total_rake_cents as i32,
         })
     }
 }

@@ -381,6 +381,231 @@ async fn test_get_tournament_entry_stats() {
 }
 
 #[tokio::test]
+async fn test_entry_stats_total_rake_with_rake_tournament() {
+    let app_state = setup_test_db().await;
+    let schema = build_schema(app_state.clone());
+
+    let (manager_id, manager_claims) =
+        create_test_user(&app_state, "rake_stats_manager@test.com", "manager").await;
+    let club_id = create_test_club(&app_state, "Rake Stats Club").await;
+    create_club_manager(&app_state, manager_id, club_id).await;
+
+    // Create tournament with rake_cents = 500 (€5 rake)
+    let tournament_id = create_test_tournament(&app_state, club_id, "Rake Stats Tournament").await;
+    sqlx::query("UPDATE tournaments SET rake_cents = 500 WHERE id = $1")
+        .bind(tournament_id)
+        .execute(&app_state.db)
+        .await
+        .expect("Failed to set rake_cents");
+
+    let (player1_id, _) =
+        create_test_user(&app_state, "rake_stats_player1@test.com", "player").await;
+    let (player2_id, _) =
+        create_test_user(&app_state, "rake_stats_player2@test.com", "player").await;
+
+    let mutation = r#"
+        mutation AddEntry($input: AddTournamentEntryInput!) {
+            addTournamentEntry(input: $input) { id }
+        }
+    "#;
+
+    // Player 1: initial (rake applies)
+    let variables = Variables::from_json(json!({
+        "input": {
+            "tournamentId": tournament_id.to_string(),
+            "userId": player1_id.to_string(),
+            "entryType": "INITIAL",
+            "amountCents": 5000
+        }
+    }));
+    execute_graphql(
+        &schema,
+        mutation,
+        Some(variables),
+        Some(manager_claims.clone()),
+    )
+    .await;
+
+    // Player 1: rebuy (rake does NOT apply)
+    let variables = Variables::from_json(json!({
+        "input": {
+            "tournamentId": tournament_id.to_string(),
+            "userId": player1_id.to_string(),
+            "entryType": "REBUY",
+            "amountCents": 2500
+        }
+    }));
+    execute_graphql(
+        &schema,
+        mutation,
+        Some(variables),
+        Some(manager_claims.clone()),
+    )
+    .await;
+
+    // Player 1: addon (rake does NOT apply)
+    let variables = Variables::from_json(json!({
+        "input": {
+            "tournamentId": tournament_id.to_string(),
+            "userId": player1_id.to_string(),
+            "entryType": "ADDON",
+            "amountCents": 1000
+        }
+    }));
+    execute_graphql(
+        &schema,
+        mutation,
+        Some(variables),
+        Some(manager_claims.clone()),
+    )
+    .await;
+
+    // Player 2: initial (rake applies)
+    let variables = Variables::from_json(json!({
+        "input": {
+            "tournamentId": tournament_id.to_string(),
+            "userId": player2_id.to_string(),
+            "entryType": "INITIAL",
+            "amountCents": 5000
+        }
+    }));
+    execute_graphql(
+        &schema,
+        mutation,
+        Some(variables),
+        Some(manager_claims.clone()),
+    )
+    .await;
+
+    // Player 2: re_entry (rake applies)
+    let variables = Variables::from_json(json!({
+        "input": {
+            "tournamentId": tournament_id.to_string(),
+            "userId": player2_id.to_string(),
+            "entryType": "RE_ENTRY",
+            "amountCents": 5000
+        }
+    }));
+    execute_graphql(
+        &schema,
+        mutation,
+        Some(variables),
+        Some(manager_claims.clone()),
+    )
+    .await;
+
+    // Query stats including totalRakeCents
+    let query = r#"
+        query GetStats($tournamentId: ID!) {
+            tournamentEntryStats(tournamentId: $tournamentId) {
+                totalEntries
+                totalAmountCents
+                uniquePlayers
+                initialCount
+                rebuyCount
+                reEntryCount
+                addonCount
+                totalRakeCents
+            }
+        }
+    "#;
+
+    let variables = Variables::from_json(json!({
+        "tournamentId": tournament_id.to_string()
+    }));
+
+    let response = execute_graphql(&schema, query, Some(variables), Some(manager_claims)).await;
+
+    assert!(
+        response.errors.is_empty(),
+        "Get stats with rake should succeed: {:?}",
+        response.errors
+    );
+
+    let data = response.data.into_json().unwrap();
+    let stats = &data["tournamentEntryStats"];
+
+    assert_eq!(stats["totalEntries"], 5);
+    assert_eq!(stats["totalAmountCents"], 18500); // 5000 + 2500 + 1000 + 5000 + 5000
+    assert_eq!(stats["uniquePlayers"], 2);
+    assert_eq!(stats["initialCount"], 2);
+    assert_eq!(stats["rebuyCount"], 1);
+    assert_eq!(stats["reEntryCount"], 1);
+    assert_eq!(stats["addonCount"], 1);
+    // totalRakeCents = count(initial + re_entry) * rake_cents = 3 * 500 = 1500
+    assert_eq!(stats["totalRakeCents"], 1500);
+}
+
+#[tokio::test]
+async fn test_entry_stats_total_rake_zero_when_no_rake() {
+    let app_state = setup_test_db().await;
+    let schema = build_schema(app_state.clone());
+
+    let (manager_id, manager_claims) =
+        create_test_user(&app_state, "norake_stats_manager@test.com", "manager").await;
+    let club_id = create_test_club(&app_state, "No Rake Stats Club").await;
+    create_club_manager(&app_state, manager_id, club_id).await;
+
+    // Tournament with default rake_cents = 0
+    let tournament_id =
+        create_test_tournament(&app_state, club_id, "No Rake Stats Tournament").await;
+
+    let (player_id, _) =
+        create_test_user(&app_state, "norake_stats_player@test.com", "player").await;
+
+    let mutation = r#"
+        mutation AddEntry($input: AddTournamentEntryInput!) {
+            addTournamentEntry(input: $input) { id }
+        }
+    "#;
+
+    let variables = Variables::from_json(json!({
+        "input": {
+            "tournamentId": tournament_id.to_string(),
+            "userId": player_id.to_string(),
+            "entryType": "INITIAL",
+            "amountCents": 5000
+        }
+    }));
+    execute_graphql(
+        &schema,
+        mutation,
+        Some(variables),
+        Some(manager_claims.clone()),
+    )
+    .await;
+
+    let query = r#"
+        query GetStats($tournamentId: ID!) {
+            tournamentEntryStats(tournamentId: $tournamentId) {
+                totalEntries
+                initialCount
+                totalRakeCents
+            }
+        }
+    "#;
+
+    let variables = Variables::from_json(json!({
+        "tournamentId": tournament_id.to_string()
+    }));
+
+    let response = execute_graphql(&schema, query, Some(variables), Some(manager_claims)).await;
+
+    assert!(
+        response.errors.is_empty(),
+        "Get stats without rake should succeed: {:?}",
+        response.errors
+    );
+
+    let data = response.data.into_json().unwrap();
+    let stats = &data["tournamentEntryStats"];
+
+    assert_eq!(stats["totalEntries"], 1);
+    assert_eq!(stats["initialCount"], 1);
+    assert_eq!(stats["totalRakeCents"], 0);
+}
+
+#[tokio::test]
 async fn test_delete_tournament_entry() {
     let app_state = setup_test_db().await;
     let schema = build_schema(app_state.clone());

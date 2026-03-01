@@ -1,0 +1,1 @@
+ALTER TABLE tournaments ADD COLUMN rake_cents INTEGER NOT NULL DEFAULT 0;
