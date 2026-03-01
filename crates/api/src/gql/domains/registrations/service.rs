@@ -230,7 +230,7 @@ pub async fn self_check_in(
 
     // Lock the tournament row
     let tournament = sqlx::query_as::<_, infra::models::TournamentRow>(
-        "SELECT id, club_id, name, description, start_time, end_time, buy_in_cents, seat_cap, live_status, early_bird_bonus_chips, late_registration_level, created_at, updated_at FROM tournaments WHERE id = $1 FOR UPDATE",
+        "SELECT id, club_id, name, description, start_time, end_time, buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, late_registration_level, created_at, updated_at FROM tournaments WHERE id = $1 FOR UPDATE",
     )
     .bind(params.tournament_id)
     .fetch_optional(&mut *tx)
@@ -504,7 +504,7 @@ pub async fn promote_next_waitlisted(
 
     // Lock the tournament row
     let tournament = sqlx::query_as::<_, infra::models::TournamentRow>(
-        "SELECT id, club_id, name, description, start_time, end_time, buy_in_cents, seat_cap, live_status, early_bird_bonus_chips, late_registration_level, created_at, updated_at FROM tournaments WHERE id = $1 FOR UPDATE",
+        "SELECT id, club_id, name, description, start_time, end_time, buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, late_registration_level, created_at, updated_at FROM tournaments WHERE id = $1 FOR UPDATE",
     )
     .bind(tournament_id)
     .fetch_optional(&mut *tx)
