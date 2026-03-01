@@ -65,7 +65,6 @@ COPY --from=builder /app/api-binary /usr/local/bin/api
 
 # Needed at runtime
 COPY --from=builder /app/migrations /app/migrations
-COPY --from=builder /app/config /app/config
 
 USER 10001
 EXPOSE 8080
