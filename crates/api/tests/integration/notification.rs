@@ -1,8 +1,6 @@
-
-
+use crate::common::*;
 use api::gql::build_schema;
 use async_graphql::Variables;
-use crate::common::*;
 use serde_json::json;
 
 /// Test that registration mutation triggers notification
