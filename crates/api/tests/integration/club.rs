@@ -1,7 +1,5 @@
-
-
-use api::gql::build_schema;
 use crate::common::*;
+use api::gql::build_schema;
 
 #[tokio::test]
 async fn test_get_clubs_query() {
