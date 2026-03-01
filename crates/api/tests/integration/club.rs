@@ -1,7 +1,7 @@
-mod common;
+
 
 use api::gql::build_schema;
-use common::*;
+use crate::common::*;
 
 #[tokio::test]
 async fn test_get_clubs_query() {
