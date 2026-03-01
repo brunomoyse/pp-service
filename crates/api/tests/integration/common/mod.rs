@@ -7,6 +7,8 @@ use testcontainers_modules::testcontainers::Container;
 use testcontainers_modules::testcontainers::ImageExt;
 use uuid::Uuid;
 
+const CONTAINER_NAME: &str = "pocketpair-test-db";
+
 struct TestContainer {
     _container: Container<Postgres>,
     db_url: String,
@@ -19,12 +21,40 @@ unsafe impl Sync for TestContainer {}
 
 static TEST_CONTAINER: std::sync::OnceLock<TestContainer> = std::sync::OnceLock::new();
 
+/// Force-remove any leftover container from a previous test run.
+fn remove_stale_container() {
+    let _ = std::process::Command::new("docker")
+        .args(["rm", "-f", CONTAINER_NAME])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
+/// Cleanup handler registered via `libc::atexit`.
+/// Runs when the process exits, ensuring the container doesn't linger.
+extern "C" fn cleanup_container() {
+    let _ = std::process::Command::new("docker")
+        .args(["rm", "-f", CONTAINER_NAME])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
 fn get_db_url() -> &'static str {
     let tc = TEST_CONTAINER.get_or_init(|| {
         // Spawn a dedicated thread so SyncRunner doesn't conflict with tokio runtime
         std::thread::spawn(|| {
+            // Remove any leftover container from a previous run
+            remove_stale_container();
+
+            // Register cleanup for when this process exits
+            unsafe {
+                libc::atexit(cleanup_container);
+            }
+
             let container = Postgres::default()
                 .with_tag("16-alpine")
+                .with_container_name(CONTAINER_NAME)
                 .start()
                 .expect("Failed to start Postgres container");
 

@@ -1,0 +1,21 @@
+mod common;
+
+mod auth;
+mod check_in;
+mod clock_lifecycle;
+mod club;
+mod club_tables;
+mod eliminate_player;
+mod notification;
+mod payouts;
+mod permission;
+mod player_management;
+mod query_coverage;
+mod system;
+mod table_seating;
+mod tournament;
+mod tournament_clock;
+mod tournament_entries;
+mod tournament_results;
+mod unassign_table;
+mod user;

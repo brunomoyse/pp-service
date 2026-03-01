@@ -1,8 +1,8 @@
-mod common;
+
 
 use api::gql::build_schema;
 use async_graphql::Variables;
-use common::*;
+use crate::common::*;
 use serde_json::json;
 
 /// Test that registration mutation triggers notification
@@ -16,6 +16,13 @@ async fn test_registration_triggers_notification() {
     let club_id = create_test_club(&app_state, "Notification Test Club").await;
     let tournament_id =
         create_test_tournament(&app_state, club_id, "Notification Test Tournament").await;
+
+    // Open registration so the player can register
+    sqlx::query("UPDATE tournaments SET live_status = 'registration_open'::tournament_live_status WHERE id = $1")
+        .bind(tournament_id)
+        .execute(&app_state.db)
+        .await
+        .expect("Failed to open registration");
 
     // Create player
     let (_, player_claims) =
@@ -65,20 +72,20 @@ async fn test_tournaments_starting_soon_query() {
     let tournament_id = uuid::Uuid::new_v4();
     let start_time = chrono::Utc::now() + chrono::Duration::minutes(10);
 
-    sqlx::query!(
+    sqlx::query(
         r#"INSERT INTO tournaments (
             id, name, description, club_id, start_time, end_time,
             buy_in_cents, seat_cap, live_status
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'registration_open'::tournament_live_status)"#,
-        tournament_id,
-        "Starting Soon Tournament",
-        "Test tournament starting soon",
-        club_id,
-        start_time,
-        start_time + chrono::Duration::hours(4),
-        5000i32,
-        100i32
     )
+    .bind(tournament_id)
+    .bind("Starting Soon Tournament")
+    .bind("Test tournament starting soon")
+    .bind(club_id)
+    .bind(start_time)
+    .bind(start_time + chrono::Duration::hours(4))
+    .bind(5000i32)
+    .bind(100i32)
     .execute(&app_state.db)
     .await
     .expect("Failed to create tournament");

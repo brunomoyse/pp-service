@@ -1,8 +1,8 @@
-mod common;
+
 
 use api::gql::build_schema;
 use async_graphql::Variables;
-use common::*;
+use crate::common::*;
 use serde_json::json;
 
 /// Helper: create tournament structures and clock for a tournament

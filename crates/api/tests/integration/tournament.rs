@@ -1,8 +1,8 @@
-mod common;
+
 
 use api::gql::build_schema;
 use async_graphql::Variables;
-use common::*;
+use crate::common::*;
 use serde_json::json;
 
 #[tokio::test]
@@ -14,6 +14,13 @@ async fn test_register_for_tournament() {
     let club_id = create_test_club(&app_state, "Registration Club").await;
     let tournament_id =
         create_test_tournament(&app_state, club_id, "Registration Tournament").await;
+
+    // Open registration so the player can register
+    sqlx::query("UPDATE tournaments SET live_status = 'registration_open'::tournament_live_status WHERE id = $1")
+        .bind(tournament_id)
+        .execute(&app_state.db)
+        .await
+        .expect("Failed to open registration");
 
     let query = r#"
         mutation RegisterForTournament($input: RegisterForTournamentInput!) {

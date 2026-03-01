@@ -1,6 +1,6 @@
-mod common;
 
-use common::*;
+
+use crate::common::*;
 use infra::repos::club_tables;
 
 #[tokio::test]
