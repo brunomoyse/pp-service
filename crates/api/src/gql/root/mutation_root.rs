@@ -5,6 +5,7 @@ use crate::gql::domains::entries::EntryMutation;
 use crate::gql::domains::registrations::RegistrationMutation;
 use crate::gql::domains::results::ResultMutation;
 use crate::gql::domains::seating::SeatingMutation;
+use crate::gql::domains::templates::TemplateMutation;
 use crate::gql::domains::tournaments::{TournamentClockMutation, TournamentMutation};
 use crate::gql::domains::users::UserMutation;
 
@@ -15,6 +16,7 @@ pub struct MutationRoot(
     RegistrationMutation,
     ResultMutation,
     SeatingMutation,
+    TemplateMutation,
     TournamentClockMutation,
     TournamentMutation,
     UserMutation,
