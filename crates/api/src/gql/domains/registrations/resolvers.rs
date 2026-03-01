@@ -156,7 +156,7 @@ impl RegistrationMutation {
 
         // Lock the tournament row to prevent concurrent registrations from racing
         let tournament = sqlx::query_as::<_, infra::models::TournamentRow>(
-            "SELECT id, club_id, name, description, start_time, end_time, buy_in_cents, seat_cap, live_status, early_bird_bonus_chips, late_registration_level, created_at, updated_at FROM tournaments WHERE id = $1 FOR UPDATE",
+            "SELECT id, club_id, name, description, start_time, end_time, buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, late_registration_level, created_at, updated_at FROM tournaments WHERE id = $1 FOR UPDATE",
         )
         .bind(tournament_id)
         .fetch_optional(&mut *tx)
