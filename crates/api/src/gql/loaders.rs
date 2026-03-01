@@ -128,7 +128,7 @@ impl Loader<Uuid> for TournamentLoader {
                 r#"
                 SELECT id, club_id, name, description, start_time, end_time,
                        buy_in_cents, seat_cap, live_status, early_bird_bonus_chips,
-                       created_at, updated_at
+                       late_registration_level, created_at, updated_at
                 FROM tournaments
                 WHERE id = ANY($1::uuid[])
                 "#,
