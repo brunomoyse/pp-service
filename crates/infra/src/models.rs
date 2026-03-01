@@ -256,4 +256,5 @@ pub struct BlindStructureTemplateRow {
     pub description: Option<String>,
     pub levels: serde_json::Value,
     pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }

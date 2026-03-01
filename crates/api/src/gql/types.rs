@@ -65,5 +65,8 @@ pub use crate::gql::domains::leaderboards::types::{LeaderboardEntry, Leaderboard
 
 // Template types
 pub use crate::gql::domains::templates::types::{
-    BlindStructureLevel, BlindStructureTemplate, PayoutStructureEntry, PayoutTemplate,
+    BlindStructureLevel, BlindStructureLevelInput, BlindStructureTemplate,
+    CreateBlindStructureTemplateInput, CreatePayoutTemplateInput, PayoutStructureEntry,
+    PayoutStructureEntryInput, PayoutTemplate, UpdateBlindStructureTemplateInput,
+    UpdatePayoutTemplateInput,
 };
