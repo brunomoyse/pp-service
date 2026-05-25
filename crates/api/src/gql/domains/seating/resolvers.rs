@@ -5,10 +5,10 @@ use crate::gql::common::helpers::get_club_id_for_tournament;
 use crate::gql::error::ResultExt;
 use crate::gql::subscriptions::publish_seating_event;
 use crate::gql::types::{
-    AssignPlayerToSeatInput, AssignTableToTournamentInput, BalanceTablesInput, MovePlayerInput,
-    SeatAssignment, SeatWithPlayer, SeatingChangeEvent, SeatingEventType, TableWithSeats,
-    Tournament, TournamentSeatingChart, TournamentTable, UnassignTableFromTournamentInput,
-    UpdateStackSizeInput, User,
+    AssignPlayerToSeatInput, AssignTableToTournamentInput, AssignTablesToTournamentInput,
+    BalanceTablesInput, MovePlayerInput, SeatAssignment, SeatWithPlayer, SeatingChangeEvent,
+    SeatingEventType, TableWithSeats, Tournament, TournamentSeatingChart, TournamentTable,
+    UnassignTableFromTournamentInput, UpdateStackSizeInput, User,
 };
 use crate::state::AppState;
 use infra::repos::{
@@ -237,6 +237,106 @@ impl SeatingMutation {
             is_active: club_table.is_active,
             created_at: club_table.created_at,
         })
+    }
+
+    /// Atomically assign multiple club tables to a tournament (managers only).
+    /// All assignments succeed together or roll back together.
+    async fn assign_tables_to_tournament(
+        &self,
+        ctx: &Context<'_>,
+        input: AssignTablesToTournamentInput,
+    ) -> Result<Vec<TournamentTable>> {
+        use crate::auth::permissions::require_club_manager;
+
+        if input.tables.is_empty() {
+            return Err(async_graphql::Error::new("No tables provided"));
+        }
+
+        let state = ctx.data::<AppState>()?;
+        let tournament_id =
+            Uuid::parse_str(input.tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+
+        let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
+        let manager = require_club_manager(ctx, club_id).await?;
+
+        // Parse and validate every input up front so we don't partially apply.
+        let mut parsed: Vec<(Uuid, Option<i32>)> = Vec::with_capacity(input.tables.len());
+        for entry in &input.tables {
+            let club_table_id = Uuid::parse_str(entry.club_table_id.as_str())
+                .gql_err("Invalid club table ID")?;
+            parsed.push((club_table_id, entry.max_seats));
+        }
+
+        // Run all inserts in a single transaction.
+        let mut tx = state.db.begin().await?;
+
+        let mut assigned: Vec<(infra::models::ClubTableRow, Option<i32>)> =
+            Vec::with_capacity(parsed.len());
+
+        for (club_table_id, max_seats) in parsed {
+            let club_table = club_tables::get_by_id(&mut *tx, club_table_id)
+                .await?
+                .ok_or_else(|| async_graphql::Error::new("Club table not found"))?;
+
+            if club_table.club_id != club_id {
+                return Err(async_graphql::Error::new(format!(
+                    "Club table {} does not belong to the tournament's club",
+                    club_table.table_number
+                )));
+            }
+
+            club_tables::assign_to_tournament(&mut *tx, tournament_id, club_table_id, max_seats)
+                .await?;
+
+            assigned.push((club_table, max_seats));
+        }
+
+        tx.commit().await?;
+
+        // After commit: emit subscription events + activity log per table.
+        for (club_table, _) in &assigned {
+            let event = SeatingChangeEvent {
+                event_type: SeatingEventType::TableCreated,
+                tournament_id: tournament_id.into(),
+                club_id: club_id.into(),
+                affected_assignment: None,
+                affected_player: None,
+                message: format!("Table {} assigned to tournament", club_table.table_number),
+                timestamp: chrono::Utc::now(),
+            };
+            publish_seating_event(event);
+        }
+
+        {
+            let db = state.db.clone();
+            let manager_uuid = Uuid::parse_str(manager.id.as_str()).ok();
+            let table_numbers: Vec<i32> =
+                assigned.iter().map(|(t, _)| t.table_number).collect();
+            tokio::spawn(async move {
+                crate::gql::domains::activity_log::log_and_publish(
+                    &db,
+                    tournament_id,
+                    "seating",
+                    "tables_assigned",
+                    manager_uuid,
+                    None,
+                    serde_json::json!({"table_numbers": table_numbers}),
+                )
+                .await;
+            });
+        }
+
+        Ok(assigned
+            .into_iter()
+            .map(|(club_table, max_seats)| TournamentTable {
+                id: club_table.id.into(),
+                tournament_id: tournament_id.into(),
+                table_number: club_table.table_number,
+                max_seats: max_seats.unwrap_or(club_table.max_seats),
+                is_active: club_table.is_active,
+                created_at: club_table.created_at,
+            })
+            .collect())
     }
 
     /// Unassign (break) a table from a tournament (managers only)

@@ -133,6 +133,18 @@ pub struct AssignTableToTournamentInput {
 }
 
 #[derive(InputObject)]
+pub struct BulkAssignTableEntry {
+    pub club_table_id: ID,
+    pub max_seats: Option<i32>,
+}
+
+#[derive(InputObject)]
+pub struct AssignTablesToTournamentInput {
+    pub tournament_id: ID,
+    pub tables: Vec<BulkAssignTableEntry>,
+}
+
+#[derive(InputObject)]
 pub struct UnassignTableFromTournamentInput {
     pub tournament_id: ID,
     pub club_table_id: ID,

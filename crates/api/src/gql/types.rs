@@ -27,10 +27,10 @@ pub use crate::gql::domains::registrations::types::{
 
 // Seating types
 pub use crate::gql::domains::seating::types::{
-    AssignPlayerToSeatInput, AssignTableToTournamentInput, BalanceTablesInput,
-    CreateTournamentTableInput, MovePlayerInput, SeatAssignment, SeatWithPlayer,
-    SeatingChangeEvent, SeatingEventType, TableWithSeats, TournamentSeatingChart, TournamentTable,
-    UnassignTableFromTournamentInput, UpdateStackSizeInput,
+    AssignPlayerToSeatInput, AssignTableToTournamentInput, AssignTablesToTournamentInput,
+    BalanceTablesInput, BulkAssignTableEntry, CreateTournamentTableInput, MovePlayerInput,
+    SeatAssignment, SeatWithPlayer, SeatingChangeEvent, SeatingEventType, TableWithSeats,
+    TournamentSeatingChart, TournamentTable, UnassignTableFromTournamentInput, UpdateStackSizeInput,
 };
 
 // Tournament types
