@@ -149,6 +149,14 @@ impl PlayerNote {
     }
 }
 
+/// A player in tonight's field, paired with the viewer's note on them (if any).
+/// The pre-game-prep payload: surface who's registered and what you know on them.
+#[derive(SimpleObject, Clone, Debug)]
+pub struct FieldPlayerNote {
+    pub registered_player: crate::gql::domains::identity::types::RegisteredPlayer,
+    pub note: Option<PlayerNote>,
+}
+
 #[derive(InputObject)]
 pub struct UpsertPlayerNoteInput {
     pub subject_registered_player_id: ID,

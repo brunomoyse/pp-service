@@ -5,10 +5,27 @@
 //! directly or by first resolving the parent note through an author-scoped query.
 //! There is deliberately no "get note by id" that ignores the author.
 
+use chrono::{DateTime, Utc};
 use sqlx::{PgExecutor, Result as SqlxResult};
 use uuid::Uuid;
 
 use crate::models::{PlayerNoteRow, PlayerNoteTagRow, ShowdownObservationRow};
+
+/// One player in a tournament's field, with the viewer's note flattened in.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct FieldNoteRow {
+    pub rp_id: Uuid,
+    pub rp_club_id: Uuid,
+    pub rp_display_name: String,
+    pub rp_app_user_id: Option<Uuid>,
+    pub rp_created_at: DateTime<Utc>,
+    pub rp_updated_at: DateTime<Utc>,
+    pub pn_id: Option<Uuid>,
+    pub pn_body: Option<String>,
+    pub pn_style: Option<String>,
+    pub pn_created_at: Option<DateTime<Utc>>,
+    pub pn_updated_at: Option<DateTime<Utc>>,
+}
 
 const NOTE_COLS: &str =
     "id, author_app_user_id, subject_registered_player_id, body, style, created_at, updated_at";
@@ -183,5 +200,35 @@ pub async fn add_showdown<'e>(
     .bind(tournament_id)
     .bind(description)
     .fetch_one(executor)
+    .await
+}
+
+/// Everyone registered for a tournament, each with the viewer's private note (if
+/// any). Author-scoped: only `$2`'s own notes are joined, and the viewer's own
+/// roster entry is excluded. Players the viewer has a note on are listed first.
+pub async fn field_with_notes<'e>(
+    executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
+    author_app_user_id: Uuid,
+) -> SqlxResult<Vec<FieldNoteRow>> {
+    sqlx::query_as::<_, FieldNoteRow>(
+        "SELECT \
+            rp.id AS rp_id, rp.club_id AS rp_club_id, rp.display_name AS rp_display_name, \
+            rp.app_user_id AS rp_app_user_id, rp.created_at AS rp_created_at, \
+            rp.updated_at AS rp_updated_at, \
+            pn.id AS pn_id, pn.body AS pn_body, pn.style AS pn_style, \
+            pn.created_at AS pn_created_at, pn.updated_at AS pn_updated_at \
+         FROM tournament_registrations reg \
+         JOIN registered_player rp ON rp.id = reg.registered_player_id \
+         LEFT JOIN player_note pn \
+            ON pn.subject_registered_player_id = rp.id AND pn.author_app_user_id = $2 \
+         WHERE reg.tournament_id = $1 \
+           AND reg.status NOT IN ('cancelled', 'no_show') \
+           AND rp.app_user_id IS DISTINCT FROM $2 \
+         ORDER BY (pn.id IS NOT NULL) DESC, rp.display_name ASC",
+    )
+    .bind(tournament_id)
+    .bind(author_app_user_id)
+    .fetch_all(executor)
     .await
 }

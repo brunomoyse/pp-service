@@ -2,14 +2,17 @@ use async_graphql::{Context, Object, Result, ID};
 use uuid::Uuid;
 
 use crate::auth::jwt::Claims;
+use crate::auth::permissions::require_pro;
 use crate::features::{require_feature, Feature};
+use crate::gql::domains::identity::types::RegisteredPlayer;
 use crate::gql::error::ResultExt;
 use crate::state::AppState;
+use infra::models::{PlayerNoteRow, RegisteredPlayerRow};
 use infra::repos::player_notes;
 
 use super::service;
 use super::types::{
-    AddPlayerNoteTagInput, AddShowdownObservationInput, PlayerNote, PlayerNoteTag,
+    AddPlayerNoteTagInput, AddShowdownObservationInput, FieldPlayerNote, PlayerNote, PlayerNoteTag,
     ShowdownObservation, UpsertPlayerNoteInput,
 };
 
@@ -46,6 +49,52 @@ impl NotesQuery {
         let state = ctx.data::<AppState>()?;
         let rows = player_notes::list_for_author(&state.db, author).await?;
         Ok(rows.into_iter().map(PlayerNote::from).collect())
+    }
+
+    /// Pre-game prep: everyone registered for a tournament, paired with the
+    /// viewer's own note on them. The Pro demo moment. Pro only.
+    async fn tournament_field_notes(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: ID,
+    ) -> Result<Vec<FieldPlayerNote>> {
+        require_feature(Feature::Notes)?;
+        let user = require_pro(ctx).await?;
+        let author = Uuid::parse_str(user.id.as_str()).gql_err("Invalid user ID")?;
+        let tid = Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+
+        let state = ctx.data::<AppState>()?;
+        let rows = player_notes::field_with_notes(&state.db, tid, author).await?;
+
+        let field = rows
+            .into_iter()
+            .map(|r| {
+                let rp = RegisteredPlayerRow {
+                    id: r.rp_id,
+                    club_id: r.rp_club_id,
+                    display_name: r.rp_display_name,
+                    app_user_id: r.rp_app_user_id,
+                    created_at: r.rp_created_at,
+                    updated_at: r.rp_updated_at,
+                };
+                let note = r.pn_id.map(|id| {
+                    PlayerNote::from(PlayerNoteRow {
+                        id,
+                        author_app_user_id: author,
+                        subject_registered_player_id: r.rp_id,
+                        body: r.pn_body.unwrap_or_default(),
+                        style: r.pn_style,
+                        created_at: r.pn_created_at.unwrap_or(r.rp_created_at),
+                        updated_at: r.pn_updated_at.unwrap_or(r.rp_updated_at),
+                    })
+                });
+                FieldPlayerNote {
+                    registered_player: RegisteredPlayer::from(rp),
+                    note,
+                }
+            })
+            .collect();
+        Ok(field)
     }
 }
 

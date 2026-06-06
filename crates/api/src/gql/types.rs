@@ -21,8 +21,8 @@ pub use crate::gql::domains::identity::types::{
 
 // Notes types
 pub use crate::gql::domains::notes::types::{
-    AddPlayerNoteTagInput, AddShowdownObservationInput, NoteTagKind, PlayerNote, PlayerNoteTag,
-    PlayerStyle, ShowdownObservation, UpsertPlayerNoteInput,
+    AddPlayerNoteTagInput, AddShowdownObservationInput, FieldPlayerNote, NoteTagKind, PlayerNote,
+    PlayerNoteTag, PlayerStyle, ShowdownObservation, UpsertPlayerNoteInput,
 };
 
 // System types
