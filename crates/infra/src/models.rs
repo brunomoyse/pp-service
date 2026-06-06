@@ -224,6 +224,26 @@ pub struct ClubManagerRow {
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct CheckInRow {
+    pub id: Uuid,
+    pub app_user_id: Uuid,
+    pub tournament_id: Uuid,
+    pub club_id: Uuid,
+    pub checked_in_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct AttendanceStreakRow {
+    pub app_user_id: Uuid,
+    pub current_streak: i32,
+    pub longest_streak: i32,
+    pub last_check_in_at: Option<DateTime<Utc>>,
+    pub freezes_available: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct ProEntitlementRow {
     pub id: Uuid,
     pub app_user_id: Uuid,

@@ -1,6 +1,7 @@
 pub mod achievements;
 pub mod activity_log;
 pub mod analytics;
+pub mod attendance;
 pub mod blind_structure_templates;
 pub mod club_managers;
 pub mod club_tables;

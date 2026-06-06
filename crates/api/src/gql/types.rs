@@ -36,6 +36,9 @@ pub use crate::gql::domains::analytics::types::{
     BuyInBreakdown, ClubBreakdown, PnlPoint, ProAnalytics,
 };
 
+// Attendance / streak types
+pub use crate::gql::domains::attendance::types::{AttendanceStreak, CheckInResult};
+
 // User types
 pub use crate::gql::domains::users::types::{CreatePlayerInput, UpdatePlayerInput, User};
 

@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS attendance_streak CASCADE;
+DROP TABLE IF EXISTS check_in CASCADE;
