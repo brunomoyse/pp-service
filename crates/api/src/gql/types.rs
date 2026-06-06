@@ -14,6 +14,11 @@ pub use crate::gql::domains::activity_log::types::{ActivityEventCategory, Activi
 // Club types
 pub use crate::gql::domains::clubs::types::{Club, ClubTable};
 
+// Identity / roster types
+pub use crate::gql::domains::identity::types::{
+    ClaimRegisteredPlayerInput, CreateRegisteredPlayerInput, RegisteredPlayer,
+};
+
 // User types
 pub use crate::gql::domains::users::types::{CreatePlayerInput, UpdatePlayerInput, User};
 

@@ -224,6 +224,16 @@ pub struct ClubManagerRow {
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct RegisteredPlayerRow {
+    pub id: Uuid,
+    pub club_id: Uuid,
+    pub display_name: String,
+    pub app_user_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct AchievementRow {
     pub id: Uuid,
     pub code: String,

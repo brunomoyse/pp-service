@@ -5,6 +5,7 @@ use crate::gql::domains::activity_log::ActivityLogQuery;
 use crate::gql::domains::auth::AuthQuery;
 use crate::gql::domains::clubs::ClubQuery;
 use crate::gql::domains::entries::EntryQuery;
+use crate::gql::domains::identity::IdentityQuery;
 use crate::gql::domains::leaderboards::LeaderboardQuery;
 use crate::gql::domains::registrations::RegistrationQuery;
 use crate::gql::domains::results::ResultQuery;
@@ -20,6 +21,7 @@ pub struct QueryRoot(
     AuthQuery,
     ClubQuery,
     EntryQuery,
+    IdentityQuery,
     LeaderboardQuery,
     RegistrationQuery,
     ResultQuery,

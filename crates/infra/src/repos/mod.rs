@@ -8,6 +8,7 @@ pub mod password_reset_tokens;
 pub mod payout_templates;
 pub mod player_deals;
 pub mod refresh_tokens;
+pub mod registered_players;
 pub mod table_seat_assignments;
 pub mod tournament_clock;
 pub mod tournament_entries;

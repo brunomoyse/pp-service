@@ -6,6 +6,7 @@ pub mod activity_log;
 pub mod auth;
 pub mod clubs;
 pub mod entries;
+pub mod identity;
 pub mod leaderboards;
 pub mod registrations;
 pub mod results;
