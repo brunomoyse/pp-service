@@ -224,6 +224,35 @@ pub struct ClubManagerRow {
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct PlayerNoteRow {
+    pub id: Uuid,
+    pub author_app_user_id: Uuid,
+    pub subject_registered_player_id: Uuid,
+    pub body: String,
+    pub style: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct PlayerNoteTagRow {
+    pub id: Uuid,
+    pub note_id: Uuid,
+    pub kind: String,
+    pub tag: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct ShowdownObservationRow {
+    pub id: Uuid,
+    pub note_id: Uuid,
+    pub tournament_id: Option<Uuid>,
+    pub description: String,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct RegisteredPlayerRow {
     pub id: Uuid,
     pub club_id: Uuid,

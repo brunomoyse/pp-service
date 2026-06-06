@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS showdown_observation CASCADE;
+DROP TABLE IF EXISTS player_note_tag CASCADE;
+DROP TABLE IF EXISTS player_note CASCADE;

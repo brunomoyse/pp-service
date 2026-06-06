@@ -7,9 +7,11 @@ use crate::gql::domains::clubs::ClubQuery;
 use crate::gql::domains::entries::EntryQuery;
 use crate::gql::domains::identity::IdentityQuery;
 use crate::gql::domains::leaderboards::LeaderboardQuery;
+use crate::gql::domains::notes::NotesQuery;
 use crate::gql::domains::registrations::RegistrationQuery;
 use crate::gql::domains::results::ResultQuery;
 use crate::gql::domains::seating::SeatingQuery;
+use crate::gql::domains::system::SystemQuery;
 use crate::gql::domains::templates::TemplateQuery;
 use crate::gql::domains::tournaments::{TournamentClockQuery, TournamentQuery};
 use crate::gql::domains::users::UserQuery;
@@ -23,9 +25,11 @@ pub struct QueryRoot(
     EntryQuery,
     IdentityQuery,
     LeaderboardQuery,
+    NotesQuery,
     RegistrationQuery,
     ResultQuery,
     SeatingQuery,
+    SystemQuery,
     TemplateQuery,
     TournamentClockQuery,
     TournamentQuery,

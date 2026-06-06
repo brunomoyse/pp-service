@@ -3,6 +3,7 @@ use async_graphql::MergedObject;
 use crate::gql::domains::auth::AuthMutation;
 use crate::gql::domains::entries::EntryMutation;
 use crate::gql::domains::identity::IdentityMutation;
+use crate::gql::domains::notes::NotesMutation;
 use crate::gql::domains::registrations::RegistrationMutation;
 use crate::gql::domains::results::ResultMutation;
 use crate::gql::domains::seating::SeatingMutation;
@@ -15,6 +16,7 @@ pub struct MutationRoot(
     AuthMutation,
     EntryMutation,
     IdentityMutation,
+    NotesMutation,
     RegistrationMutation,
     ResultMutation,
     SeatingMutation,

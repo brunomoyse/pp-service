@@ -19,6 +19,15 @@ pub use crate::gql::domains::identity::types::{
     ClaimRegisteredPlayerInput, CreateRegisteredPlayerInput, RegisteredPlayer,
 };
 
+// Notes types
+pub use crate::gql::domains::notes::types::{
+    AddPlayerNoteTagInput, AddShowdownObservationInput, NoteTagKind, PlayerNote, PlayerNoteTag,
+    PlayerStyle, ShowdownObservation, UpsertPlayerNoteInput,
+};
+
+// System types
+pub use crate::gql::domains::system::types::FeatureFlags;
+
 // User types
 pub use crate::gql::domains::users::types::{CreatePlayerInput, UpdatePlayerInput, User};
 
@@ -35,7 +44,8 @@ pub use crate::gql::domains::seating::types::{
     AssignPlayerToSeatInput, AssignTableToTournamentInput, AssignTablesToTournamentInput,
     BalanceTablesInput, BulkAssignTableEntry, CreateTournamentTableInput, MovePlayerInput,
     SeatAssignment, SeatWithPlayer, SeatingChangeEvent, SeatingEventType, TableWithSeats,
-    TournamentSeatingChart, TournamentTable, UnassignTableFromTournamentInput, UpdateStackSizeInput,
+    TournamentSeatingChart, TournamentTable, UnassignTableFromTournamentInput,
+    UpdateStackSizeInput,
 };
 
 // Tournament types
