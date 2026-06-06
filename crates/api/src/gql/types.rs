@@ -53,6 +53,9 @@ pub use crate::gql::domains::cosmetics::types::CosmeticItem;
 // Predictions (Prediction-Points economy) types
 pub use crate::gql::domains::predictions::types::{PredictionBalance, PredictionEntry};
 
+// Scouting / privacy (public-stats) types
+pub use crate::gql::domains::scouting::types::PrivacySettings;
+
 // User types
 pub use crate::gql::domains::users::types::{CreatePlayerInput, UpdatePlayerInput, User};
 

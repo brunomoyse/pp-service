@@ -15,6 +15,7 @@ use crate::gql::domains::predictions::PredictionsQuery;
 use crate::gql::domains::pro::ProQuery;
 use crate::gql::domains::registrations::RegistrationQuery;
 use crate::gql::domains::results::ResultQuery;
+use crate::gql::domains::scouting::ScoutingQuery;
 use crate::gql::domains::seasons::SeasonsQuery;
 use crate::gql::domains::seating::SeatingQuery;
 use crate::gql::domains::social::SocialQuery;
@@ -40,6 +41,7 @@ pub struct QueryRoot(
     ProQuery,
     RegistrationQuery,
     ResultQuery,
+    ScoutingQuery,
     SeasonsQuery,
     SeatingQuery,
     SocialQuery,

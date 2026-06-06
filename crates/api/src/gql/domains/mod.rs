@@ -16,6 +16,7 @@ pub mod predictions;
 pub mod pro;
 pub mod registrations;
 pub mod results;
+pub mod scouting;
 pub mod seasons;
 pub mod seating;
 pub mod social;

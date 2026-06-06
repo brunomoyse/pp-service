@@ -10,6 +10,7 @@ use crate::gql::domains::predictions::PredictionsMutation;
 use crate::gql::domains::pro::ProMutation;
 use crate::gql::domains::registrations::RegistrationMutation;
 use crate::gql::domains::results::ResultMutation;
+use crate::gql::domains::scouting::ScoutingMutation;
 use crate::gql::domains::seasons::SeasonsMutation;
 use crate::gql::domains::seating::SeatingMutation;
 use crate::gql::domains::social::SocialMutation;
@@ -29,6 +30,7 @@ pub struct MutationRoot(
     ProMutation,
     RegistrationMutation,
     ResultMutation,
+    ScoutingMutation,
     SeasonsMutation,
     SeatingMutation,
     SocialMutation,

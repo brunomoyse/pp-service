@@ -381,6 +381,33 @@ pub struct PredictionEntryRow {
     pub resolved_at: Option<DateTime<Utc>>,
 }
 
+// ---- Privacy / consent + scouting (G3/G4/G5) ----
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct UserPrivacySettingsRow {
+    pub app_user_id: Uuid,
+    pub share_named_pl: bool,
+    pub in_scouting_pool: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// A pool member matching a search (handle only — no stats until looked up).
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct ScoutingMatchRow {
+    pub user_id: Uuid,
+    pub handle: String,
+}
+
+/// A scouting profile's performance aggregates (lifetime).
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct ScoutingStatsRow {
+    pub tournaments: i64,
+    pub itm_count: i64,
+    pub best_finish: Option<i32>,
+    pub net_cents: i64,
+}
+
 /// A prediction enriched with display names for the client.
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct PredictionEntryView {

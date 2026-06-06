@@ -13,6 +13,7 @@ pub mod payout_templates;
 pub mod player_deals;
 pub mod player_notes;
 pub mod predictions;
+pub mod privacy;
 pub mod pro_entitlements;
 pub mod quests;
 pub mod refresh_tokens;
