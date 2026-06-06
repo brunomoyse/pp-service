@@ -44,6 +44,9 @@ pub use crate::gql::domains::seasons::types::{
     CreateSeasonInput, HallOfFameEntry, QuestProgress, Season, SeasonPass,
 };
 
+// Social types
+pub use crate::gql::domains::social::types::{Friend, MutualFlame, Rivalry, YearInPoker};
+
 // User types
 pub use crate::gql::domains::users::types::{CreatePlayerInput, UpdatePlayerInput, User};
 

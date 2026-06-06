@@ -15,6 +15,7 @@ use crate::gql::domains::registrations::RegistrationQuery;
 use crate::gql::domains::results::ResultQuery;
 use crate::gql::domains::seasons::SeasonsQuery;
 use crate::gql::domains::seating::SeatingQuery;
+use crate::gql::domains::social::SocialQuery;
 use crate::gql::domains::system::SystemQuery;
 use crate::gql::domains::templates::TemplateQuery;
 use crate::gql::domains::tournaments::{TournamentClockQuery, TournamentQuery};
@@ -37,6 +38,7 @@ pub struct QueryRoot(
     ResultQuery,
     SeasonsQuery,
     SeatingQuery,
+    SocialQuery,
     SystemQuery,
     TemplateQuery,
     TournamentClockQuery,

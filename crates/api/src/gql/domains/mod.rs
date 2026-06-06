@@ -16,6 +16,7 @@ pub mod registrations;
 pub mod results;
 pub mod seasons;
 pub mod seating;
+pub mod social;
 pub mod system;
 pub mod templates;
 pub mod tournaments;

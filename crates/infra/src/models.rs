@@ -281,6 +281,65 @@ pub struct SeasonChampionRow {
     pub events: i64,
 }
 
+/// Aggregate result: head-to-head record against one opponent.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct RivalryRow {
+    pub opponent_id: Uuid,
+    pub opponent_name: String,
+    pub meetings: i64,
+    /// Tournaments where the subject finished above this opponent.
+    pub wins: i64,
+    /// Tournaments where this opponent finished above the subject.
+    pub losses: i64,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct FriendshipRow {
+    pub id: Uuid,
+    pub requester_id: Uuid,
+    pub addressee_id: Uuid,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// A friendship resolved from the current user's perspective: the *other*
+/// party plus the request direction.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct FriendRow {
+    pub friendship_id: Uuid,
+    pub user_id: Uuid,
+    pub name: String,
+    pub status: String,
+    /// True when this is a pending request the current user received.
+    pub is_incoming: bool,
+}
+
+/// Derived mutual-flame standing between two players.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct FlameRow {
+    /// Distinct calendar nights both players checked in.
+    pub shared_nights: i64,
+    pub last_shared: Option<NaiveDate>,
+}
+
+/// Aggregate result: a player's tournament numbers for one calendar year.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct WrappedStatsRow {
+    pub tournaments: i64,
+    pub buyins_cents: i64,
+    pub winnings_cents: i64,
+    pub itm_count: i64,
+    pub best_finish: Option<i32>,
+}
+
+/// Aggregate result: the club a player frequented most in a year.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct FavoriteClubRow {
+    pub club_name: String,
+    pub tournaments: i64,
+}
+
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct ProEntitlementRow {
     pub id: Uuid,
