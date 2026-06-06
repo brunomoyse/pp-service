@@ -224,6 +224,34 @@ pub struct ClubManagerRow {
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct AchievementRow {
+    pub id: Uuid,
+    pub code: String,
+    pub name_key: String,
+    pub description_key: String,
+    pub category: String,
+    pub icon: Option<String>,
+    pub tier: Option<String>,
+    pub threshold_value: Option<i32>,
+    pub metadata: Option<serde_json::Value>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct PlayerAchievementRow {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub achievement_id: Uuid,
+    pub unlocked_at: Option<DateTime<Utc>>,
+    pub progress: i32,
+    pub tournament_id: Option<Uuid>,
+    pub metadata: Option<serde_json::Value>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct TournamentPayoutRow {
     pub id: Uuid,
     pub tournament_id: Uuid,

@@ -98,6 +98,7 @@ pub enum NotificationType {
     RegistrationConfirmed,
     WaitlistPromoted,
     TournamentStatusChanged,
+    AchievementUnlocked,
 }
 
 #[derive(SimpleObject, Clone, Debug)]

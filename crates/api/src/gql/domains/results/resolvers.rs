@@ -245,11 +245,13 @@ impl ResultMutation {
             None
         };
 
-        // Log activity
+        // Log activity and publish achievement notifications
         {
             let db = state.db.clone();
             let player_count = results.len();
+            let newly_unlocked_achievements = output.newly_unlocked_achievements.clone();
             tokio::spawn(async move {
+                // Log activity
                 crate::gql::domains::activity_log::log_and_publish(
                     &db,
                     tournament_id,
@@ -260,6 +262,34 @@ impl ResultMutation {
                     serde_json::json!({"player_count": player_count}),
                 )
                 .await;
+
+                // Publish achievement unlocked notifications
+                for (user_id, achievement) in newly_unlocked_achievements {
+                    let notification = crate::gql::types::UserNotification {
+                        id: uuid::Uuid::new_v4().into(),
+                        user_id: user_id.into(),
+                        notification_type: crate::gql::common::types::NotificationType::AchievementUnlocked,
+                        title: "Achievement Unlocked".to_string(),
+                        // The achievement `code` is carried in `message` so the
+                        // client can resolve icon/tier/localized name from its catalog.
+                        message: achievement.code.clone(),
+                        tournament_id: Some(tournament_id.into()),
+                        created_at: chrono::Utc::now(),
+                    };
+                    crate::gql::subscriptions::publish_user_notification(notification);
+
+                    // Also log to activity log
+                    let _ = crate::gql::domains::activity_log::log_and_publish(
+                        &db,
+                        tournament_id,
+                        "achievement",
+                        "unlocked",
+                        Some(user_id),
+                        None,
+                        serde_json::json!({"code": achievement.code, "name_key": achievement.name_key}),
+                    )
+                    .await;
+                }
             });
         }
 
