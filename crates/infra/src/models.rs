@@ -366,6 +366,34 @@ pub struct UserCosmeticRow {
     pub acquired_at: DateTime<Utc>,
 }
 
+// ---- Prediction Points economy (earned-only, G2) ----
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct PredictionEntryRow {
+    pub id: Uuid,
+    pub app_user_id: Uuid,
+    pub tournament_id: Uuid,
+    pub predicted_winner_user_id: Uuid,
+    pub stake_points: i32,
+    pub status: String,
+    pub payout_points: i32,
+    pub created_at: DateTime<Utc>,
+    pub resolved_at: Option<DateTime<Utc>>,
+}
+
+/// A prediction enriched with display names for the client.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct PredictionEntryView {
+    pub id: Uuid,
+    pub tournament_id: Uuid,
+    pub tournament_name: String,
+    pub predicted_winner_name: String,
+    pub stake_points: i32,
+    pub status: String,
+    pub payout_points: i32,
+    pub created_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct ProEntitlementRow {
     pub id: Uuid,

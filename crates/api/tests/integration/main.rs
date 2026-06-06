@@ -1,3 +1,7 @@
+// The merged GraphQL schema generates deeply-nested async future types; laying
+// them out (e.g. when building the schema in tests) overflows the default limit.
+#![recursion_limit = "512"]
+
 mod common;
 
 mod auth;
@@ -5,6 +9,7 @@ mod check_in;
 mod clock_lifecycle;
 mod club;
 mod club_tables;
+mod economy_firewall;
 mod eliminate_player;
 mod notification;
 mod payouts;

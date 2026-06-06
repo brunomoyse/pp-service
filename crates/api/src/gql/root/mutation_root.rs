@@ -6,6 +6,7 @@ use crate::gql::domains::cosmetics::CosmeticsMutation;
 use crate::gql::domains::entries::EntryMutation;
 use crate::gql::domains::identity::IdentityMutation;
 use crate::gql::domains::notes::NotesMutation;
+use crate::gql::domains::predictions::PredictionsMutation;
 use crate::gql::domains::pro::ProMutation;
 use crate::gql::domains::registrations::RegistrationMutation;
 use crate::gql::domains::results::ResultMutation;
@@ -24,6 +25,7 @@ pub struct MutationRoot(
     EntryMutation,
     IdentityMutation,
     NotesMutation,
+    PredictionsMutation,
     ProMutation,
     RegistrationMutation,
     ResultMutation,

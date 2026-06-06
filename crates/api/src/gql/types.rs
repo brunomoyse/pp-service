@@ -50,6 +50,9 @@ pub use crate::gql::domains::social::types::{Friend, MutualFlame, Rivalry, YearI
 // Cosmetics (euro economy) types
 pub use crate::gql::domains::cosmetics::types::CosmeticItem;
 
+// Predictions (Prediction-Points economy) types
+pub use crate::gql::domains::predictions::types::{PredictionBalance, PredictionEntry};
+
 // User types
 pub use crate::gql::domains::users::types::{CreatePlayerInput, UpdatePlayerInput, User};
 

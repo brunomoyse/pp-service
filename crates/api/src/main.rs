@@ -1,3 +1,7 @@
+// The merged GraphQL schema generates deeply-nested async future types; laying
+// them out overflows the default 128 recursion limit.
+#![recursion_limit = "512"]
+
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};

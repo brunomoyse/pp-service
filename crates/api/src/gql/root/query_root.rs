@@ -11,6 +11,7 @@ use crate::gql::domains::entries::EntryQuery;
 use crate::gql::domains::identity::IdentityQuery;
 use crate::gql::domains::leaderboards::LeaderboardQuery;
 use crate::gql::domains::notes::NotesQuery;
+use crate::gql::domains::predictions::PredictionsQuery;
 use crate::gql::domains::pro::ProQuery;
 use crate::gql::domains::registrations::RegistrationQuery;
 use crate::gql::domains::results::ResultQuery;
@@ -35,6 +36,7 @@ pub struct QueryRoot(
     IdentityQuery,
     LeaderboardQuery,
     NotesQuery,
+    PredictionsQuery,
     ProQuery,
     RegistrationQuery,
     ResultQuery,

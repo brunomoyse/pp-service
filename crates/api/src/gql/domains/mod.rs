@@ -12,6 +12,7 @@ pub mod entries;
 pub mod identity;
 pub mod leaderboards;
 pub mod notes;
+pub mod predictions;
 pub mod pro;
 pub mod registrations;
 pub mod results;
