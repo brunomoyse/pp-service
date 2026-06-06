@@ -340,6 +340,32 @@ pub struct FavoriteClubRow {
     pub tournaments: i64,
 }
 
+// ---- Euro cosmetics economy (G1/G2) ----
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct CosmeticItemRow {
+    pub id: Uuid,
+    pub code: String,
+    pub kind: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub price_cents: i32,
+    pub preview_ref: String,
+    pub club_id: Option<Uuid>,
+    pub active: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct UserCosmeticRow {
+    pub id: Uuid,
+    pub app_user_id: Uuid,
+    pub cosmetic_item_id: Uuid,
+    pub source: String,
+    pub equipped: bool,
+    pub acquired_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct ProEntitlementRow {
     pub id: Uuid,

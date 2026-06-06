@@ -6,6 +6,7 @@ use crate::gql::domains::analytics::AnalyticsQuery;
 use crate::gql::domains::attendance::AttendanceQuery;
 use crate::gql::domains::auth::AuthQuery;
 use crate::gql::domains::clubs::ClubQuery;
+use crate::gql::domains::cosmetics::CosmeticsQuery;
 use crate::gql::domains::entries::EntryQuery;
 use crate::gql::domains::identity::IdentityQuery;
 use crate::gql::domains::leaderboards::LeaderboardQuery;
@@ -29,6 +30,7 @@ pub struct QueryRoot(
     AttendanceQuery,
     AuthQuery,
     ClubQuery,
+    CosmeticsQuery,
     EntryQuery,
     IdentityQuery,
     LeaderboardQuery,

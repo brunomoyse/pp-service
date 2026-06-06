@@ -2,6 +2,7 @@ use async_graphql::MergedObject;
 
 use crate::gql::domains::attendance::AttendanceMutation;
 use crate::gql::domains::auth::AuthMutation;
+use crate::gql::domains::cosmetics::CosmeticsMutation;
 use crate::gql::domains::entries::EntryMutation;
 use crate::gql::domains::identity::IdentityMutation;
 use crate::gql::domains::notes::NotesMutation;
@@ -19,6 +20,7 @@ use crate::gql::domains::users::UserMutation;
 pub struct MutationRoot(
     AttendanceMutation,
     AuthMutation,
+    CosmeticsMutation,
     EntryMutation,
     IdentityMutation,
     NotesMutation,

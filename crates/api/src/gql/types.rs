@@ -47,6 +47,9 @@ pub use crate::gql::domains::seasons::types::{
 // Social types
 pub use crate::gql::domains::social::types::{Friend, MutualFlame, Rivalry, YearInPoker};
 
+// Cosmetics (euro economy) types
+pub use crate::gql::domains::cosmetics::types::CosmeticItem;
+
 // User types
 pub use crate::gql::domains::users::types::{CreatePlayerInput, UpdatePlayerInput, User};
 
