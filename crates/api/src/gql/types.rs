@@ -28,6 +28,14 @@ pub use crate::gql::domains::notes::types::{
 // System types
 pub use crate::gql::domains::system::types::FeatureFlags;
 
+// Pro entitlement types
+pub use crate::gql::domains::pro::types::{GrantProEntitlementInput, ProEntitlement};
+
+// Analytics types
+pub use crate::gql::domains::analytics::types::{
+    BuyInBreakdown, ClubBreakdown, PnlPoint, ProAnalytics,
+};
+
 // User types
 pub use crate::gql::domains::users::types::{CreatePlayerInput, UpdatePlayerInput, User};
 

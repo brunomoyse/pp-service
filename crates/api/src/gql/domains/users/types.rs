@@ -54,6 +54,15 @@ impl User {
             Ok(None)
         }
     }
+
+    /// Whether this user currently holds an active Pro entitlement.
+    async fn is_pro(&self, ctx: &Context<'_>) -> async_graphql::Result<bool> {
+        use crate::state::AppState;
+
+        let state = ctx.data::<AppState>()?;
+        let user_id = uuid::Uuid::parse_str(self.id.as_str()).gql_err("Invalid user ID")?;
+        Ok(infra::repos::pro_entitlements::is_pro(&state.db, user_id).await?)
+    }
 }
 
 // Player management input types

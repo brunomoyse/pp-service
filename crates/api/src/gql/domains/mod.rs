@@ -3,12 +3,14 @@
 
 pub mod achievements;
 pub mod activity_log;
+pub mod analytics;
 pub mod auth;
 pub mod clubs;
 pub mod entries;
 pub mod identity;
 pub mod leaderboards;
 pub mod notes;
+pub mod pro;
 pub mod registrations;
 pub mod results;
 pub mod seating;

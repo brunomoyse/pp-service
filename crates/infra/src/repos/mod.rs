@@ -1,5 +1,6 @@
 pub mod achievements;
 pub mod activity_log;
+pub mod analytics;
 pub mod blind_structure_templates;
 pub mod club_managers;
 pub mod club_tables;
@@ -8,6 +9,7 @@ pub mod password_reset_tokens;
 pub mod payout_templates;
 pub mod player_deals;
 pub mod player_notes;
+pub mod pro_entitlements;
 pub mod refresh_tokens;
 pub mod registered_players;
 pub mod table_seat_assignments;

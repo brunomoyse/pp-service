@@ -224,6 +224,21 @@ pub struct ClubManagerRow {
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct ProEntitlementRow {
+    pub id: Uuid,
+    pub app_user_id: Uuid,
+    pub source: String,
+    pub granted_by_club_id: Option<Uuid>,
+    pub granted_by_user_id: Option<Uuid>,
+    pub starts_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub status: String,
+    pub notes: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct PlayerNoteRow {
     pub id: Uuid,
     pub author_app_user_id: Uuid,

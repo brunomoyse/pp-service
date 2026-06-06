@@ -2,12 +2,14 @@ use async_graphql::MergedObject;
 
 use crate::gql::domains::achievements::AchievementQuery;
 use crate::gql::domains::activity_log::ActivityLogQuery;
+use crate::gql::domains::analytics::AnalyticsQuery;
 use crate::gql::domains::auth::AuthQuery;
 use crate::gql::domains::clubs::ClubQuery;
 use crate::gql::domains::entries::EntryQuery;
 use crate::gql::domains::identity::IdentityQuery;
 use crate::gql::domains::leaderboards::LeaderboardQuery;
 use crate::gql::domains::notes::NotesQuery;
+use crate::gql::domains::pro::ProQuery;
 use crate::gql::domains::registrations::RegistrationQuery;
 use crate::gql::domains::results::ResultQuery;
 use crate::gql::domains::seating::SeatingQuery;
@@ -20,12 +22,14 @@ use crate::gql::domains::users::UserQuery;
 pub struct QueryRoot(
     AchievementQuery,
     ActivityLogQuery,
+    AnalyticsQuery,
     AuthQuery,
     ClubQuery,
     EntryQuery,
     IdentityQuery,
     LeaderboardQuery,
     NotesQuery,
+    ProQuery,
     RegistrationQuery,
     ResultQuery,
     SeatingQuery,
