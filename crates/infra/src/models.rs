@@ -1,5 +1,5 @@
 use crate::repos::tournaments::TournamentLiveStatus;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
@@ -241,6 +241,44 @@ pub struct AttendanceStreakRow {
     pub freezes_available: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct SeasonRow {
+    pub id: Uuid,
+    pub club_id: Uuid,
+    pub name: String,
+    pub starts_at: DateTime<Utc>,
+    pub ends_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct SeasonPassRow {
+    pub id: Uuid,
+    pub season_id: Uuid,
+    pub app_user_id: Uuid,
+    pub is_premium: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct QuestCompletionRow {
+    pub id: Uuid,
+    pub app_user_id: Uuid,
+    pub quest_code: String,
+    pub week_start: NaiveDate,
+    pub xp_awarded: i32,
+    pub completed_at: DateTime<Utc>,
+}
+
+/// Aggregate result: a season's most-present player (Hall of Fame champion).
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct SeasonChampionRow {
+    pub app_user_id: Uuid,
+    pub champion_name: String,
+    pub events: i64,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]

@@ -39,6 +39,11 @@ pub use crate::gql::domains::analytics::types::{
 // Attendance / streak types
 pub use crate::gql::domains::attendance::types::{AttendanceStreak, CheckInResult};
 
+// Season / season-pass / quest types
+pub use crate::gql::domains::seasons::types::{
+    CreateSeasonInput, HallOfFameEntry, QuestProgress, Season, SeasonPass,
+};
+
 // User types
 pub use crate::gql::domains::users::types::{CreatePlayerInput, UpdatePlayerInput, User};
 

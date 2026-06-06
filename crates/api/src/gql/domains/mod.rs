@@ -14,6 +14,7 @@ pub mod notes;
 pub mod pro;
 pub mod registrations;
 pub mod results;
+pub mod seasons;
 pub mod seating;
 pub mod system;
 pub mod templates;

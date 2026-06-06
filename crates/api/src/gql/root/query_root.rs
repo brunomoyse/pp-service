@@ -13,6 +13,7 @@ use crate::gql::domains::notes::NotesQuery;
 use crate::gql::domains::pro::ProQuery;
 use crate::gql::domains::registrations::RegistrationQuery;
 use crate::gql::domains::results::ResultQuery;
+use crate::gql::domains::seasons::SeasonsQuery;
 use crate::gql::domains::seating::SeatingQuery;
 use crate::gql::domains::system::SystemQuery;
 use crate::gql::domains::templates::TemplateQuery;
@@ -34,6 +35,7 @@ pub struct QueryRoot(
     ProQuery,
     RegistrationQuery,
     ResultQuery,
+    SeasonsQuery,
     SeatingQuery,
     SystemQuery,
     TemplateQuery,
