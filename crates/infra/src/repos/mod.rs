@@ -19,6 +19,7 @@ pub mod quests;
 pub mod refresh_tokens;
 pub mod registered_players;
 pub mod rivalries;
+pub mod scouting;
 pub mod seasons;
 pub mod table_seat_assignments;
 pub mod tournament_clock;
