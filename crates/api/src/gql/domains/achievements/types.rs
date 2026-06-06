@@ -29,6 +29,7 @@ pub enum AchievementTier {
     Silver,
     Gold,
     Platinum,
+    Legendary,
 }
 
 impl From<Option<String>> for AchievementTier {
@@ -38,6 +39,7 @@ impl From<Option<String>> for AchievementTier {
             Some("silver") => AchievementTier::Silver,
             Some("gold") => AchievementTier::Gold,
             Some("platinum") => AchievementTier::Platinum,
+            Some("legendary") => AchievementTier::Legendary,
             _ => AchievementTier::Bronze,
         }
     }
@@ -80,8 +82,11 @@ pub struct PlayerAchievement {
 }
 
 /// Helper to construct PlayerAchievement from (AchievementRow, Option<PlayerAchievementRow>)
-impl From<(infra::models::AchievementRow, Option<infra::models::PlayerAchievementRow>)>
-    for PlayerAchievement
+impl
+    From<(
+        infra::models::AchievementRow,
+        Option<infra::models::PlayerAchievementRow>,
+    )> for PlayerAchievement
 {
     fn from(
         (achievement_row, player_row): (
