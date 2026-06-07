@@ -7,6 +7,10 @@ pub enum EntryType {
     Rebuy,
     ReEntry,
     Addon,
+    /// Mandatory drink voucher — collected from the player, excluded from the prize pool.
+    Voucher,
+    /// Chip-only grant (e.g. the level-2 early-bird bonus); excluded from the prize pool.
+    Bonus,
 }
 
 impl From<String> for EntryType {
@@ -16,6 +20,8 @@ impl From<String> for EntryType {
             "rebuy" => EntryType::Rebuy,
             "re_entry" => EntryType::ReEntry,
             "addon" => EntryType::Addon,
+            "voucher" => EntryType::Voucher,
+            "bonus" => EntryType::Bonus,
             _ => EntryType::Initial,
         }
     }
@@ -28,6 +34,8 @@ impl From<EntryType> for String {
             EntryType::Rebuy => "rebuy".to_string(),
             EntryType::ReEntry => "re_entry".to_string(),
             EntryType::Addon => "addon".to_string(),
+            EntryType::Voucher => "voucher".to_string(),
+            EntryType::Bonus => "bonus".to_string(),
         }
     }
 }

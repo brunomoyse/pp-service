@@ -103,6 +103,11 @@ impl TournamentMutation {
             rake_cents: input.rake_cents,
             seat_cap: input.seat_cap,
             early_bird_bonus_chips: input.early_bird_bonus_chips,
+            level_two_bonus_chips: input.level_two_bonus_chips,
+            voucher_value_cents: input.voucher_value_cents,
+            rebuy_max: input.rebuy_max,
+            addon_chips: input.addon_chips,
+            addon_price_cents: input.addon_price_cents,
             late_registration_level: input.late_registration_level,
         };
 
@@ -200,6 +205,11 @@ impl TournamentMutation {
             rake_cents: input.rake_cents,
             seat_cap: input.seat_cap,
             early_bird_bonus_chips: input.early_bird_bonus_chips,
+            level_two_bonus_chips: input.level_two_bonus_chips,
+            voucher_value_cents: input.voucher_value_cents,
+            rebuy_max: input.rebuy_max,
+            addon_chips: input.addon_chips,
+            addon_price_cents: input.addon_price_cents,
             late_registration_level: input.late_registration_level,
         };
 

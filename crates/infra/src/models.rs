@@ -27,6 +27,16 @@ pub struct TournamentRow {
     pub seat_cap: Option<i32>,
     pub live_status: TournamentLiveStatus,
     pub early_bird_bonus_chips: Option<i32>,
+    /// Second early-bird bonus, granted to players still seated at the end of L2.
+    pub level_two_bonus_chips: Option<i32>,
+    /// Mandatory drink voucher value (cents). Excluded from the prize pool.
+    pub voucher_value_cents: i32,
+    /// Max number of rebuys allowed (flyer display).
+    pub rebuy_max: Option<i32>,
+    /// Add-on chip amount (flyer display).
+    pub addon_chips: Option<i32>,
+    /// Add-on price in cents (flyer display).
+    pub addon_price_cents: Option<i32>,
     pub late_registration_level: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

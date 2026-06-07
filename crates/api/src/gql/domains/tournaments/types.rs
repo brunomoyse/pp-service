@@ -183,6 +183,11 @@ pub struct Tournament {
     pub status: TournamentStatus, // Calculated: UPCOMING, LIVE, COMPLETED
     pub live_status: TournamentLiveStatus, // Direct from DB: NOT_STARTED, IN_PROGRESS, FINISHED, etc.
     pub early_bird_bonus_chips: Option<i32>, // Extra chips for players present at tournament start
+    pub level_two_bonus_chips: Option<i32>, // Extra chips for players still seated at end of L2
+    pub voucher_value_cents: i32,          // Mandatory drink voucher (excluded from prize pool)
+    pub rebuy_max: Option<i32>,            // Max rebuys allowed (flyer display)
+    pub addon_chips: Option<i32>,          // Add-on chip amount (flyer display)
+    pub addon_price_cents: Option<i32>,    // Add-on price in cents (flyer display)
     pub late_registration_level: Option<i32>, // Blind level until which late registration stays open
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -233,6 +238,11 @@ impl From<infra::models::TournamentRow> for Tournament {
             status,
             live_status: row.live_status.into(),
             early_bird_bonus_chips: row.early_bird_bonus_chips,
+            level_two_bonus_chips: row.level_two_bonus_chips,
+            voucher_value_cents: row.voucher_value_cents,
+            rebuy_max: row.rebuy_max,
+            addon_chips: row.addon_chips,
+            addon_price_cents: row.addon_price_cents,
             late_registration_level: row.late_registration_level,
             created_at: row.created_at,
             updated_at: row.updated_at,
@@ -366,6 +376,11 @@ pub struct CreateTournamentInput {
     pub rake_cents: Option<i32>,
     pub seat_cap: Option<i32>,
     pub early_bird_bonus_chips: Option<i32>,
+    pub level_two_bonus_chips: Option<i32>,
+    pub voucher_value_cents: Option<i32>,
+    pub rebuy_max: Option<i32>,
+    pub addon_chips: Option<i32>,
+    pub addon_price_cents: Option<i32>,
     pub late_registration_level: Option<i32>,
     /// Blind structure template ID - if provided, copies levels from template
     pub template_id: Option<ID>,
@@ -384,6 +399,11 @@ pub struct UpdateTournamentInput {
     pub rake_cents: Option<i32>,
     pub seat_cap: Option<i32>,
     pub early_bird_bonus_chips: Option<i32>,
+    pub level_two_bonus_chips: Option<i32>,
+    pub voucher_value_cents: Option<i32>,
+    pub rebuy_max: Option<i32>,
+    pub addon_chips: Option<i32>,
+    pub addon_price_cents: Option<i32>,
     pub late_registration_level: Option<i32>,
     /// Blind structure template ID - if provided, replaces structure with template levels
     pub template_id: Option<ID>,
