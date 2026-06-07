@@ -15,7 +15,15 @@ pub struct RotateResult {
 pub fn hash_token(raw: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(raw.as_bytes());
-    format!("{:x}", hasher.finalize())
+    // sha2 0.11's `finalize()` returns `hybrid_array::Array`, which (unlike the
+    // old `GenericArray`) doesn't implement `LowerHex`. Format each byte as
+    // two lowercase hex digits to keep the output identical to the previous
+    // `format!("{:x}", ..)` so existing stored token hashes still match.
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 pub async fn create_refresh_token(
