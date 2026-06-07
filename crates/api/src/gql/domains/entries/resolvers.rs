@@ -87,7 +87,8 @@ impl EntryMutation {
 
         let create_data = CreateTournamentEntry {
             tournament_id,
-            user_id,
+            user_id: Some(user_id),
+            registered_player_id: None,
             entry_type: String::from(input.entry_type),
             amount_cents,
             chips_received: input.chips_received,
@@ -159,7 +160,7 @@ impl EntryMutation {
                     "entry",
                     "deleted",
                     manager_id,
-                    Some(u_id),
+                    u_id,
                     serde_json::json!({"entry_type": entry_type, "amount_cents": amount}),
                 )
                 .await;

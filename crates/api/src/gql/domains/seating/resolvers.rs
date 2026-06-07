@@ -8,7 +8,7 @@ use crate::gql::types::{
     AssignPlayerToSeatInput, AssignTableToTournamentInput, AssignTablesToTournamentInput,
     BalanceTablesInput, MovePlayerInput, SeatAssignment, SeatWithPlayer, SeatingChangeEvent,
     SeatingEventType, TableWithSeats, Tournament, TournamentSeatingChart, TournamentTable,
-    UnassignTableFromTournamentInput, UpdateStackSizeInput, User,
+    UnassignTableFromTournamentInput, UnseatedPlayer, UpdateStackSizeInput, User,
 };
 use crate::state::AppState;
 use infra::repos::{
@@ -62,7 +62,8 @@ impl SeatingQuery {
                 .into_iter()
                 .map(|ap| SeatWithPlayer {
                     assignment: ap.assignment.into(),
-                    player: ap.player.into(),
+                    display_name: ap.display_name,
+                    player: ap.player.map(Into::into),
                 })
                 .collect();
 
@@ -72,8 +73,14 @@ impl SeatingQuery {
         // Get unassigned players
         let unassigned_player_rows =
             table_seat_assignments::list_unassigned_players(&state.db, tournament_id).await?;
-        let unassigned_players: Vec<User> =
-            unassigned_player_rows.into_iter().map(User::from).collect();
+        let unassigned_players: Vec<UnseatedPlayer> = unassigned_player_rows
+            .into_iter()
+            .map(|rp| UnseatedPlayer {
+                registered_player_id: rp.id.into(),
+                display_name: rp.display_name,
+                user: None,
+            })
+            .collect();
 
         Ok(TournamentSeatingChart {
             tournament,
@@ -121,7 +128,8 @@ impl SeatingQuery {
             .into_iter()
             .map(|ap| SeatWithPlayer {
                 assignment: ap.assignment.into(),
-                player: ap.player.into(),
+                display_name: ap.display_name,
+                player: ap.player.map(Into::into),
             })
             .collect())
     }
@@ -465,7 +473,8 @@ impl SeatingMutation {
         let create_data = CreateSeatAssignment {
             tournament_id,
             club_table_id,
-            user_id,
+            user_id: Some(user_id),
+            registered_player_id: None,
             seat_number: input.seat_number,
             stack_size: input.stack_size,
             assigned_by: Some(manager_id),
@@ -810,7 +819,8 @@ impl SeatingMutation {
                     id: assignment.id.into(),
                     tournament_id: assignment.tournament_id.into(),
                     club_table_id: assignment.club_table_id.into(),
-                    user_id: assignment.user_id.into(),
+                    user_id: assignment.user_id.map(Into::into),
+                    registered_player_id: assignment.registered_player_id.into(),
                     seat_number: assignment.seat_number,
                     stack_size: Some(0),
                     is_current: false,

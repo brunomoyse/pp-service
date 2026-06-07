@@ -1,4 +1,4 @@
-use async_graphql::{Enum, SimpleObject};
+use async_graphql::{Enum, SimpleObject, ID};
 
 use crate::gql::types::User;
 
@@ -35,8 +35,12 @@ impl From<LeaderboardPeriod> for infra::repos::tournament_results::LeaderboardPe
 
 #[derive(SimpleObject, Clone)]
 pub struct LeaderboardEntry {
-    pub user: User, // Full user object with complete info
-    pub rank: i32,  // Position in leaderboard (1-based)
+    /// The club roster identity — always present (account-less players rank too).
+    pub registered_player_id: ID,
+    /// Display name (roster name; works for account-less players).
+    pub display_name: String,
+    pub user: Option<User>, // Full user object, when the player has an account
+    pub rank: i32,          // Position in leaderboard (1-based)
     pub total_tournaments: i32,
     pub total_buy_ins: i32,  // Total amount spent (cents)
     pub total_winnings: i32, // Total amount won (cents)

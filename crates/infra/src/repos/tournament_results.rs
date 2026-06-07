@@ -3,6 +3,8 @@ use uuid::Uuid;
 
 use crate::models::TournamentResultRow;
 
+const COLS: &str = "id, tournament_id, user_id, registered_player_id, final_position, prize_cents, points, notes, created_at, updated_at";
+
 #[derive(Debug, Clone)]
 pub struct UserStatistics {
     pub total_itm: i32,
@@ -13,17 +15,22 @@ pub struct UserStatistics {
     pub roi_percentage: f64,
 }
 
+/// One leaderboard row. The roster entry (registered_player) is the identity;
+/// `user_id` and the user fields are present only when the player has an app
+/// account. `display_name` always renders the player.
 #[derive(Debug, Clone)]
 pub struct LeaderboardEntry {
-    pub user_id: Uuid,
+    pub registered_player_id: Uuid,
+    pub display_name: String,
+    pub user_id: Option<Uuid>,
     pub username: Option<String>,
-    pub first_name: String,
+    pub first_name: Option<String>,
     pub last_name: Option<String>,
-    pub email: String,
+    pub email: Option<String>,
     pub phone: Option<String>,
-    pub is_active: bool,
+    pub is_active: Option<bool>,
     pub role: Option<String>,
-    pub locale: String,
+    pub locale: Option<String>,
     pub total_tournaments: i32,
     pub total_buy_ins: i32,  // Total amount spent (cents)
     pub total_winnings: i32, // Total amount won (cents)
@@ -46,10 +53,13 @@ pub enum LeaderboardPeriod {
     Last7Days,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CreateTournamentResult {
     pub tournament_id: Uuid,
-    pub user_id: Uuid,
+    /// App user, when the player has an account. The link trigger stamps
+    /// whichever of user_id / registered_player_id is missing.
+    pub user_id: Option<Uuid>,
+    pub registered_player_id: Option<Uuid>,
     pub final_position: i32,
     pub prize_cents: i32,
     pub notes: Option<String>,
@@ -59,15 +69,13 @@ pub async fn create<'e>(
     executor: impl PgExecutor<'e>,
     data: CreateTournamentResult,
 ) -> Result<TournamentResultRow> {
-    let row = sqlx::query_as::<_, TournamentResultRow>(
-        r#"
-        INSERT INTO tournament_results (tournament_id, user_id, final_position, prize_cents, points, notes)
-        VALUES ($1, $2, $3, $4, 0, $5)
-        RETURNING id, tournament_id, user_id, final_position, prize_cents, points, notes, created_at, updated_at
-        "#,
-    )
+    let row = sqlx::query_as::<_, TournamentResultRow>(&format!(
+        "INSERT INTO tournament_results (tournament_id, user_id, registered_player_id, final_position, prize_cents, points, notes) \
+         VALUES ($1, $2, $3, $4, $5, 0, $6) RETURNING {COLS}"
+    ))
     .bind(data.tournament_id)
     .bind(data.user_id)
+    .bind(data.registered_player_id)
     .bind(data.final_position)
     .bind(data.prize_cents)
     .bind(data.notes)
@@ -81,13 +89,9 @@ pub async fn get_by_id<'e>(
     executor: impl PgExecutor<'e>,
     id: Uuid,
 ) -> Result<Option<TournamentResultRow>> {
-    let row = sqlx::query_as::<_, TournamentResultRow>(
-        r#"
-        SELECT id, tournament_id, user_id, final_position, prize_cents, points, notes, created_at, updated_at
-        FROM tournament_results
-        WHERE id = $1
-        "#
-    )
+    let row = sqlx::query_as::<_, TournamentResultRow>(&format!(
+        "SELECT {COLS} FROM tournament_results WHERE id = $1"
+    ))
     .bind(id)
     .fetch_optional(executor)
     .await?;
@@ -99,14 +103,9 @@ pub async fn list_by_tournament<'e>(
     executor: impl PgExecutor<'e>,
     tournament_id: Uuid,
 ) -> Result<Vec<TournamentResultRow>> {
-    let rows = sqlx::query_as::<_, TournamentResultRow>(
-        r#"
-        SELECT id, tournament_id, user_id, final_position, prize_cents, points, notes, created_at, updated_at
-        FROM tournament_results
-        WHERE tournament_id = $1
-        ORDER BY final_position ASC
-        "#
-    )
+    let rows = sqlx::query_as::<_, TournamentResultRow>(&format!(
+        "SELECT {COLS} FROM tournament_results WHERE tournament_id = $1 ORDER BY final_position ASC"
+    ))
     .bind(tournament_id)
     .fetch_all(executor)
     .await?;
@@ -120,14 +119,12 @@ pub async fn list_user_recent<'e>(
     limit: i64,
 ) -> Result<Vec<TournamentResultRow>> {
     let rows = sqlx::query_as::<_, TournamentResultRow>(
-        r#"
-        SELECT tr.id, tr.tournament_id, tr.user_id, tr.final_position, tr.prize_cents, tr.points, tr.notes, tr.created_at, tr.updated_at
-        FROM tournament_results tr
-        JOIN tournaments t ON tr.tournament_id = t.id
-        WHERE tr.user_id = $1
-        ORDER BY tr.created_at DESC
-        LIMIT $2
-        "#
+        "SELECT tr.id, tr.tournament_id, tr.user_id, tr.registered_player_id, tr.final_position, \
+                tr.prize_cents, tr.points, tr.notes, tr.created_at, tr.updated_at \
+         FROM tournament_results tr \
+         JOIN tournaments t ON tr.tournament_id = t.id \
+         WHERE tr.user_id = $1 \
+         ORDER BY tr.created_at DESC LIMIT $2",
     )
     .bind(user_id)
     .bind(limit)
@@ -219,17 +216,13 @@ pub async fn update<'e>(
     id: Uuid,
     data: CreateTournamentResult,
 ) -> Result<TournamentResultRow> {
-    let row = sqlx::query_as::<_, TournamentResultRow>(
-        r#"
-        UPDATE tournament_results
-        SET tournament_id = $2, user_id = $3, final_position = $4, prize_cents = $5, notes = $6, updated_at = NOW()
-        WHERE id = $1
-        RETURNING id, tournament_id, user_id, final_position, prize_cents, points, notes, created_at, updated_at
-        "#
-    )
+    let row = sqlx::query_as::<_, TournamentResultRow>(&format!(
+        "UPDATE tournament_results \
+         SET tournament_id = $2, final_position = $3, prize_cents = $4, notes = $5, updated_at = NOW() \
+         WHERE id = $1 RETURNING {COLS}"
+    ))
     .bind(id)
     .bind(data.tournament_id)
-    .bind(data.user_id)
     .bind(data.final_position)
     .bind(data.prize_cents)
     .bind(data.notes)
@@ -248,8 +241,18 @@ pub async fn delete<'e>(executor: impl PgExecutor<'e>, id: Uuid) -> Result<bool>
     Ok(result.rows_affected() > 0)
 }
 
-/// Calculate comprehensive leaderboard with points system.
-/// Uses dynamic SQL so requires &PgPool.
+fn period_filter(period: LeaderboardPeriod) -> &'static str {
+    match period {
+        LeaderboardPeriod::AllTime => "",
+        LeaderboardPeriod::LastYear => "AND t.start_time >= NOW() - INTERVAL '1 year'",
+        LeaderboardPeriod::Last6Months => "AND t.start_time >= NOW() - INTERVAL '6 months'",
+        LeaderboardPeriod::Last30Days => "AND t.start_time >= NOW() - INTERVAL '30 days'",
+        LeaderboardPeriod::Last7Days => "AND t.start_time >= NOW() - INTERVAL '7 days'",
+    }
+}
+
+/// Comprehensive leaderboard keyed on the club roster, so account-less players
+/// rank alongside app users. Uses dynamic SQL so requires &PgPool.
 pub async fn get_leaderboard(
     pool: &PgPool,
     period: LeaderboardPeriod,
@@ -257,48 +260,28 @@ pub async fn get_leaderboard(
     offset: Option<i32>,
     club_id: Option<Uuid>,
 ) -> Result<Vec<LeaderboardEntry>> {
-    let (date_filter, _params_count) = match period {
-        LeaderboardPeriod::AllTime => ("".to_string(), 0),
-        LeaderboardPeriod::LastYear => (
-            "AND t.start_time >= NOW() - INTERVAL '1 year'".to_string(),
-            0,
-        ),
-        LeaderboardPeriod::Last6Months => (
-            "AND t.start_time >= NOW() - INTERVAL '6 months'".to_string(),
-            0,
-        ),
-        LeaderboardPeriod::Last30Days => (
-            "AND t.start_time >= NOW() - INTERVAL '30 days'".to_string(),
-            0,
-        ),
-        LeaderboardPeriod::Last7Days => (
-            "AND t.start_time >= NOW() - INTERVAL '7 days'".to_string(),
-            0,
-        ),
-    };
-
-    let club_filter = match club_id {
-        Some(_) => "AND t.club_id = $1".to_string(),
-        None => "".to_string(),
+    let date_filter = period_filter(period);
+    let club_filter = if club_id.is_some() {
+        "AND t.club_id = $1"
+    } else {
+        ""
     };
 
     let limit_value = limit.unwrap_or(100).clamp(1, 500);
     let offset_value = offset.unwrap_or(0).max(0);
     let limit_clause = format!("LIMIT {} OFFSET {}", limit_value, offset_value);
 
+    // Account-less roster entries (u.id IS NULL) always count; app users only
+    // when they are active players (managers/admins are staff, not ranked).
     let query = format!(
         r#"
         WITH player_stats AS (
             SELECT
+                rp.id as registered_player_id,
+                rp.display_name,
                 u.id as user_id,
-                u.username,
-                u.first_name,
-                u.last_name,
-                u.email,
-                u.phone,
-                u.is_active,
-                u.role,
-                u.locale,
+                u.username, u.first_name, u.last_name, u.email, u.phone,
+                u.is_active, u.role, u.locale,
                 COUNT(DISTINCT reg.tournament_id) as total_tournaments,
                 COALESCE(SUM(t.buy_in_cents), 0) as total_buy_ins,
                 COALESCE(SUM(tr.prize_cents), 0) as total_winnings,
@@ -307,25 +290,22 @@ pub async fn get_leaderboard(
                 SUM(CASE WHEN tr.final_position = 1 THEN 1 ELSE 0 END) as first_places,
                 SUM(CASE WHEN tr.final_position <= 9 THEN 1 ELSE 0 END) as final_tables,
                 COALESCE(SUM(tr.points), 0) as total_points
-            FROM users u
-            JOIN tournament_registrations reg ON u.id = reg.user_id
+            FROM registered_player rp
+            LEFT JOIN users u ON u.id = rp.app_user_id
+            JOIN tournament_registrations reg ON reg.registered_player_id = rp.id
             JOIN tournaments t ON reg.tournament_id = t.id
-            LEFT JOIN tournament_results tr ON u.id = tr.user_id AND t.id = tr.tournament_id
-            WHERE u.role = 'player' AND u.is_active = true
+            LEFT JOIN tournament_results tr ON tr.registered_player_id = rp.id AND tr.tournament_id = t.id
+            WHERE (u.id IS NULL OR (u.role = 'player' AND u.is_active = true))
                 {} {}
-            GROUP BY u.id, u.username, u.first_name, u.last_name, u.email, u.phone, u.is_active, u.role, u.locale
+            GROUP BY rp.id, rp.display_name, u.id, u.username, u.first_name, u.last_name,
+                     u.email, u.phone, u.is_active, u.role, u.locale
             HAVING COUNT(DISTINCT reg.tournament_id) > 0
         )
         SELECT
+            registered_player_id,
+            display_name,
             user_id,
-            username,
-            first_name,
-            last_name,
-            email,
-            phone,
-            is_active,
-            role,
-            locale,
+            username, first_name, last_name, email, phone, is_active, role, locale,
             total_tournaments,
             total_buy_ins,
             total_winnings,
@@ -342,8 +322,6 @@ pub async fn get_leaderboard(
             ROUND(CAST(average_finish AS NUMERIC), 2)::double precision as average_finish,
             first_places,
             final_tables,
-            total_points,
-            -- Use total_points as the leaderboard score (sum of individual event points)
             total_points as points
         FROM player_stats
         ORDER BY points DESC, total_winnings DESC, total_tournaments DESC
@@ -353,8 +331,6 @@ pub async fn get_leaderboard(
     );
 
     let mut query_builder = sqlx::query(&query);
-
-    // Bind club_id parameter if provided
     if let Some(club_uuid) = club_id {
         query_builder = query_builder.bind(club_uuid);
     }
@@ -362,9 +338,10 @@ pub async fn get_leaderboard(
     let rows = query_builder.fetch_all(pool).await?;
 
     let mut leaderboard = Vec::new();
-
     for row in rows {
         let entry = LeaderboardEntry {
+            registered_player_id: row.try_get("registered_player_id")?,
+            display_name: row.try_get("display_name")?,
             user_id: row.try_get("user_id")?,
             username: row.try_get("username")?,
             first_name: row.try_get("first_name")?,
@@ -398,50 +375,35 @@ pub async fn count_leaderboard(
     period: LeaderboardPeriod,
     club_id: Option<Uuid>,
 ) -> Result<i64> {
-    let (date_filter, _params_count) = match period {
-        LeaderboardPeriod::AllTime => ("".to_string(), 0),
-        LeaderboardPeriod::LastYear => (
-            "AND t.start_time >= NOW() - INTERVAL '1 year'".to_string(),
-            0,
-        ),
-        LeaderboardPeriod::Last6Months => (
-            "AND t.start_time >= NOW() - INTERVAL '6 months'".to_string(),
-            0,
-        ),
-        LeaderboardPeriod::Last30Days => (
-            "AND t.start_time >= NOW() - INTERVAL '30 days'".to_string(),
-            0,
-        ),
-        LeaderboardPeriod::Last7Days => (
-            "AND t.start_time >= NOW() - INTERVAL '7 days'".to_string(),
-            0,
-        ),
-    };
-
-    let club_filter = match club_id {
-        Some(_) => "AND t.club_id = $1".to_string(),
-        None => "".to_string(),
+    let date_filter = period_filter(period);
+    let club_filter = if club_id.is_some() {
+        "AND t.club_id = $1"
+    } else {
+        ""
     };
 
     let query = format!(
         r#"
-        SELECT COUNT(DISTINCT u.id) as total
-        FROM users u
-        JOIN tournament_registrations reg ON u.id = reg.user_id
-        JOIN tournaments t ON reg.tournament_id = t.id
-        WHERE u.role = 'player' AND u.is_active = true
-            {} {}
+        SELECT COUNT(*) as total FROM (
+            SELECT rp.id
+            FROM registered_player rp
+            LEFT JOIN users u ON u.id = rp.app_user_id
+            JOIN tournament_registrations reg ON reg.registered_player_id = rp.id
+            JOIN tournaments t ON reg.tournament_id = t.id
+            WHERE (u.id IS NULL OR (u.role = 'player' AND u.is_active = true))
+                {} {}
+            GROUP BY rp.id
+            HAVING COUNT(DISTINCT reg.tournament_id) > 0
+        ) c
         "#,
         date_filter, club_filter
     );
 
     let mut query_builder = sqlx::query_scalar::<_, i64>(&query);
-
     if let Some(club_uuid) = club_id {
         query_builder = query_builder.bind(club_uuid);
     }
 
     let count = query_builder.fetch_one(pool).await?;
-
     Ok(count)
 }

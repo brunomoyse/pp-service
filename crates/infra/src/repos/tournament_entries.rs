@@ -3,10 +3,15 @@ use uuid::Uuid;
 
 use crate::models::TournamentEntryRow;
 
-#[derive(Debug, Clone)]
+const COLS: &str = "id, tournament_id, user_id, registered_player_id, entry_type, amount_cents, chips_received, recorded_by, notes, created_at, updated_at";
+
+#[derive(Debug, Clone, Default)]
 pub struct CreateTournamentEntry {
     pub tournament_id: Uuid,
-    pub user_id: Uuid,
+    /// App user, when the player has an account. The link trigger stamps
+    /// whichever of user_id / registered_player_id is missing.
+    pub user_id: Option<Uuid>,
+    pub registered_player_id: Option<Uuid>,
     pub entry_type: String,
     pub amount_cents: i32,
     pub chips_received: Option<i32>,
@@ -31,19 +36,14 @@ pub async fn create<'e>(
     executor: impl PgExecutor<'e>,
     data: CreateTournamentEntry,
 ) -> Result<TournamentEntryRow> {
-    let row = sqlx::query_as::<_, TournamentEntryRow>(
-        r#"
-        INSERT INTO tournament_entries (
-            tournament_id, user_id, entry_type, amount_cents,
-            chips_received, recorded_by, notes
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        RETURNING id, tournament_id, user_id, entry_type, amount_cents,
-                  chips_received, recorded_by, notes, created_at, updated_at
-        "#,
-    )
+    let row = sqlx::query_as::<_, TournamentEntryRow>(&format!(
+        "INSERT INTO tournament_entries \
+            (tournament_id, user_id, registered_player_id, entry_type, amount_cents, chips_received, recorded_by, notes) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING {COLS}"
+    ))
     .bind(data.tournament_id)
     .bind(data.user_id)
+    .bind(data.registered_player_id)
     .bind(data.entry_type)
     .bind(data.amount_cents)
     .bind(data.chips_received)
@@ -59,14 +59,9 @@ pub async fn get_by_id<'e>(
     executor: impl PgExecutor<'e>,
     id: Uuid,
 ) -> Result<Option<TournamentEntryRow>> {
-    let row = sqlx::query_as::<_, TournamentEntryRow>(
-        r#"
-        SELECT id, tournament_id, user_id, entry_type, amount_cents,
-               chips_received, recorded_by, notes, created_at, updated_at
-        FROM tournament_entries
-        WHERE id = $1
-        "#,
-    )
+    let row = sqlx::query_as::<_, TournamentEntryRow>(&format!(
+        "SELECT {COLS} FROM tournament_entries WHERE id = $1"
+    ))
     .bind(id)
     .fetch_optional(executor)
     .await?;
@@ -78,15 +73,9 @@ pub async fn list_by_tournament<'e>(
     executor: impl PgExecutor<'e>,
     tournament_id: Uuid,
 ) -> Result<Vec<TournamentEntryRow>> {
-    let rows = sqlx::query_as::<_, TournamentEntryRow>(
-        r#"
-        SELECT id, tournament_id, user_id, entry_type, amount_cents,
-               chips_received, recorded_by, notes, created_at, updated_at
-        FROM tournament_entries
-        WHERE tournament_id = $1
-        ORDER BY created_at ASC
-        "#,
-    )
+    let rows = sqlx::query_as::<_, TournamentEntryRow>(&format!(
+        "SELECT {COLS} FROM tournament_entries WHERE tournament_id = $1 ORDER BY created_at ASC"
+    ))
     .bind(tournament_id)
     .fetch_all(executor)
     .await?;
@@ -99,15 +88,9 @@ pub async fn list_by_tournament_and_user<'e>(
     tournament_id: Uuid,
     user_id: Uuid,
 ) -> Result<Vec<TournamentEntryRow>> {
-    let rows = sqlx::query_as::<_, TournamentEntryRow>(
-        r#"
-        SELECT id, tournament_id, user_id, entry_type, amount_cents,
-               chips_received, recorded_by, notes, created_at, updated_at
-        FROM tournament_entries
-        WHERE tournament_id = $1 AND user_id = $2
-        ORDER BY created_at ASC
-        "#,
-    )
+    let rows = sqlx::query_as::<_, TournamentEntryRow>(&format!(
+        "SELECT {COLS} FROM tournament_entries WHERE tournament_id = $1 AND user_id = $2 ORDER BY created_at ASC"
+    ))
     .bind(tournament_id)
     .bind(user_id)
     .fetch_all(executor)
@@ -125,7 +108,7 @@ pub async fn get_stats<'e>(
         SELECT
             COUNT(*) as total_entries,
             COALESCE(SUM(e.amount_cents), 0) as total_amount_cents,
-            COUNT(DISTINCT e.user_id) as unique_players,
+            COUNT(DISTINCT e.registered_player_id) as unique_players,
             COUNT(*) FILTER (WHERE e.entry_type = 'initial') as initial_count,
             COUNT(*) FILTER (WHERE e.entry_type = 'rebuy') as rebuy_count,
             COUNT(*) FILTER (WHERE e.entry_type = 're_entry') as re_entry_count,
@@ -183,18 +166,11 @@ pub async fn apply_early_bird_bonus<'e>(
     user_id: Uuid,
     bonus_chips: i32,
 ) -> Result<Option<TournamentEntryRow>> {
-    let row = sqlx::query_as::<_, TournamentEntryRow>(
-        r#"
-        UPDATE tournament_entries
-        SET chips_received = COALESCE(chips_received, 0) + $3,
-            updated_at = NOW()
-        WHERE tournament_id = $1
-          AND user_id = $2
-          AND entry_type = 'initial'
-        RETURNING id, tournament_id, user_id, entry_type, amount_cents,
-                  chips_received, recorded_by, notes, created_at, updated_at
-        "#,
-    )
+    let row = sqlx::query_as::<_, TournamentEntryRow>(&format!(
+        "UPDATE tournament_entries \
+         SET chips_received = COALESCE(chips_received, 0) + $3, updated_at = NOW() \
+         WHERE tournament_id = $1 AND user_id = $2 AND entry_type = 'initial' RETURNING {COLS}"
+    ))
     .bind(tournament_id)
     .bind(user_id)
     .bind(bonus_chips)

@@ -1,13 +1,22 @@
-use async_graphql::{Enum, InputObject, SimpleObject, ID};
+use async_graphql::dataloader::DataLoader;
+use async_graphql::{ComplexObject, Context, Enum, InputObject, SimpleObject, ID};
 use chrono::{DateTime, Utc};
+use uuid::Uuid;
 
+use crate::gql::domains::users::types::User;
+use crate::gql::error::ResultExt;
+use crate::gql::loaders::{RegisteredPlayerLoader, UserLoader};
 use crate::gql::types::Tournament;
 
 #[derive(SimpleObject, Clone)]
+#[graphql(complex)]
 pub struct TournamentResult {
     pub id: ID,
     pub tournament_id: ID,
-    pub user_id: ID,
+    /// The app user, when this player has an account. Null for account-less players.
+    pub user_id: Option<ID>,
+    /// The club roster identity — always present.
+    pub registered_player_id: ID,
     pub final_position: i32,
     pub prize_cents: i32,
     pub points: i32,
@@ -20,13 +29,44 @@ impl From<infra::models::TournamentResultRow> for TournamentResult {
         Self {
             id: row.id.into(),
             tournament_id: row.tournament_id.into(),
-            user_id: row.user_id.into(),
+            user_id: row.user_id.map(Into::into),
+            registered_player_id: row.registered_player_id.into(),
             final_position: row.final_position,
             prize_cents: row.prize_cents,
             points: row.points,
             notes: row.notes,
             created_at: row.created_at,
         }
+    }
+}
+
+#[ComplexObject]
+impl TournamentResult {
+    /// The player's display name (roster name; works for account-less players).
+    async fn display_name(&self, ctx: &Context<'_>) -> async_graphql::Result<String> {
+        let rp_id =
+            Uuid::parse_str(self.registered_player_id.as_str()).gql_err("Invalid roster ID")?;
+        let loader = ctx.data::<DataLoader<RegisteredPlayerLoader>>()?;
+        Ok(loader
+            .load_one(rp_id)
+            .await
+            .gql_err("Loading roster failed")?
+            .map(|rp| rp.display_name)
+            .unwrap_or_else(|| "Unknown".to_string()))
+    }
+
+    /// The app user account, when the player has one.
+    async fn user(&self, ctx: &Context<'_>) -> async_graphql::Result<Option<User>> {
+        let Some(user_id) = &self.user_id else {
+            return Ok(None);
+        };
+        let user_id = Uuid::parse_str(user_id.as_str()).gql_err("Invalid user ID")?;
+        let loader = ctx.data::<DataLoader<UserLoader>>()?;
+        Ok(loader
+            .load_one(user_id)
+            .await
+            .gql_err("Loading user failed")?
+            .map(Into::into))
     }
 }
 

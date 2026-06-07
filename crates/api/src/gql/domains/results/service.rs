@@ -100,7 +100,8 @@ pub async fn enter_tournament_results(
 
         let result_data = CreateTournamentResult {
             tournament_id: params.tournament_id,
-            user_id,
+            user_id: Some(user_id),
+            registered_player_id: None,
             final_position: position_input.final_position,
             prize_cents: *payout_amount,
             notes: None,
@@ -116,22 +117,26 @@ pub async fn enter_tournament_results(
         crate::gql::domains::achievements::service::UnlockedAchievement,
     )> = Vec::new();
     for result in &results {
+        // Achievements only apply to app users; account-less players have no user_id.
+        let Some(user_id) = result.user_id else {
+            continue;
+        };
         match crate::gql::domains::achievements::service::evaluate_for_player(
             &mut tx,
-            result.user_id,
+            user_id,
             params.tournament_id,
         )
         .await
         {
             Ok(unlocked) => {
                 for achievement in unlocked {
-                    newly_unlocked_achievements.push((result.user_id, achievement));
+                    newly_unlocked_achievements.push((user_id, achievement));
                 }
             }
             Err(e) => {
                 tracing::warn!(
                     "Failed to evaluate achievements for user {}: {}",
-                    result.user_id,
+                    user_id,
                     e
                 );
             }

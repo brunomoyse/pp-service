@@ -3,10 +3,17 @@ use uuid::Uuid;
 
 use crate::models::TournamentRegistrationRow;
 
-#[derive(Debug, Clone)]
+const COLS: &str =
+    "id, tournament_id, user_id, registered_player_id, registration_time, status, notes, created_at, updated_at";
+
+#[derive(Debug, Clone, Default)]
 pub struct CreateTournamentRegistration {
     pub tournament_id: Uuid,
-    pub user_id: Uuid,
+    /// App user, when the player has an account. Optional — account-less players
+    /// (registered by the club) carry only a roster id. The link trigger stamps
+    /// whichever of user_id / registered_player_id is missing.
+    pub user_id: Option<Uuid>,
+    pub registered_player_id: Option<Uuid>,
     pub notes: Option<String>,
     pub status: Option<String>,
 }
@@ -17,13 +24,14 @@ pub async fn create<'e>(
 ) -> Result<TournamentRegistrationRow> {
     let row = sqlx::query_as::<_, TournamentRegistrationRow>(
         r#"
-        INSERT INTO tournament_registrations (tournament_id, user_id, notes, status)
-        VALUES ($1, $2, $3, COALESCE($4, 'registered'))
-        RETURNING id, tournament_id, user_id, registration_time, status, notes, created_at, updated_at
+        INSERT INTO tournament_registrations (tournament_id, user_id, registered_player_id, notes, status)
+        VALUES ($1, $2, $3, $4, COALESCE($5, 'registered'))
+        RETURNING id, tournament_id, user_id, registered_player_id, registration_time, status, notes, created_at, updated_at
         "#
     )
     .bind(data.tournament_id)
     .bind(data.user_id)
+    .bind(data.registered_player_id)
     .bind(data.notes)
     .bind(data.status)
     .fetch_one(executor)
@@ -36,13 +44,9 @@ pub async fn get_by_id<'e>(
     executor: impl PgExecutor<'e>,
     id: Uuid,
 ) -> Result<Option<TournamentRegistrationRow>> {
-    let row = sqlx::query_as::<_, TournamentRegistrationRow>(
-        r#"
-        SELECT id, tournament_id, user_id, registration_time, status, notes, created_at, updated_at
-        FROM tournament_registrations
-        WHERE id = $1
-        "#,
-    )
+    let row = sqlx::query_as::<_, TournamentRegistrationRow>(&format!(
+        "SELECT {COLS} FROM tournament_registrations WHERE id = $1"
+    ))
     .bind(id)
     .fetch_optional(executor)
     .await?;
@@ -55,15 +59,27 @@ pub async fn get_by_tournament_and_user<'e>(
     tournament_id: Uuid,
     user_id: Uuid,
 ) -> Result<Option<TournamentRegistrationRow>> {
-    let row = sqlx::query_as::<_, TournamentRegistrationRow>(
-        r#"
-        SELECT id, tournament_id, user_id, registration_time, status, notes, created_at, updated_at
-        FROM tournament_registrations
-        WHERE tournament_id = $1 AND user_id = $2
-        "#,
-    )
+    let row = sqlx::query_as::<_, TournamentRegistrationRow>(&format!(
+        "SELECT {COLS} FROM tournament_registrations WHERE tournament_id = $1 AND user_id = $2"
+    ))
     .bind(tournament_id)
     .bind(user_id)
+    .fetch_optional(executor)
+    .await?;
+
+    Ok(row)
+}
+
+pub async fn get_by_tournament_and_registered_player<'e>(
+    executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
+    registered_player_id: Uuid,
+) -> Result<Option<TournamentRegistrationRow>> {
+    let row = sqlx::query_as::<_, TournamentRegistrationRow>(&format!(
+        "SELECT {COLS} FROM tournament_registrations WHERE tournament_id = $1 AND registered_player_id = $2"
+    ))
+    .bind(tournament_id)
+    .bind(registered_player_id)
     .fetch_optional(executor)
     .await?;
 
@@ -74,14 +90,9 @@ pub async fn list_by_tournament<'e>(
     executor: impl PgExecutor<'e>,
     tournament_id: Uuid,
 ) -> Result<Vec<TournamentRegistrationRow>> {
-    let rows = sqlx::query_as::<_, TournamentRegistrationRow>(
-        r#"
-        SELECT id, tournament_id, user_id, registration_time, status, notes, created_at, updated_at
-        FROM tournament_registrations
-        WHERE tournament_id = $1
-        ORDER BY registration_time ASC
-        "#,
-    )
+    let rows = sqlx::query_as::<_, TournamentRegistrationRow>(&format!(
+        "SELECT {COLS} FROM tournament_registrations WHERE tournament_id = $1 ORDER BY registration_time ASC"
+    ))
     .bind(tournament_id)
     .fetch_all(executor)
     .await?;
@@ -94,15 +105,9 @@ pub async fn list_by_tournament_paginated<'e>(
     tournament_id: Uuid,
     page: crate::pagination::LimitOffset,
 ) -> Result<Vec<TournamentRegistrationRow>> {
-    let rows = sqlx::query_as::<_, TournamentRegistrationRow>(
-        r#"
-        SELECT id, tournament_id, user_id, registration_time, status, notes, created_at, updated_at
-        FROM tournament_registrations
-        WHERE tournament_id = $1
-        ORDER BY registration_time ASC
-        LIMIT $2 OFFSET $3
-        "#,
-    )
+    let rows = sqlx::query_as::<_, TournamentRegistrationRow>(&format!(
+        "SELECT {COLS} FROM tournament_registrations WHERE tournament_id = $1 ORDER BY registration_time ASC LIMIT $2 OFFSET $3"
+    ))
     .bind(tournament_id)
     .bind(page.limit)
     .bind(page.offset)
@@ -117,11 +122,7 @@ pub async fn count_by_tournament<'e>(
     tournament_id: Uuid,
 ) -> Result<i64> {
     let result = sqlx::query_scalar::<_, i64>(
-        r#"
-        SELECT COUNT(*)
-        FROM tournament_registrations
-        WHERE tournament_id = $1
-        "#,
+        "SELECT COUNT(*) FROM tournament_registrations WHERE tournament_id = $1",
     )
     .bind(tournament_id)
     .fetch_one(executor)
@@ -135,13 +136,12 @@ pub async fn list_user_current<'e>(
     user_id: Uuid,
 ) -> Result<Vec<TournamentRegistrationRow>> {
     let rows = sqlx::query_as::<_, TournamentRegistrationRow>(
-        r#"
-        SELECT tr.id, tr.tournament_id, tr.user_id, tr.registration_time, tr.status, tr.notes, tr.created_at, tr.updated_at
-        FROM tournament_registrations tr
-        JOIN tournaments t ON tr.tournament_id = t.id
-        WHERE tr.user_id = $1 AND (t.end_time IS NULL OR t.end_time > NOW())
-        ORDER BY tr.created_at DESC
-        "#
+        "SELECT tr.id, tr.tournament_id, tr.user_id, tr.registered_player_id, tr.registration_time, \
+                tr.status, tr.notes, tr.created_at, tr.updated_at \
+         FROM tournament_registrations tr \
+         JOIN tournaments t ON tr.tournament_id = t.id \
+         WHERE tr.user_id = $1 AND (t.end_time IS NULL OR t.end_time > NOW()) \
+         ORDER BY tr.created_at DESC",
     )
     .bind(user_id)
     .fetch_all(executor)
@@ -161,6 +161,24 @@ pub async fn update_status<'e>(
     )
     .bind(tournament_id)
     .bind(user_id)
+    .bind(status)
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+/// Update status keyed on the roster identity (works for account-less players).
+pub async fn update_status_by_registered_player<'e>(
+    executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
+    registered_player_id: Uuid,
+    status: &str,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE tournament_registrations SET status = $3, updated_at = NOW() WHERE tournament_id = $1 AND registered_player_id = $2",
+    )
+    .bind(tournament_id)
+    .bind(registered_player_id)
     .bind(status)
     .execute(executor)
     .await?;
@@ -192,15 +210,9 @@ pub async fn get_next_waitlisted<'e>(
     executor: impl PgExecutor<'e>,
     tournament_id: Uuid,
 ) -> Result<Option<TournamentRegistrationRow>> {
-    let row = sqlx::query_as::<_, TournamentRegistrationRow>(
-        r#"
-        SELECT id, tournament_id, user_id, registration_time, status, notes, created_at, updated_at
-        FROM tournament_registrations
-        WHERE tournament_id = $1 AND status = 'waitlisted'
-        ORDER BY registration_time ASC
-        LIMIT 1
-        "#,
-    )
+    let row = sqlx::query_as::<_, TournamentRegistrationRow>(&format!(
+        "SELECT {COLS} FROM tournament_registrations WHERE tournament_id = $1 AND status = 'waitlisted' ORDER BY registration_time ASC LIMIT 1"
+    ))
     .bind(tournament_id)
     .fetch_optional(executor)
     .await?;
@@ -212,20 +224,20 @@ pub async fn get_next_waitlisted<'e>(
 pub async fn get_waitlist_position<'e>(
     executor: impl PgExecutor<'e>,
     tournament_id: Uuid,
-    user_id: Uuid,
+    registered_player_id: Uuid,
 ) -> Result<Option<i64>> {
     let result = sqlx::query_scalar::<_, Option<i64>>(
         r#"
         SELECT position FROM (
-            SELECT user_id, ROW_NUMBER() OVER (ORDER BY registration_time ASC) as position
+            SELECT registered_player_id, ROW_NUMBER() OVER (ORDER BY registration_time ASC) as position
             FROM tournament_registrations
             WHERE tournament_id = $1 AND status = 'waitlisted'
         ) ranked
-        WHERE user_id = $2
+        WHERE registered_player_id = $2
         "#,
     )
     .bind(tournament_id)
-    .bind(user_id)
+    .bind(registered_player_id)
     .fetch_optional(executor)
     .await?;
 

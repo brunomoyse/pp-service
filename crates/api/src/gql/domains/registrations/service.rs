@@ -149,7 +149,8 @@ pub async fn check_in_player(
                 let create_data = CreateSeatAssignment {
                     tournament_id: params.tournament_id,
                     club_table_id: target_table.id,
-                    user_id: params.user_id,
+                    user_id: Some(params.user_id),
+                    registered_player_id: None,
                     seat_number: seat_num,
                     stack_size: None,
                     assigned_by: Some(params.manager_id),
@@ -326,7 +327,8 @@ pub async fn self_check_in(
                 // Can't auto-check-in if waitlisted
                 let create_data = tournament_registrations::CreateTournamentRegistration {
                     tournament_id: params.tournament_id,
-                    user_id: params.user_id,
+                    user_id: Some(params.user_id),
+                    registered_player_id: None,
                     notes: Some("Self-registered via QR scan".to_string()),
                     status: Some("waitlisted".to_string()),
                 };
@@ -346,7 +348,8 @@ pub async fn self_check_in(
             // Register as confirmed
             let create_data = tournament_registrations::CreateTournamentRegistration {
                 tournament_id: params.tournament_id,
-                user_id: params.user_id,
+                user_id: Some(params.user_id),
+                registered_player_id: None,
                 notes: Some("Self-registered via QR scan".to_string()),
                 status: None, // defaults to 'registered'
             };
@@ -432,7 +435,8 @@ pub async fn self_check_in(
                 let create_data = CreateSeatAssignment {
                     tournament_id: params.tournament_id,
                     club_table_id: target_table.id,
-                    user_id: params.user_id,
+                    user_id: Some(params.user_id),
+                    registered_player_id: None,
                     seat_number: seat_num,
                     stack_size: None,
                     assigned_by: None, // Self check-in, no manager
@@ -535,20 +539,20 @@ pub async fn promote_next_waitlisted(
 
     match next_waitlisted {
         Some(waitlisted) => {
-            // Promote to registered
-            tournament_registrations::update_status(
+            // Promote to registered (keyed on roster id — works for account-less players)
+            tournament_registrations::update_status_by_registered_player(
                 &mut *tx,
                 tournament_id,
-                waitlisted.user_id,
+                waitlisted.registered_player_id,
                 "registered",
             )
             .await?;
 
             // Get updated registration
-            let updated = tournament_registrations::get_by_tournament_and_user(
+            let updated = tournament_registrations::get_by_tournament_and_registered_player(
                 &mut *tx,
                 tournament_id,
-                waitlisted.user_id,
+                waitlisted.registered_player_id,
             )
             .await?
             .ok_or("Failed to get updated registration")?;

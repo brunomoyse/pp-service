@@ -1,7 +1,56 @@
 use async_graphql::dataloader::Loader;
-use infra::{db::Db, models::ClubRow, models::TournamentRow, models::UserRow};
+use infra::{
+    db::Db, models::ClubRow, models::RegisteredPlayerRow, models::TournamentRow, models::UserRow,
+};
 use std::{collections::HashMap, future::Future, sync::Arc};
 use uuid::Uuid;
+
+// RegisteredPlayerLoader - batch load roster entries (the club-scoped player
+// identity) by id. Used to render an account-less player's display name.
+#[derive(Clone)]
+pub struct RegisteredPlayerLoader {
+    pool: Db,
+}
+
+impl RegisteredPlayerLoader {
+    pub fn new(pool: Db) -> Self {
+        Self { pool }
+    }
+}
+
+impl Loader<Uuid> for RegisteredPlayerLoader {
+    type Value = RegisteredPlayerRow;
+    type Error = Arc<sqlx::Error>;
+
+    fn load(
+        &self,
+        keys: &[Uuid],
+    ) -> impl Future<Output = std::result::Result<HashMap<Uuid, Self::Value>, Self::Error>> + Send
+    {
+        let pool = self.pool.clone();
+        let ids: Vec<Uuid> = keys.to_vec();
+
+        async move {
+            if ids.is_empty() {
+                return Ok(HashMap::new());
+            }
+
+            let rows: Vec<RegisteredPlayerRow> = sqlx::query_as::<_, RegisteredPlayerRow>(
+                r#"
+                SELECT id, club_id, display_name, app_user_id, created_at, updated_at
+                FROM registered_player
+                WHERE id = ANY($1::uuid[])
+                "#,
+            )
+            .bind(&ids)
+            .fetch_all(&pool)
+            .await
+            .map_err(Arc::new)?;
+
+            Ok(rows.into_iter().map(|r| (r.id, r)).collect())
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct ClubLoader {

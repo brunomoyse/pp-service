@@ -96,7 +96,7 @@ pub async fn balance_tables(
         if players.len() > target_per_table as usize {
             let excess_count = players.len() - target_per_table as usize;
             let mut sorted_players = players.clone();
-            sorted_players.sort_by(|a, b| b.assigned_at.cmp(&a.assigned_at));
+            sorted_players.sort_by_key(|b| std::cmp::Reverse(b.assigned_at));
             excess_players.extend(sorted_players.into_iter().take(excess_count));
         }
     }
@@ -123,7 +123,7 @@ pub async fn balance_tables(
                     table_seat_assignments::unassign_current_seat(
                         &mut *tx,
                         params.tournament_id,
-                        player.user_id,
+                        player.registered_player_id,
                         Some(params.manager_id),
                     )
                     .await?;
@@ -134,6 +134,7 @@ pub async fn balance_tables(
                             tournament_id: params.tournament_id,
                             club_table_id: target_table.id,
                             user_id: player.user_id,
+                            registered_player_id: Some(player.registered_player_id),
                             seat_number: seat_num,
                             stack_size: player.stack_size,
                             assigned_by: Some(params.manager_id),

@@ -68,11 +68,15 @@ impl NotificationService {
                 registrations.len()
             );
 
-            // Send notification to each registered player
+            // Send notification to each registered player that has an account.
+            // Account-less players (no user_id) cannot be notified.
             for registration in registrations {
+                let Some(user_id) = registration.user_id else {
+                    continue;
+                };
                 let notification = UserNotification {
                     id: ID::from(Uuid::new_v4().to_string()),
-                    user_id: ID::from(registration.user_id.to_string()),
+                    user_id: ID::from(user_id.to_string()),
                     notification_type: NotificationType::TournamentStartingSoon,
                     title: TITLE_TOURNAMENT_STARTING.to_string(),
                     message: format!("{} is starting in about 15 minutes", tournament.name),
@@ -84,9 +88,7 @@ impl NotificationService {
 
                 // Send email notification (fire-and-forget)
                 if let Some(email_service) = self.state.email_service() {
-                    if let Ok(Some(user_row)) =
-                        users::get_by_id(&self.state.db, registration.user_id).await
-                    {
+                    if let Ok(Some(user_row)) = users::get_by_id(&self.state.db, user_id).await {
                         let locale = super::email_service::Locale::from_str_lossy(&user_row.locale);
                         super::email_service::spawn_email(
                             email_service.clone(),

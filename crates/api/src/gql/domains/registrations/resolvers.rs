@@ -1,11 +1,10 @@
 use async_graphql::{dataloader::DataLoader, Context, Object, Result, ID};
 use chrono::Utc;
-use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::gql::common::helpers::get_club_id_for_tournament;
 use crate::gql::error::ResultExt;
-use crate::gql::loaders::UserLoader;
+use crate::gql::loaders::{RegisteredPlayerLoader, UserLoader};
 use crate::gql::subscriptions::{
     publish_registration_event, publish_seating_event, publish_user_notification,
 };
@@ -22,6 +21,19 @@ use infra::repos::{
     table_seat_assignments, tournament_registrations,
     tournament_registrations::CreateTournamentRegistration, tournaments, users,
 };
+
+/// Derive a display name for an app user (used in subscription event payloads,
+/// where the registration belongs to an account holder).
+fn display_name_from_user(u: &infra::models::UserRow) -> String {
+    let last = u.last_name.clone().unwrap_or_default();
+    let name = format!("{} {}", u.first_name, last);
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        u.username.clone().unwrap_or_else(|| u.email.clone())
+    } else {
+        name
+    }
+}
 
 #[derive(Default)]
 pub struct RegistrationQuery;
@@ -58,23 +70,35 @@ impl RegistrationQuery {
             tournament_registrations::count_by_tournament(&state.db, tournament_id)
         )?;
 
-        // Collect all user IDs and batch load them using DataLoader
-        let user_ids: Vec<Uuid> = registrations.iter().map(|r| r.user_id).collect();
+        // Batch load roster entries (display names) and the app users that exist.
+        let rp_ids: Vec<Uuid> = registrations
+            .iter()
+            .map(|r| r.registered_player_id)
+            .collect();
+        let user_ids: Vec<Uuid> = registrations.iter().filter_map(|r| r.user_id).collect();
+        let rp_loader = ctx.data::<DataLoader<RegisteredPlayerLoader>>()?;
         let user_loader = ctx.data::<DataLoader<UserLoader>>()?;
-        let users: HashMap<Uuid, infra::models::UserRow> = user_loader
-            .load_many(user_ids)
-            .await
-            .gql_err("Data loading failed")?;
+        let (rosters, users) =
+            tokio::try_join!(rp_loader.load_many(rp_ids), user_loader.load_many(user_ids),)
+                .gql_err("Data loading failed")?;
 
-        // Build players by looking up users from the HashMap
+        // Build players: every registration renders by roster display name; the
+        // app user is attached only when the player has an account.
         let mut players = Vec::new();
         for registration in registrations {
-            if let Some(user_row) = users.get(&registration.user_id) {
-                players.push(TournamentPlayer {
-                    registration: registration.into(),
-                    user: user_row.clone().into(),
-                });
-            }
+            let display_name = rosters
+                .get(&registration.registered_player_id)
+                .map(|rp| rp.display_name.clone())
+                .unwrap_or_else(|| "Unknown".to_string());
+            let user = registration
+                .user_id
+                .and_then(|uid| users.get(&uid).cloned())
+                .map(Into::into);
+            players.push(TournamentPlayer {
+                registration: registration.into(),
+                display_name,
+                user,
+            });
         }
 
         let page_size = players.len() as i32;
@@ -195,7 +219,8 @@ impl RegistrationMutation {
 
         let create_data = CreateTournamentRegistration {
             tournament_id,
-            user_id,
+            user_id: Some(user_id),
+            registered_player_id: None,
             notes: input.notes.clone(),
             status,
         };
@@ -208,11 +233,13 @@ impl RegistrationMutation {
 
         // Emit subscription event
         if let Some(user_row) = users::get_by_id(&state.db, user_id).await? {
+            let display_name = display_name_from_user(&user_row);
             let user: User = user_row.into();
 
             let player = TournamentPlayer {
                 registration: tournament_registration.clone(),
-                user,
+                display_name,
+                user: Some(user),
             };
 
             let event_type = if is_waitlisted {
@@ -383,10 +410,12 @@ impl RegistrationMutation {
 
         // Emit unregistered event
         if let Some(user_row) = users::get_by_id(&state.db, user_id).await? {
+            let display_name = display_name_from_user(&user_row);
             let user: User = user_row.into();
             let player = TournamentPlayer {
                 registration: updated_registration.clone(),
-                user,
+                display_name,
+                user: Some(user),
             };
             let event = PlayerRegistrationEvent {
                 tournament_id: tournament_id.into(),
@@ -403,32 +432,51 @@ impl RegistrationMutation {
                 super::service::promote_next_waitlisted(&state.db, tournament_id).await
             {
                 let promoted_user_id = promotion.promoted_registration.user_id;
+                let promoted_rp_id = promotion.promoted_registration.registered_player_id;
                 let promoted_registration: TournamentRegistration =
                     promotion.promoted_registration.into();
 
-                if let Some(user_row) = users::get_by_id(&state.db, promoted_user_id).await? {
-                    let user: User = user_row.into();
+                // The promoted player may be account-less; resolve their display
+                // name from the roster and attach the app user only when present.
+                let promoted_user_row = match promoted_user_id {
+                    Some(uid) => users::get_by_id(&state.db, uid).await?,
+                    None => None,
+                };
+                let display_name = match &promoted_user_row {
+                    Some(u) => display_name_from_user(u),
+                    None => {
+                        let rp_loader = ctx.data::<DataLoader<RegisteredPlayerLoader>>()?;
+                        rp_loader
+                            .load_one(promoted_rp_id)
+                            .await
+                            .gql_err("Loading roster failed")?
+                            .map(|rp| rp.display_name)
+                            .unwrap_or_else(|| "Unknown".to_string())
+                    }
+                };
 
-                    let player = TournamentPlayer {
-                        registration: promoted_registration,
-                        user,
-                    };
+                let player = TournamentPlayer {
+                    registration: promoted_registration,
+                    display_name,
+                    user: promoted_user_row.clone().map(Into::into),
+                };
 
-                    // Emit promotion event
-                    let event = PlayerRegistrationEvent {
-                        tournament_id: tournament_id.into(),
-                        player: player.clone(),
-                        event_type: RegistrationEventType::PlayerPromoted,
-                    };
-                    publish_registration_event(event);
+                // Emit promotion event
+                let event = PlayerRegistrationEvent {
+                    tournament_id: tournament_id.into(),
+                    player: player.clone(),
+                    event_type: RegistrationEventType::PlayerPromoted,
+                };
+                publish_registration_event(event);
 
-                    // Notify the promoted player
+                // Notify the promoted player (only when they have an account)
+                if let Some(promoted_uid) = promoted_user_id {
                     if let Ok(Some(tournament)) =
                         tournaments::get_by_id(&state.db, tournament_id).await
                     {
                         let notification = UserNotification {
                             id: ID::from(Uuid::new_v4().to_string()),
-                            user_id: ID::from(promoted_user_id.to_string()),
+                            user_id: ID::from(promoted_uid.to_string()),
                             notification_type: NotificationType::WaitlistPromoted,
                             title: TITLE_WAITLIST_PROMOTED.to_string(),
                             message: format!(
@@ -442,16 +490,14 @@ impl RegistrationMutation {
 
                         // Send waitlist promotion email (fire-and-forget)
                         if let Some(email_service) = state.email_service() {
-                            if let Some(promoted_user_row) =
-                                users::get_by_id(&state.db, promoted_user_id).await?
-                            {
+                            if let Some(promoted_user_row) = &promoted_user_row {
                                 let locale = crate::services::email_service::Locale::from_str_lossy(
                                     &promoted_user_row.locale,
                                 );
                                 crate::services::email_service::spawn_email(
                                     email_service.clone(),
-                                    promoted_user_row.email,
-                                    promoted_user_row.first_name,
+                                    promoted_user_row.email.clone(),
+                                    promoted_user_row.first_name.clone(),
                                     crate::services::email_service::EmailType::WaitlistPromoted {
                                         tournament_name: tournament.name.clone(),
                                         locale,
@@ -460,9 +506,9 @@ impl RegistrationMutation {
                             }
                         }
                     }
-
-                    promoted_player = Some(player);
                 }
+
+                promoted_player = Some(player);
             }
         }
 
@@ -538,13 +584,15 @@ impl RegistrationMutation {
         // Publish registration event if newly registered
         if result.was_registered {
             if let Some(user_row) = users::get_by_id(&state.db, user_id).await? {
+                let display_name = display_name_from_user(&user_row);
                 let user: User = user_row.into();
                 let registration: TournamentRegistration =
                     result.updated_registration.clone().into();
 
                 let player = TournamentPlayer {
                     registration: registration.clone(),
-                    user,
+                    display_name,
+                    user: Some(user),
                 };
 
                 let event = PlayerRegistrationEvent {

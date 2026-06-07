@@ -7,7 +7,7 @@ use crate::gql::domains::seating::types::SeatAssignment;
 use crate::gql::domains::tournaments::types::Tournament;
 use crate::gql::domains::users::types::User;
 use crate::gql::error::ResultExt;
-use crate::gql::loaders::{TournamentLoader, UserLoader};
+use crate::gql::loaders::{RegisteredPlayerLoader, TournamentLoader, UserLoader};
 use crate::state::AppState;
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
@@ -76,7 +76,10 @@ pub enum RegistrationEventType {
 pub struct TournamentRegistration {
     pub id: ID,
     pub tournament_id: ID,
-    pub user_id: ID,
+    /// The app user, when this player has an account. Null for account-less players.
+    pub user_id: Option<ID>,
+    /// The club roster identity — always present.
+    pub registered_player_id: ID,
     pub registration_time: DateTime<Utc>,
     pub status: RegistrationStatus,
     pub notes: Option<String>,
@@ -87,7 +90,8 @@ impl From<infra::models::TournamentRegistrationRow> for TournamentRegistration {
         Self {
             id: row.id.into(),
             tournament_id: row.tournament_id.into(),
-            user_id: row.user_id.into(),
+            user_id: row.user_id.map(Into::into),
+            registered_player_id: row.registered_player_id.into(),
             registration_time: row.registration_time,
             status: row.status.into(),
             notes: row.notes,
@@ -98,7 +102,10 @@ impl From<infra::models::TournamentRegistrationRow> for TournamentRegistration {
 #[ComplexObject]
 impl TournamentRegistration {
     async fn user(&self, ctx: &Context<'_>) -> async_graphql::Result<Option<User>> {
-        let user_id = Uuid::parse_str(self.user_id.as_str()).gql_err("Invalid user ID")?;
+        let Some(user_id) = &self.user_id else {
+            return Ok(None);
+        };
+        let user_id = Uuid::parse_str(user_id.as_str()).gql_err("Invalid user ID")?;
 
         let loader = ctx.data::<DataLoader<UserLoader>>()?;
 
@@ -110,6 +117,19 @@ impl TournamentRegistration {
             Some(user) => Ok(Some(user.into())),
             None => Ok(None),
         }
+    }
+
+    /// The player's display name (roster name; works for account-less players).
+    async fn display_name(&self, ctx: &Context<'_>) -> async_graphql::Result<String> {
+        let rp_id =
+            Uuid::parse_str(self.registered_player_id.as_str()).gql_err("Invalid roster ID")?;
+        let loader = ctx.data::<DataLoader<RegisteredPlayerLoader>>()?;
+        Ok(loader
+            .load_one(rp_id)
+            .await
+            .gql_err("Loading roster failed")?
+            .map(|rp| rp.display_name)
+            .unwrap_or_else(|| "Unknown".to_string()))
     }
 
     async fn tournament(&self, ctx: &Context<'_>) -> async_graphql::Result<Option<Tournament>> {
@@ -137,12 +157,13 @@ impl TournamentRegistration {
         let state = ctx.data::<AppState>()?;
         let tournament_id =
             Uuid::parse_str(self.tournament_id.as_str()).gql_err("Invalid tournament ID")?;
-        let user_id = Uuid::parse_str(self.user_id.as_str()).gql_err("Invalid user ID")?;
+        let registered_player_id =
+            Uuid::parse_str(self.registered_player_id.as_str()).gql_err("Invalid roster ID")?;
 
         let position = infra::repos::tournament_registrations::get_waitlist_position(
             &state.db,
             tournament_id,
-            user_id,
+            registered_player_id,
         )
         .await
         .gql_err("Failed to get waitlist position")?;
@@ -154,7 +175,10 @@ impl TournamentRegistration {
 #[derive(SimpleObject, Clone)]
 pub struct TournamentPlayer {
     pub registration: TournamentRegistration,
-    pub user: User,
+    /// Display name of the player (works for account-less players).
+    pub display_name: String,
+    /// The app user, when the player has an account.
+    pub user: Option<User>,
 }
 
 #[derive(SimpleObject, Clone)]

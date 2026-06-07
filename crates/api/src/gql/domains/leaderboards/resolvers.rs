@@ -48,17 +48,20 @@ impl LeaderboardQuery {
             .into_iter()
             .enumerate()
             .map(|(index, entry)| LeaderboardEntry {
-                user: User {
-                    id: entry.user_id.into(),
-                    email: entry.email,
-                    username: entry.username,
-                    first_name: entry.first_name,
-                    last_name: entry.last_name,
-                    phone: entry.phone,
-                    is_active: entry.is_active,
-                    role: Role::from(entry.role),
-                    locale: entry.locale,
-                },
+                registered_player_id: entry.registered_player_id.into(),
+                display_name: entry.display_name.clone(),
+                // Attach the app user only when this roster player has an account.
+                user: entry.user_id.map(|uid| User {
+                    id: uid.into(),
+                    email: entry.email.clone().unwrap_or_default(),
+                    username: entry.username.clone(),
+                    first_name: entry.first_name.clone().unwrap_or_default(),
+                    last_name: entry.last_name.clone(),
+                    phone: entry.phone.clone(),
+                    is_active: entry.is_active.unwrap_or(true),
+                    role: Role::from(entry.role.clone()),
+                    locale: entry.locale.clone().unwrap_or_default(),
+                }),
                 rank: offset + (index as i32) + 1, // 1-based ranking with offset
                 total_tournaments: entry.total_tournaments,
                 total_buy_ins: entry.total_buy_ins,
