@@ -195,6 +195,15 @@ pub struct RegisterForTournamentInput {
     pub notes: Option<String>,
 }
 
+/// Register an account-less roster player into a tournament. Managers only —
+/// the club acts on behalf of players who don't have an app account.
+#[derive(InputObject)]
+pub struct RegisterRosterPlayerInput {
+    pub tournament_id: ID,
+    pub registered_player_id: ID,
+    pub notes: Option<String>,
+}
+
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
 pub enum AssignmentStrategy {
     /// Balanced distribution - fills tables evenly

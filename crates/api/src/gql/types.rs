@@ -64,9 +64,9 @@ pub use crate::gql::domains::users::types::{CreatePlayerInput, UpdatePlayerInput
 // Registration types
 pub use crate::gql::domains::registrations::types::{
     AssignmentStrategy, CancelRegistrationInput, CancelRegistrationResponse, CheckInPlayerInput,
-    CheckInResponse, PlayerRegistrationEvent, RegisterForTournamentInput, RegistrationEventType,
-    RegistrationStatus, SelfCheckInInput, SelfCheckInResponse, TournamentPlayer,
-    TournamentRegistration, UpdateRegistrationStatusInput,
+    CheckInResponse, PlayerRegistrationEvent, RegisterForTournamentInput,
+    RegisterRosterPlayerInput, RegistrationEventType, RegistrationStatus, SelfCheckInInput,
+    SelfCheckInResponse, TournamentPlayer, TournamentRegistration, UpdateRegistrationStatusInput,
 };
 
 // Seating types

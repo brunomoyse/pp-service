@@ -11,8 +11,8 @@ use crate::gql::subscriptions::{
 use crate::gql::types::{
     AssignmentStrategy, CancelRegistrationInput, CancelRegistrationResponse, CheckInPlayerInput,
     CheckInResponse, NotificationType, PaginatedResponse, PaginationInput, PlayerRegistrationEvent,
-    RegisterForTournamentInput, RegistrationEventType, SeatAssignment, SeatingChangeEvent,
-    SeatingEventType, SelfCheckInInput, SelfCheckInResponse, TournamentPlayer,
+    RegisterForTournamentInput, RegisterRosterPlayerInput, RegistrationEventType, SeatAssignment,
+    SeatingChangeEvent, SeatingEventType, SelfCheckInInput, SelfCheckInResponse, TournamentPlayer,
     TournamentRegistration, User, UserNotification, TITLE_REGISTRATION_CONFIRMED, TITLE_WAITLISTED,
     TITLE_WAITLIST_PROMOTED,
 };
@@ -328,6 +328,129 @@ impl RegistrationMutation {
                 }
             }
         }
+
+        Ok(tournament_registration)
+    }
+
+    /// Register an account-less roster player into a tournament. Managers only —
+    /// the club registers people who don't have an app account on their behalf.
+    async fn register_roster_player(
+        &self,
+        ctx: &Context<'_>,
+        input: RegisterRosterPlayerInput,
+    ) -> Result<TournamentRegistration> {
+        use crate::auth::permissions::require_club_manager;
+
+        let state = ctx.data::<AppState>()?;
+
+        let tournament_id =
+            Uuid::parse_str(input.tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+        let registered_player_id = Uuid::parse_str(input.registered_player_id.as_str())
+            .gql_err("Invalid registered player ID")?;
+
+        // Manager auth scoped to the tournament's club
+        let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
+        let manager = require_club_manager(ctx, club_id).await?;
+        let manager_id = Uuid::parse_str(manager.id.as_str()).gql_err("Invalid manager ID")?;
+
+        let mut tx = state.db.begin().await?;
+
+        // Lock the tournament row to prevent concurrent registrations from racing
+        let tournament = sqlx::query_as::<_, infra::models::TournamentRow>(
+            "SELECT id, club_id, name, description, start_time, end_time, buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, late_registration_level, created_at, updated_at FROM tournaments WHERE id = $1 FOR UPDATE",
+        )
+        .bind(tournament_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
+
+        // Only allow registration during REGISTRATION_OPEN or LATE_REGISTRATION
+        {
+            use infra::repos::tournaments::TournamentLiveStatus;
+            match tournament.live_status {
+                TournamentLiveStatus::RegistrationOpen | TournamentLiveStatus::LateRegistration => {
+                }
+                _ => {
+                    return Err(async_graphql::Error::new(
+                        "Registration is not open for this tournament",
+                    ));
+                }
+            }
+        }
+
+        // Determine status based on seat capacity
+        let is_waitlisted = if let Some(seat_cap) = tournament.seat_cap {
+            let confirmed_count =
+                tournament_registrations::count_confirmed_by_tournament(&mut *tx, tournament_id)
+                    .await?;
+            confirmed_count >= seat_cap as i64
+        } else {
+            false
+        };
+
+        let status = if is_waitlisted {
+            Some("waitlisted".to_string())
+        } else {
+            None // defaults to 'registered'
+        };
+
+        let create_data = CreateTournamentRegistration {
+            tournament_id,
+            user_id: None,
+            registered_player_id: Some(registered_player_id),
+            notes: input.notes.clone(),
+            status,
+        };
+
+        let row = tournament_registrations::create(&mut *tx, create_data).await?;
+        tx.commit().await?;
+
+        let tournament_registration: TournamentRegistration = row.into();
+
+        // Emit subscription event (no app user — render by roster display name)
+        let rp_loader = ctx.data::<DataLoader<RegisteredPlayerLoader>>()?;
+        let display_name = rp_loader
+            .load_one(registered_player_id)
+            .await
+            .gql_err("Loading roster failed")?
+            .map(|rp| rp.display_name)
+            .unwrap_or_else(|| "Unknown".to_string());
+
+        let player = TournamentPlayer {
+            registration: tournament_registration.clone(),
+            display_name,
+            user: None,
+        };
+        let event = PlayerRegistrationEvent {
+            tournament_id: tournament_id.into(),
+            player,
+            event_type: if is_waitlisted {
+                RegistrationEventType::PlayerWaitlisted
+            } else {
+                RegistrationEventType::PlayerRegistered
+            },
+        };
+        publish_registration_event(event);
+
+        // Log activity (manager acted; no app-user target)
+        let action = if is_waitlisted {
+            "waitlisted"
+        } else {
+            "registered"
+        };
+        let db = state.db.clone();
+        tokio::spawn(async move {
+            crate::gql::domains::activity_log::log_and_publish(
+                &db,
+                tournament_id,
+                "registration",
+                action,
+                Some(manager_id),
+                None,
+                serde_json::json!({ "registered_player_id": registered_player_id }),
+            )
+            .await;
+        });
 
         Ok(tournament_registration)
     }
