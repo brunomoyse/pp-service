@@ -21,7 +21,10 @@ pub struct EnterResultsParams {
 pub struct EnterResultsOutput {
     pub results: Vec<infra::models::TournamentResultRow>,
     pub deal: Option<infra::models::PlayerDealRow>,
-    pub newly_unlocked_achievements: Vec<(Uuid, crate::gql::domains::achievements::service::UnlockedAchievement)>,
+    pub newly_unlocked_achievements: Vec<(
+        Uuid,
+        crate::gql::domains::achievements::service::UnlockedAchievement,
+    )>,
 }
 
 /// Enter tournament results inside a transaction.
@@ -108,7 +111,10 @@ pub async fn enter_tournament_results(
     }
 
     // Evaluate achievements for each player
-    let mut newly_unlocked_achievements: Vec<(Uuid, crate::gql::domains::achievements::service::UnlockedAchievement)> = Vec::new();
+    let mut newly_unlocked_achievements: Vec<(
+        Uuid,
+        crate::gql::domains::achievements::service::UnlockedAchievement,
+    )> = Vec::new();
     for result in &results {
         match crate::gql::domains::achievements::service::evaluate_for_player(
             &mut tx,
@@ -123,7 +129,11 @@ pub async fn enter_tournament_results(
                 }
             }
             Err(e) => {
-                tracing::warn!("Failed to evaluate achievements for user {}: {}", result.user_id, e);
+                tracing::warn!(
+                    "Failed to evaluate achievements for user {}: {}",
+                    result.user_id,
+                    e
+                );
             }
         }
     }

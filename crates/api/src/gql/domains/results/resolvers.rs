@@ -268,7 +268,8 @@ impl ResultMutation {
                     let notification = crate::gql::types::UserNotification {
                         id: uuid::Uuid::new_v4().into(),
                         user_id: user_id.into(),
-                        notification_type: crate::gql::common::types::NotificationType::AchievementUnlocked,
+                        notification_type:
+                            crate::gql::common::types::NotificationType::AchievementUnlocked,
                         title: "Achievement Unlocked".to_string(),
                         // The achievement `code` is carried in `message` so the
                         // client can resolve icon/tier/localized name from its catalog.

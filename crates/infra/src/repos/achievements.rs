@@ -4,9 +4,7 @@ use uuid::Uuid;
 use crate::models::{AchievementRow, PlayerAchievementRow};
 
 /// List all achievements in the catalog, ordered by tier and name
-pub async fn list_catalog<'e>(
-    executor: impl PgExecutor<'e>,
-) -> SqlxResult<Vec<AchievementRow>> {
+pub async fn list_catalog<'e>(executor: impl PgExecutor<'e>) -> SqlxResult<Vec<AchievementRow>> {
     sqlx::query_as::<_, AchievementRow>(
         r#"
         SELECT id, code, name_key, description_key, category, icon, tier, threshold_value, metadata, created_at, updated_at

@@ -125,6 +125,26 @@ pub async fn list_incoming<'e>(
     .await
 }
 
+/// Pending requests the current user has sent (awaiting the other party).
+pub async fn list_outgoing<'e>(
+    executor: impl PgExecutor<'e>,
+    user_id: Uuid,
+) -> SqlxResult<Vec<FriendRow>> {
+    sqlx::query_as::<_, FriendRow>(
+        "SELECT f.id AS friendship_id, \
+                u.id AS user_id, \
+                COALESCE(u.username, u.first_name) AS name, \
+                f.status AS status, \
+                FALSE AS is_incoming \
+         FROM friendship f JOIN users u ON u.id = f.addressee_id \
+         WHERE f.requester_id = $1 AND f.status = 'pending' \
+         ORDER BY f.created_at DESC",
+    )
+    .bind(user_id)
+    .fetch_all(executor)
+    .await
+}
+
 /// The mutual flame between two players: how many distinct nights both checked
 /// in, and the most recent such night.
 pub async fn flame_between<'e>(

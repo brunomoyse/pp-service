@@ -262,8 +262,8 @@ impl SeatingMutation {
         // Parse and validate every input up front so we don't partially apply.
         let mut parsed: Vec<(Uuid, Option<i32>)> = Vec::with_capacity(input.tables.len());
         for entry in &input.tables {
-            let club_table_id = Uuid::parse_str(entry.club_table_id.as_str())
-                .gql_err("Invalid club table ID")?;
+            let club_table_id =
+                Uuid::parse_str(entry.club_table_id.as_str()).gql_err("Invalid club table ID")?;
             parsed.push((club_table_id, entry.max_seats));
         }
 
@@ -310,8 +310,7 @@ impl SeatingMutation {
         {
             let db = state.db.clone();
             let manager_uuid = Uuid::parse_str(manager.id.as_str()).ok();
-            let table_numbers: Vec<i32> =
-                assigned.iter().map(|(t, _)| t.table_number).collect();
+            let table_numbers: Vec<i32> = assigned.iter().map(|(t, _)| t.table_number).collect();
             tokio::spawn(async move {
                 crate::gql::domains::activity_log::log_and_publish(
                     &db,

@@ -49,6 +49,14 @@ impl SocialQuery {
         Ok(rows.into_iter().map(Friend::from).collect())
     }
 
+    /// Pending friend requests the current user has sent (awaiting the other party).
+    async fn outgoing_friend_requests(&self, ctx: &Context<'_>) -> Result<Vec<Friend>> {
+        let state = ctx.data::<AppState>()?;
+        let user_id = current_user_id(ctx)?;
+        let rows = friendships::list_outgoing(&state.db, user_id).await?;
+        Ok(rows.into_iter().map(Friend::from).collect())
+    }
+
     /// "Your Year in Poker" — a shareable annual recap (defaults to this year).
     async fn my_year_in_poker(&self, ctx: &Context<'_>, year: Option<i32>) -> Result<YearInPoker> {
         let state = ctx.data::<AppState>()?;

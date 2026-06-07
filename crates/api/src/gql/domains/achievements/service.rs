@@ -143,34 +143,48 @@ pub async fn evaluate_for_player<'a>(
             }
             "tournaments_5" => {
                 // Progress: total participation
-                (total_participation, threshold.map(|t| total_participation >= t).unwrap_or(false))
+                (
+                    total_participation,
+                    threshold.map(|t| total_participation >= t).unwrap_or(false),
+                )
             }
-            "tournaments_20" => {
-                (total_participation, threshold.map(|t| total_participation >= t).unwrap_or(false))
-            }
-            "tournaments_50" => {
-                (total_participation, threshold.map(|t| total_participation >= t).unwrap_or(false))
-            }
-            "final_table_5" => {
-                (final_tables, threshold.map(|t| final_tables >= t).unwrap_or(false))
-            }
+            "tournaments_20" => (
+                total_participation,
+                threshold.map(|t| total_participation >= t).unwrap_or(false),
+            ),
+            "tournaments_50" => (
+                total_participation,
+                threshold.map(|t| total_participation >= t).unwrap_or(false),
+            ),
+            "final_table_5" => (
+                final_tables,
+                threshold.map(|t| final_tables >= t).unwrap_or(false),
+            ),
             "winnings_1000" => {
                 // threshold_value is in cents
-                (total_winnings_cents, threshold.map(|t| total_winnings_cents >= t).unwrap_or(false))
+                (
+                    total_winnings_cents,
+                    threshold
+                        .map(|t| total_winnings_cents >= t)
+                        .unwrap_or(false),
+                )
             }
             "itm_rate_50" => {
                 // threshold_value is percentage
                 (itm_rate, threshold.map(|t| itm_rate >= t).unwrap_or(false))
             }
-            "rebuy_3" => {
-                (rebuy_count as i32, threshold.map(|t| rebuy_count as i32 >= t).unwrap_or(false))
-            }
-            "streak_cash_3" => {
-                (current_cash_streak, threshold.map(|t| current_cash_streak >= t).unwrap_or(false))
-            }
-            "streak_play_5" => {
-                (current_play_streak, threshold.map(|t| current_play_streak >= t).unwrap_or(false))
-            }
+            "rebuy_3" => (
+                rebuy_count as i32,
+                threshold.map(|t| rebuy_count as i32 >= t).unwrap_or(false),
+            ),
+            "streak_cash_3" => (
+                current_cash_streak,
+                threshold.map(|t| current_cash_streak >= t).unwrap_or(false),
+            ),
+            "streak_play_5" => (
+                current_play_streak,
+                threshold.map(|t| current_play_streak >= t).unwrap_or(false),
+            ),
             _ => (0, false),
         };
 
