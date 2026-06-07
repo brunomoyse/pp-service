@@ -180,6 +180,59 @@ pub async fn apply_early_bird_bonus<'e>(
     Ok(row)
 }
 
+/// Grant the level-2 early-bird bonus to the given roster players. For each one
+/// that is still `seated` and not yet awarded, inserts a chip-only `bonus` entry
+/// (excluded from the prize pool) and flips `level_two_bonus_awarded`. Idempotent:
+/// re-running awards nothing further. Returns the number of players awarded.
+pub async fn grant_level_two_bonus<'e>(
+    executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
+    registered_player_ids: &[Uuid],
+    bonus_chips: i32,
+) -> Result<i64> {
+    if registered_player_ids.is_empty() {
+        return Ok(0);
+    }
+
+    let count = sqlx::query_scalar::<_, i64>(
+        r#"
+        WITH eligible AS (
+            SELECT reg.registered_player_id
+            FROM tournament_registrations reg
+            WHERE reg.tournament_id = $1
+              AND reg.registered_player_id = ANY($2::uuid[])
+              AND reg.status = 'seated'
+              AND reg.level_two_bonus_awarded = false
+        ),
+        ins AS (
+            INSERT INTO tournament_entries
+                (tournament_id, registered_player_id, user_id, entry_type,
+                 amount_cents, chips_received, notes)
+            SELECT $1, e.registered_player_id, NULL, 'bonus', 0, $3,
+                   'Level-2 early-bird bonus'
+            FROM eligible e
+            RETURNING registered_player_id
+        ),
+        upd AS (
+            UPDATE tournament_registrations reg
+            SET level_two_bonus_awarded = true, updated_at = NOW()
+            FROM ins
+            WHERE reg.tournament_id = $1
+              AND reg.registered_player_id = ins.registered_player_id
+            RETURNING reg.registered_player_id
+        )
+        SELECT COUNT(*) FROM upd
+        "#,
+    )
+    .bind(tournament_id)
+    .bind(registered_player_ids)
+    .bind(bonus_chips)
+    .fetch_one(executor)
+    .await?;
+
+    Ok(count)
+}
+
 pub async fn apply_early_bird_bonus_bulk<'e>(
     executor: impl PgExecutor<'e>,
     tournament_id: Uuid,

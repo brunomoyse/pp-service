@@ -129,6 +129,8 @@ impl SocialMutation {
             name: target.username.unwrap_or(target.first_name),
             status: row.status,
             is_incoming: false,
+            i_can_register_them: false,
+            can_register_me: false,
         })
     }
 
@@ -157,6 +159,8 @@ impl SocialMutation {
             name: other.username.unwrap_or(other.first_name),
             status: row.status,
             is_incoming: false,
+            i_can_register_them: false,
+            can_register_me: false,
         })
     }
 
@@ -166,5 +170,59 @@ impl SocialMutation {
         let me = current_user_id(ctx)?;
         let fid = Uuid::parse_str(friendship_id.as_str()).gql_err("Invalid friendship ID")?;
         Ok(friendships::remove(&state.db, fid, me).await?)
+    }
+
+    /// Allow (or disallow) a friend to register the current user into tournaments.
+    /// Sets the permission for the caller's own direction of the friendship.
+    async fn set_friend_registration_permission(
+        &self,
+        ctx: &Context<'_>,
+        friendship_id: ID,
+        allow: bool,
+    ) -> Result<bool> {
+        let state = ctx.data::<AppState>()?;
+        let me = current_user_id(ctx)?;
+        let fid = Uuid::parse_str(friendship_id.as_str()).gql_err("Invalid friendship ID")?;
+
+        let updated = friendships::set_registration_permission(&state.db, fid, me, allow)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Friendship not found"))?;
+        Ok(updated.status == "accepted")
+    }
+
+    /// Register a friend into a tournament on their behalf. Requires an accepted
+    /// friendship where the friend has granted the caller permission.
+    async fn register_friend_for_tournament(
+        &self,
+        ctx: &Context<'_>,
+        friend_user_id: ID,
+        tournament_id: ID,
+    ) -> Result<crate::gql::types::TournamentRegistration> {
+        let state = ctx.data::<AppState>()?;
+        let me = current_user_id(ctx)?;
+        let friend_id = Uuid::parse_str(friend_user_id.as_str()).gql_err("Invalid user ID")?;
+        let tournament_uuid =
+            Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+
+        if !friendships::can_register(&state.db, me, friend_id).await? {
+            return Err(async_graphql::Error::new(
+                "This friend has not allowed you to register them",
+            ));
+        }
+
+        // Reuse the registration service path. The friend has an app account, so
+        // register by user_id; the link trigger resolves their roster identity.
+        let mut tx = state.db.begin().await?;
+        let create_data = infra::repos::tournament_registrations::CreateTournamentRegistration {
+            tournament_id: tournament_uuid,
+            user_id: Some(friend_id),
+            registered_player_id: None,
+            notes: Some("Registered by a friend".to_string()),
+            status: None,
+        };
+        let row = infra::repos::tournament_registrations::create(&mut *tx, create_data).await?;
+        tx.commit().await?;
+
+        Ok(row.into())
     }
 }

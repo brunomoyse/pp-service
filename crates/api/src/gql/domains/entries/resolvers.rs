@@ -5,7 +5,7 @@ use crate::gql::error::ResultExt;
 use crate::state::AppState;
 use infra::repos::{tournament_entries, tournament_entries::CreateTournamentEntry, tournaments};
 
-use super::types::{AddTournamentEntryInput, TournamentEntry, TournamentEntryStats};
+use super::types::{AddTournamentEntryInput, EntryType, TournamentEntry, TournamentEntryStats};
 
 #[derive(Default)]
 pub struct EntryQuery;
@@ -84,6 +84,7 @@ impl EntryMutation {
 
         // Use provided amount or default to tournament buy_in_cents
         let amount_cents = input.amount_cents.unwrap_or(tournament.buy_in_cents);
+        let is_initial = matches!(input.entry_type, EntryType::Initial);
 
         let create_data = CreateTournamentEntry {
             tournament_id,
@@ -97,6 +98,23 @@ impl EntryMutation {
         };
 
         let entry_row = tournament_entries::create(&state.db, create_data).await?;
+
+        // Mandatory drink voucher: bought together with the initial buy-in. It is
+        // excluded from the prize pool (paper voucher IRL). Keyed to the same roster
+        // player as the buy-in; skipped if the tournament has no voucher.
+        if is_initial && tournament.voucher_value_cents > 0 {
+            let voucher_data = CreateTournamentEntry {
+                tournament_id,
+                user_id: entry_row.user_id,
+                registered_player_id: Some(entry_row.registered_player_id),
+                entry_type: "voucher".to_string(),
+                amount_cents: tournament.voucher_value_cents,
+                chips_received: None,
+                recorded_by: Some(manager_id),
+                notes: Some("Mandatory drink voucher".to_string()),
+            };
+            tournament_entries::create(&state.db, voucher_data).await?;
+        }
 
         // Log activity
         {
@@ -117,6 +135,47 @@ impl EntryMutation {
         }
 
         Ok(entry_row.into())
+    }
+
+    /// Grant the level-2 early-bird bonus to the given roster players (managers only).
+    /// For each player still seated and not yet awarded, adds a chip-only bonus entry
+    /// and flips the award flag. Idempotent. Returns the number of players awarded.
+    async fn grant_level_two_bonus(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: ID,
+        registered_player_ids: Vec<ID>,
+    ) -> Result<i32> {
+        use crate::auth::permissions::require_club_manager;
+
+        let state = ctx.data::<AppState>()?;
+        let tournament_id =
+            Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+
+        let tournament = tournaments::get_by_id(&state.db, tournament_id)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
+        require_club_manager(ctx, tournament.club_id).await?;
+
+        let bonus_chips = tournament.level_two_bonus_chips.ok_or_else(|| {
+            async_graphql::Error::new("This tournament has no level-2 bonus configured")
+        })?;
+
+        let rp_ids: Vec<Uuid> = registered_player_ids
+            .iter()
+            .map(|id| Uuid::parse_str(id.as_str()).gql_err("Invalid registered player ID"))
+            .collect::<Result<Vec<_>>>()?;
+
+        let awarded = tournament_entries::grant_level_two_bonus(
+            &state.db,
+            tournament_id,
+            &rp_ids,
+            bonus_chips,
+        )
+        .await
+        .gql_err("Failed to grant level-2 bonus")?;
+
+        Ok(awarded as i32)
     }
 
     /// Delete a tournament entry (for corrections)

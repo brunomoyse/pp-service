@@ -66,6 +66,54 @@ pub async fn accept<'e>(
     .await
 }
 
+/// Set whether `actor` allows the other party of this friendship to register them
+/// into tournaments. Updates the column for the actor's direction. Only a member
+/// of the friendship may change it. Returns the updated row (None if not a member).
+pub async fn set_registration_permission<'e>(
+    executor: impl PgExecutor<'e>,
+    friendship_id: Uuid,
+    actor_id: Uuid,
+    allow: bool,
+) -> SqlxResult<Option<FriendshipRow>> {
+    sqlx::query_as::<_, FriendshipRow>(&format!(
+        "UPDATE friendship SET \
+            requester_allows_addressee_reg = \
+                CASE WHEN requester_id = $2 THEN $3 ELSE requester_allows_addressee_reg END, \
+            addressee_allows_requester_reg = \
+                CASE WHEN addressee_id = $2 THEN $3 ELSE addressee_allows_requester_reg END \
+         WHERE id = $1 AND (requester_id = $2 OR addressee_id = $2) \
+         RETURNING {FRIENDSHIP_COLS}"
+    ))
+    .bind(friendship_id)
+    .bind(actor_id)
+    .bind(allow)
+    .fetch_optional(executor)
+    .await
+}
+
+/// Whether `actor` is allowed to register `target` into a tournament: an accepted
+/// friendship must exist and `target` must have granted `actor` permission.
+pub async fn can_register<'e>(
+    executor: impl PgExecutor<'e>,
+    actor_id: Uuid,
+    target_id: Uuid,
+) -> SqlxResult<bool> {
+    let allowed = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS ( \
+            SELECT 1 FROM friendship \
+            WHERE status = 'accepted' AND ( \
+                (requester_id = $2 AND addressee_id = $1 AND requester_allows_addressee_reg) \
+                OR (addressee_id = $2 AND requester_id = $1 AND addressee_allows_requester_reg) \
+            ) \
+         )",
+    )
+    .bind(actor_id)
+    .bind(target_id)
+    .fetch_one(executor)
+    .await?;
+    Ok(allowed)
+}
+
 /// Remove/decline a friendship — either party may do so.
 pub async fn remove<'e>(
     executor: impl PgExecutor<'e>,
@@ -93,7 +141,13 @@ pub async fn list_friends<'e>(
                 other.id AS user_id, \
                 COALESCE(other.username, other.first_name) AS name, \
                 f.status AS status, \
-                FALSE AS is_incoming \
+                FALSE AS is_incoming, \
+                CASE WHEN f.requester_id = $1 \
+                     THEN f.addressee_allows_requester_reg \
+                     ELSE f.requester_allows_addressee_reg END AS i_can_register_them, \
+                CASE WHEN f.requester_id = $1 \
+                     THEN f.requester_allows_addressee_reg \
+                     ELSE f.addressee_allows_requester_reg END AS can_register_me \
          FROM friendship f \
          JOIN users other ON other.id = \
               CASE WHEN f.requester_id = $1 THEN f.addressee_id ELSE f.requester_id END \
@@ -115,7 +169,9 @@ pub async fn list_incoming<'e>(
                 u.id AS user_id, \
                 COALESCE(u.username, u.first_name) AS name, \
                 f.status AS status, \
-                TRUE AS is_incoming \
+                TRUE AS is_incoming, \
+                FALSE AS i_can_register_them, \
+                FALSE AS can_register_me \
          FROM friendship f JOIN users u ON u.id = f.requester_id \
          WHERE f.addressee_id = $1 AND f.status = 'pending' \
          ORDER BY f.created_at DESC",
@@ -135,7 +191,9 @@ pub async fn list_outgoing<'e>(
                 u.id AS user_id, \
                 COALESCE(u.username, u.first_name) AS name, \
                 f.status AS status, \
-                FALSE AS is_incoming \
+                FALSE AS is_incoming, \
+                FALSE AS i_can_register_them, \
+                FALSE AS can_register_me \
          FROM friendship f JOIN users u ON u.id = f.addressee_id \
          WHERE f.requester_id = $1 AND f.status = 'pending' \
          ORDER BY f.created_at DESC",

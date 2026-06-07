@@ -326,6 +326,10 @@ pub struct FriendRow {
     pub status: String,
     /// True when this is a pending request the current user received.
     pub is_incoming: bool,
+    /// True when the current user is allowed to register this friend.
+    pub i_can_register_them: bool,
+    /// True when this friend is allowed to register the current user.
+    pub can_register_me: bool,
 }
 
 /// Derived mutual-flame standing between two players.

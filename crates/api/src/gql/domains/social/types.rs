@@ -57,6 +57,10 @@ pub struct Friend {
     pub status: String,
     /// True when this is a request the current user received.
     pub is_incoming: bool,
+    /// True when the current user may register this friend into tournaments.
+    pub i_can_register_them: bool,
+    /// True when this friend may register the current user into tournaments.
+    pub can_register_me: bool,
 }
 
 #[ComplexObject]
@@ -91,6 +95,8 @@ impl From<infra::models::FriendRow> for Friend {
             name: r.name,
             status: r.status,
             is_incoming: r.is_incoming,
+            i_can_register_them: r.i_can_register_them,
+            can_register_me: r.can_register_me,
         }
     }
 }
