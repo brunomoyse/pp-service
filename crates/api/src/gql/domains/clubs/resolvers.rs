@@ -16,6 +16,13 @@ impl ClubQuery {
         Ok(rows.into_iter().map(Club::from).collect())
     }
 
+    /// Distinct province slugs clubs resolve to — for a province leaderboard
+    /// filter. Slugs are i18n keys; localize client-side.
+    async fn club_provinces(&self, ctx: &Context<'_>) -> Result<Vec<String>> {
+        let state = ctx.data::<AppState>()?;
+        Ok(clubs::list_provinces(&state.db).await?)
+    }
+
     /// Get all tables for a club
     async fn club_tables(&self, ctx: &Context<'_>, club_id: Uuid) -> Result<Vec<ClubTable>> {
         let state = ctx.data::<AppState>()?;

@@ -6,6 +6,10 @@ pub struct Club {
     pub id: ID,
     pub name: String,
     pub city: Option<String>,
+    pub postal_code: Option<String>,
+    /// Province slug derived from the postal code (e.g. "liege", "antwerp").
+    /// Stable i18n key — localize client-side, don't display raw.
+    pub province: Option<String>,
 }
 
 impl From<infra::models::ClubRow> for Club {
@@ -14,6 +18,8 @@ impl From<infra::models::ClubRow> for Club {
             id: row.id.into(),
             name: row.name,
             city: row.city,
+            postal_code: row.postal_code,
+            province: row.province,
         }
     }
 }

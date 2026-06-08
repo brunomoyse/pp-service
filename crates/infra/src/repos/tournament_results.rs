@@ -259,12 +259,22 @@ pub async fn get_leaderboard(
     limit: Option<i32>,
     offset: Option<i32>,
     club_id: Option<Uuid>,
+    province: Option<String>,
 ) -> Result<Vec<LeaderboardEntry>> {
     let date_filter = period_filter(period);
+    // Optional filters bind in declaration order; track the next placeholder.
+    let mut next_param = 0;
     let club_filter = if club_id.is_some() {
-        "AND t.club_id = $1"
+        next_param += 1;
+        format!("AND t.club_id = ${next_param}")
     } else {
-        ""
+        String::new()
+    };
+    let province_filter = if province.is_some() {
+        next_param += 1;
+        format!("AND t.club_id IN (SELECT id FROM clubs WHERE province = ${next_param})")
+    } else {
+        String::new()
     };
 
     let limit_value = limit.unwrap_or(100).clamp(1, 500);
@@ -296,7 +306,7 @@ pub async fn get_leaderboard(
             JOIN tournaments t ON reg.tournament_id = t.id
             LEFT JOIN tournament_results tr ON tr.registered_player_id = rp.id AND tr.tournament_id = t.id
             WHERE (u.id IS NULL OR (u.role = 'player' AND u.is_active = true))
-                {} {}
+                {} {} {}
             GROUP BY rp.id, rp.display_name, u.id, u.username, u.first_name, u.last_name,
                      u.email, u.phone, u.is_active, u.role, u.locale
             HAVING COUNT(DISTINCT reg.tournament_id) > 0
@@ -327,12 +337,15 @@ pub async fn get_leaderboard(
         ORDER BY points DESC, total_winnings DESC, total_tournaments DESC
         {}
         "#,
-        date_filter, club_filter, limit_clause
+        date_filter, club_filter, province_filter, limit_clause
     );
 
     let mut query_builder = sqlx::query(&query);
     if let Some(club_uuid) = club_id {
         query_builder = query_builder.bind(club_uuid);
+    }
+    if let Some(province) = province {
+        query_builder = query_builder.bind(province);
     }
 
     let rows = query_builder.fetch_all(pool).await?;
@@ -374,12 +387,21 @@ pub async fn count_leaderboard(
     pool: &PgPool,
     period: LeaderboardPeriod,
     club_id: Option<Uuid>,
+    province: Option<String>,
 ) -> Result<i64> {
     let date_filter = period_filter(period);
+    let mut next_param = 0;
     let club_filter = if club_id.is_some() {
-        "AND t.club_id = $1"
+        next_param += 1;
+        format!("AND t.club_id = ${next_param}")
     } else {
-        ""
+        String::new()
+    };
+    let province_filter = if province.is_some() {
+        next_param += 1;
+        format!("AND t.club_id IN (SELECT id FROM clubs WHERE province = ${next_param})")
+    } else {
+        String::new()
     };
 
     let query = format!(
@@ -391,17 +413,20 @@ pub async fn count_leaderboard(
             JOIN tournament_registrations reg ON reg.registered_player_id = rp.id
             JOIN tournaments t ON reg.tournament_id = t.id
             WHERE (u.id IS NULL OR (u.role = 'player' AND u.is_active = true))
-                {} {}
+                {} {} {}
             GROUP BY rp.id
             HAVING COUNT(DISTINCT reg.tournament_id) > 0
         ) c
         "#,
-        date_filter, club_filter
+        date_filter, club_filter, province_filter
     );
 
     let mut query_builder = sqlx::query_scalar::<_, i64>(&query);
     if let Some(club_uuid) = club_id {
         query_builder = query_builder.bind(club_uuid);
+    }
+    if let Some(province) = province {
+        query_builder = query_builder.bind(province);
     }
 
     let count = query_builder.fetch_one(pool).await?;

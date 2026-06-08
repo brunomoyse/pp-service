@@ -9,6 +9,8 @@ pub struct ClubRow {
     pub id: Uuid,
     pub name: String,
     pub city: Option<String>,
+    pub postal_code: Option<String>,
+    pub province: Option<String>,
     pub country: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

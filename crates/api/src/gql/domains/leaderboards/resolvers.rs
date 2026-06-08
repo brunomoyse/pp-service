@@ -18,6 +18,10 @@ impl LeaderboardQuery {
         period: Option<LeaderboardPeriod>,
         pagination: Option<PaginationInput>,
         club_id: Option<uuid::Uuid>,
+        #[graphql(
+            desc = "Province slug (see clubProvinces); ranks players across every club in that province."
+        )]
+        province: Option<String>,
     ) -> Result<PaginatedResponse<LeaderboardEntry>> {
         let state = ctx.data::<AppState>()?;
 
@@ -37,9 +41,15 @@ impl LeaderboardQuery {
                 infra_period,
                 Some(limit_offset.limit as i32),
                 Some(limit_offset.offset as i32),
-                club_id
+                club_id,
+                province.clone(),
             ),
-            tournament_results::count_leaderboard(&state.db, infra_period, club_id)
+            tournament_results::count_leaderboard(
+                &state.db,
+                infra_period,
+                club_id,
+                province.clone()
+            )
         )?;
 
         // Convert to GraphQL types and add rank based on offset
