@@ -8,7 +8,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use api::app::build_router;
 use api::gql::build_schema;
-use api::services::{spawn_clock_service, spawn_notification_service};
+use api::services::{spawn_clock_service, spawn_drink_expiry_service, spawn_notification_service};
 use api::state::AppState;
 
 #[tokio::main]
@@ -70,6 +70,10 @@ async fn main() -> anyhow::Result<()> {
     // Start the background notification service for "tournament starting soon" alerts
     let _notification_handle = spawn_notification_service(state.clone());
     tracing::info!("Notification service started");
+
+    // Start the background drink-credit expiry service
+    let _drink_expiry_handle = spawn_drink_expiry_service(state.clone());
+    tracing::info!("Drink credit expiry service started");
 
     let app = build_router(state, schema);
 

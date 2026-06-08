@@ -556,3 +556,72 @@ pub struct BlindStructureTemplateRow {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+
+// ---- Drink-voucher wallet system ----
+
+/// A club-scoped point of redemption (a bar terminal / till).
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct BarStationRow {
+    pub id: Uuid,
+    pub club_id: Uuid,
+    pub name: String,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// A drink wallet. `registered_player_id` is None for a bearer (anonymous) wallet.
+/// `balance` caches SUM(delta) of the wallet's ledger entries.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct DrinkWalletRow {
+    pub id: Uuid,
+    pub registered_player_id: Option<Uuid>,
+    pub club_id: Uuid,
+    pub balance: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// One row per drink served at the bar.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct DrinkRedemptionRow {
+    pub id: Uuid,
+    pub wallet_id: Uuid,
+    pub bar_station_id: Uuid,
+    pub drink_type: Option<String>,
+    pub idempotency_key: String,
+    pub created_by: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// An append-only ledger entry. Positive `delta` is a credit lot (optionally with an
+/// expiry); negative `delta` is a redemption, expiry, adjustment, or transfer out.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct DrinkLedgerEntryRow {
+    pub id: Uuid,
+    pub wallet_id: Uuid,
+    pub delta: i32,
+    pub reason: String,
+    pub tournament_id: Option<Uuid>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub redemption_id: Option<Uuid>,
+    /// For an `expiry` entry, the lot it expired (keeps the expiry job re-run safe).
+    pub source_ledger_entry_id: Option<Uuid>,
+    pub transfer_id: Option<Uuid>,
+    pub created_by: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// A way to reach a wallet (printed QR card, manual number, or future Apple pass).
+/// `token_hash` is the SHA-256 of the QR secret; the raw secret is never stored.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct DrinkWalletCredentialRow {
+    pub id: Uuid,
+    pub wallet_id: Option<Uuid>,
+    #[sqlx(rename = "type")]
+    pub credential_type: String,
+    pub token_hash: Vec<u8>,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}

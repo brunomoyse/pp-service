@@ -8,6 +8,7 @@ pub mod attendance;
 pub mod auth;
 pub mod clubs;
 pub mod cosmetics;
+pub mod drinks;
 pub mod entries;
 pub mod identity;
 pub mod leaderboards;
