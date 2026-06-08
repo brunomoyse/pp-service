@@ -173,7 +173,8 @@ async fn test_tournament_seating_chart() {
                     }
                 }
                 unassignedPlayers {
-                    id
+                    registeredPlayerId
+                    displayName
                 }
             }
         }

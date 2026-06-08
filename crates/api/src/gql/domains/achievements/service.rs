@@ -24,10 +24,10 @@ pub async fn evaluate_for_player<'a>(
         r#"
         SELECT
             COUNT(DISTINCT tr.tournament_id) as total_tournaments_with_results,
-            SUM(CASE WHEN tr.prize_cents > 0 THEN 1 ELSE 0 END)::i32 as itm_count,
-            SUM(CASE WHEN tr.final_position = 1 THEN 1 ELSE 0 END)::i32 as wins,
-            SUM(CASE WHEN tr.final_position <= 9 THEN 1 ELSE 0 END)::i32 as final_tables,
-            COALESCE(SUM(tr.prize_cents), 0)::i32 as total_winnings_cents
+            SUM(CASE WHEN tr.prize_cents > 0 THEN 1 ELSE 0 END)::int4 as itm_count,
+            SUM(CASE WHEN tr.final_position = 1 THEN 1 ELSE 0 END)::int4 as wins,
+            SUM(CASE WHEN tr.final_position <= 9 THEN 1 ELSE 0 END)::int4 as final_tables,
+            COALESCE(SUM(tr.prize_cents), 0)::int4 as total_winnings_cents
         FROM tournament_results tr
         WHERE tr.user_id = $1
         "#,

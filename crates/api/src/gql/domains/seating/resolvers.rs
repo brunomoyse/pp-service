@@ -12,9 +12,9 @@ use crate::gql::types::{
 };
 use crate::state::AppState;
 use infra::repos::{
-    club_tables, table_seat_assignments, table_seat_assignments::CreateSeatAssignment,
-    table_seat_assignments::SeatAssignmentFilter, table_seat_assignments::UpdateSeatAssignment,
-    tournament_registrations, tournaments, users,
+    club_tables, registered_players, table_seat_assignments,
+    table_seat_assignments::CreateSeatAssignment, table_seat_assignments::SeatAssignmentFilter,
+    table_seat_assignments::UpdateSeatAssignment, tournament_registrations, tournaments, users,
 };
 
 #[derive(Default)]
@@ -548,6 +548,14 @@ impl SeatingMutation {
             Uuid::parse_str(input.new_club_table_id.as_str()).gql_err("Invalid table ID")?;
         let manager_id = Uuid::parse_str(manager.id.as_str()).gql_err("Invalid manager ID")?;
 
+        // Seat assignments are keyed on the club roster, not the app user. Resolve
+        // the user's roster entry for this club before moving them.
+        let registered_player_id =
+            registered_players::find_by_club_and_app_user(&state.db, club_id, user_id)
+                .await?
+                .ok_or_else(|| async_graphql::Error::new("Player is not on this club's roster"))?
+                .id;
+
         // Check if new seat is available
         let is_available = table_seat_assignments::is_seat_available(
             &state.db,
@@ -562,7 +570,7 @@ impl SeatingMutation {
         let assignment_row = table_seat_assignments::move_player(
             &state.db,
             tournament_id,
-            user_id,
+            registered_player_id,
             new_club_table_id,
             input.new_seat_number,
             Some(manager_id),
