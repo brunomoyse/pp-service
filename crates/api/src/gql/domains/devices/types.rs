@@ -24,4 +24,6 @@ pub struct RegisterDeviceTokenInput {
     /// The Expo push token (e.g. `ExponentPushToken[...]`).
     pub token: String,
     pub platform: DevicePlatform,
+    /// Device locale (e.g. `en`, `fr`, `nl`) used to localize push copy.
+    pub locale: Option<String>,
 }

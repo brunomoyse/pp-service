@@ -1,6 +1,13 @@
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
+/// A registered device: its Expo push token plus the locale it registered with
+/// (used to localize push copy per device).
+pub struct DeviceToken {
+    pub token: String,
+    pub locale: Option<String>,
+}
+
 /// Insert or refresh a device's Expo push token, claiming it for `user_id`.
 ///
 /// Keyed on the token: re-registering the same physical device (same token)
@@ -11,15 +18,17 @@ pub async fn upsert(
     user_id: Uuid,
     token: &str,
     platform: &str,
+    locale: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO device_tokens (user_id, token, platform) VALUES ($1, $2, $3) \
+        "INSERT INTO device_tokens (user_id, token, platform, locale) VALUES ($1, $2, $3, $4) \
          ON CONFLICT (token) DO UPDATE SET user_id = EXCLUDED.user_id, \
-         platform = EXCLUDED.platform, updated_at = now()",
+         platform = EXCLUDED.platform, locale = EXCLUDED.locale, updated_at = now()",
     )
     .bind(user_id)
     .bind(token)
     .bind(platform)
+    .bind(locale)
     .execute(pool)
     .await?;
 
@@ -38,14 +47,20 @@ pub async fn delete_for_user(pool: &PgPool, user_id: Uuid, token: &str) -> Resul
     Ok(())
 }
 
-/// All Expo push tokens registered for a user (one per device).
-pub async fn list_for_user(pool: &PgPool, user_id: Uuid) -> Result<Vec<String>, sqlx::Error> {
-    let rows = sqlx::query("SELECT token FROM device_tokens WHERE user_id = $1")
+/// All registered devices for a user (one per device), with their locale.
+pub async fn list_for_user(pool: &PgPool, user_id: Uuid) -> Result<Vec<DeviceToken>, sqlx::Error> {
+    let rows = sqlx::query("SELECT token, locale FROM device_tokens WHERE user_id = $1")
         .bind(user_id)
         .fetch_all(pool)
         .await?;
 
-    Ok(rows.iter().map(|r| r.get::<String, _>("token")).collect())
+    Ok(rows
+        .iter()
+        .map(|r| DeviceToken {
+            token: r.get::<String, _>("token"),
+            locale: r.get::<Option<String>, _>("locale"),
+        })
+        .collect())
 }
 
 /// Prune tokens Expo reports as dead (e.g. `DeviceNotRegistered`).

@@ -24,7 +24,14 @@ impl DeviceMutation {
         let claims = ctx.data::<Claims>()?;
         let user_id = Uuid::parse_str(&claims.sub).gql_err("Invalid user ID")?;
 
-        device_tokens::upsert(&state.db, user_id, &input.token, input.platform.as_str()).await?;
+        device_tokens::upsert(
+            &state.db,
+            user_id,
+            &input.token,
+            input.platform.as_str(),
+            input.locale.as_deref(),
+        )
+        .await?;
         Ok(true)
     }
 

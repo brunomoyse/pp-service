@@ -1,9 +1,10 @@
 //! Delivers push notifications to a user's devices via the Expo Push API.
 //!
 //! Tokens are minted client-side (`getExpoPushTokenAsync`) and stored in
-//! `device_tokens`. Sending is best-effort and fire-and-forget: failures are
-//! logged, never surfaced to the caller. Tokens Expo reports as
-//! `DeviceNotRegistered` are pruned so we stop targeting dead installs.
+//! `device_tokens` along with the device locale. Sending is best-effort and
+//! fire-and-forget: failures are logged, never surfaced to the caller. Tokens
+//! Expo reports as `DeviceNotRegistered` are pruned so we stop targeting dead
+//! installs.
 
 use serde_json::json;
 use sqlx::PgPool;
@@ -13,19 +14,31 @@ use infra::repos::device_tokens;
 
 const EXPO_PUSH_URL: &str = "https://exp.host/--/api/v2/push/send";
 
-/// Send a push to every device registered for `user_id`.
-///
-/// `data` is delivered alongside the notification so the app can route the tap
-/// (e.g. `{ "type": "ACHIEVEMENT_UNLOCKED", "code": "first_win" }`).
-pub async fn send_to_user(
-    db: &PgPool,
-    user_id: Uuid,
-    title: &str,
-    body: &str,
-    data: serde_json::Value,
-) {
-    let tokens = match device_tokens::list_for_user(db, user_id).await {
-        Ok(t) if !t.is_empty() => t,
+/// Localized generic push copy. The achievement's localized *name* lives in the
+/// app's i18n bundle (not on the server), so the push body is intentionally
+/// generic; tapping it deep-links to the achievements screen.
+fn achievement_copy(locale: Option<&str>) -> (&'static str, &'static str) {
+    match locale.unwrap_or("en") {
+        "fr" => (
+            "Succès débloqué",
+            "Vous avez débloqué un nouveau succès — touchez pour voir.",
+        ),
+        "nl" => (
+            "Prestatie ontgrendeld",
+            "Je hebt een nieuwe prestatie ontgrendeld — tik om te bekijken.",
+        ),
+        _ => (
+            "Achievement Unlocked",
+            "You've earned a new achievement — tap to view.",
+        ),
+    }
+}
+
+/// Push an achievement-unlock alert to every device registered for `user_id`,
+/// localized per device. `data.code` lets the app deep-link to the achievement.
+pub async fn send_achievement_unlock(db: &PgPool, user_id: Uuid, code: &str, name_key: &str) {
+    let devices = match device_tokens::list_for_user(db, user_id).await {
+        Ok(d) if !d.is_empty() => d,
         Ok(_) => return,
         Err(e) => {
             tracing::warn!(%user_id, error = %e, "push: failed to load device tokens");
@@ -33,11 +46,19 @@ pub async fn send_to_user(
         }
     };
 
-    let messages: Vec<serde_json::Value> = tokens
+    let data = json!({
+        "type": "ACHIEVEMENT_UNLOCKED",
+        "code": code,
+        "name_key": name_key,
+    });
+
+    let tokens: Vec<String> = devices.iter().map(|d| d.token.clone()).collect();
+    let messages: Vec<serde_json::Value> = devices
         .iter()
-        .map(|token| {
+        .map(|d| {
+            let (title, body) = achievement_copy(d.locale.as_deref());
             json!({
-                "to": token,
+                "to": d.token,
                 "title": title,
                 "body": body,
                 "data": data,
@@ -48,6 +69,17 @@ pub async fn send_to_user(
         })
         .collect();
 
+    deliver(db, user_id, messages, tokens).await;
+}
+
+/// POST a batch of Expo messages and prune any tokens reported as dead.
+/// `tokens` is parallel to `messages` so error receipts map back to a token.
+async fn deliver(
+    db: &PgPool,
+    user_id: Uuid,
+    messages: Vec<serde_json::Value>,
+    tokens: Vec<String>,
+) {
     let client = reqwest::Client::new();
     let mut req = client
         .post(EXPO_PUSH_URL)
@@ -76,7 +108,7 @@ pub async fn send_to_user(
         }
     };
 
-    // Receipts come back in `data` in the same order as the tickets we sent;
+    // Receipts come back in `data` in the same order as the messages we sent;
     // an error with details.error == "DeviceNotRegistered" means the token is
     // dead and should be removed.
     let mut dead: Vec<String> = Vec::new();
