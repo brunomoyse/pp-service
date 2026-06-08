@@ -117,6 +117,20 @@ pub async fn evaluate_for_player<'a>(
 
     let current_play_streak = play_streak_rows.len() as i32;
 
+    // Count distinct clubs the player has participated in (inter-club achievements).
+    let distinct_clubs: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(DISTINCT t.club_id)
+        FROM tournament_registrations reg
+        JOIN tournaments t ON reg.tournament_id = t.id
+        WHERE reg.user_id = $1 AND reg.status NOT IN ('cancelled', 'no_show')
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    let distinct_clubs = distinct_clubs as i32;
+
     // Evaluate each achievement
     let catalog = achievements::list_catalog(&mut **tx).await?;
 
@@ -184,6 +198,10 @@ pub async fn evaluate_for_player<'a>(
             "streak_play_5" => (
                 current_play_streak,
                 threshold.map(|t| current_play_streak >= t).unwrap_or(false),
+            ),
+            "clubs_2" | "clubs_3" | "clubs_5" => (
+                distinct_clubs,
+                threshold.map(|t| distinct_clubs >= t).unwrap_or(false),
             ),
             _ => (0, false),
         };
