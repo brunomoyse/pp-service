@@ -1,6 +1,7 @@
 use async_graphql::dataloader::Loader;
 use infra::{
-    db::Db, models::ClubRow, models::RegisteredPlayerRow, models::TournamentRow, models::UserRow,
+    db::Db, models::ClubRow, models::DrinkLedgerEntryRow, models::DrinkWalletRow,
+    models::RegisteredPlayerRow, models::TournamentRow, models::UserRow,
 };
 use std::{collections::HashMap, future::Future, sync::Arc};
 use uuid::Uuid;
@@ -140,6 +141,112 @@ impl Loader<Uuid> for UserLoader {
             .map_err(Arc::new)?;
 
             Ok(rows.into_iter().map(|r| (r.id, r)).collect())
+        }
+    }
+}
+
+// DrinkWalletLoader - batch load drink wallets by ID
+#[derive(Clone)]
+pub struct DrinkWalletLoader {
+    pool: Db,
+}
+
+impl DrinkWalletLoader {
+    pub fn new(pool: Db) -> Self {
+        Self { pool }
+    }
+}
+
+impl Loader<Uuid> for DrinkWalletLoader {
+    type Value = DrinkWalletRow;
+    type Error = Arc<sqlx::Error>;
+
+    fn load(
+        &self,
+        keys: &[Uuid],
+    ) -> impl Future<Output = std::result::Result<HashMap<Uuid, Self::Value>, Self::Error>> + Send
+    {
+        let pool = self.pool.clone();
+        let ids: Vec<Uuid> = keys.to_vec();
+
+        async move {
+            if ids.is_empty() {
+                return Ok(HashMap::new());
+            }
+
+            let rows: Vec<DrinkWalletRow> = sqlx::query_as::<_, DrinkWalletRow>(
+                r#"
+                SELECT id, registered_player_id, club_id, balance, created_at, updated_at
+                FROM drink_wallet
+                WHERE id = ANY($1::uuid[])
+                "#,
+            )
+            .bind(&ids)
+            .fetch_all(&pool)
+            .await
+            .map_err(Arc::new)?;
+
+            Ok(rows.into_iter().map(|r| (r.id, r)).collect())
+        }
+    }
+}
+
+// DrinkLedgerLoader - batch load the recent ledger entries (newest first, capped at
+// 20 per wallet) for a set of wallets, to render wallet histories without N+1.
+#[derive(Clone)]
+pub struct DrinkLedgerLoader {
+    pool: Db,
+}
+
+impl DrinkLedgerLoader {
+    pub fn new(pool: Db) -> Self {
+        Self { pool }
+    }
+}
+
+impl Loader<Uuid> for DrinkLedgerLoader {
+    type Value = Vec<DrinkLedgerEntryRow>;
+    type Error = Arc<sqlx::Error>;
+
+    fn load(
+        &self,
+        keys: &[Uuid],
+    ) -> impl Future<Output = std::result::Result<HashMap<Uuid, Self::Value>, Self::Error>> + Send
+    {
+        let pool = self.pool.clone();
+        let ids: Vec<Uuid> = keys.to_vec();
+
+        async move {
+            if ids.is_empty() {
+                return Ok(HashMap::new());
+            }
+
+            // Window per wallet, keep the 20 newest entries each.
+            let rows: Vec<DrinkLedgerEntryRow> = sqlx::query_as::<_, DrinkLedgerEntryRow>(
+                r#"
+                SELECT id, wallet_id, delta, reason, tournament_id, expires_at,
+                       redemption_id, source_ledger_entry_id, transfer_id, created_by, created_at
+                FROM (
+                    SELECT *, ROW_NUMBER() OVER (
+                        PARTITION BY wallet_id ORDER BY created_at DESC, id DESC
+                    ) AS rn
+                    FROM drink_ledger_entry
+                    WHERE wallet_id = ANY($1::uuid[])
+                ) ranked
+                WHERE rn <= 20
+                ORDER BY created_at DESC, id DESC
+                "#,
+            )
+            .bind(&ids)
+            .fetch_all(&pool)
+            .await
+            .map_err(Arc::new)?;
+
+            let mut map: HashMap<Uuid, Vec<DrinkLedgerEntryRow>> = HashMap::new();
+            for row in rows {
+                map.entry(row.wallet_id).or_default().push(row);
+            }
+            Ok(map)
         }
     }
 }

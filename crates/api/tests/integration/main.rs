@@ -9,6 +9,7 @@ mod check_in;
 mod clock_lifecycle;
 mod club;
 mod club_tables;
+mod drinks;
 mod economy_firewall;
 mod eliminate_player;
 mod notification;

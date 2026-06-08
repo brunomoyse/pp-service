@@ -3,7 +3,10 @@ use std::env;
 use async_graphql::dataloader::DataLoader;
 use async_graphql::Schema;
 
-use super::loaders::{ClubLoader, RegisteredPlayerLoader, TournamentLoader, UserLoader};
+use super::loaders::{
+    ClubLoader, DrinkLedgerLoader, DrinkWalletLoader, RegisteredPlayerLoader, TournamentLoader,
+    UserLoader,
+};
 use super::{MutationRoot, QueryRoot, SubscriptionRoot};
 use crate::state::AppState;
 
@@ -14,6 +17,10 @@ pub fn build_schema(state: AppState) -> Schema<QueryRoot, MutationRoot, Subscrip
     let tournament_loader = DataLoader::new(TournamentLoader::new(state.db.clone()), tokio::spawn);
     let registered_player_loader =
         DataLoader::new(RegisteredPlayerLoader::new(state.db.clone()), tokio::spawn);
+    let drink_wallet_loader =
+        DataLoader::new(DrinkWalletLoader::new(state.db.clone()), tokio::spawn);
+    let drink_ledger_loader =
+        DataLoader::new(DrinkLedgerLoader::new(state.db.clone()), tokio::spawn);
 
     // Introspection is enabled by default in development
     let introspection_enabled = env::var("GQL_INTROSPECTION")
@@ -42,6 +49,8 @@ pub fn build_schema(state: AppState) -> Schema<QueryRoot, MutationRoot, Subscrip
     .data(user_loader)
     .data(tournament_loader)
     .data(registered_player_loader)
+    .data(drink_wallet_loader)
+    .data(drink_ledger_loader)
     .limit_depth(depth_limit)
     .limit_complexity(complexity_limit);
 
