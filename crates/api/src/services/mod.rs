@@ -2,6 +2,7 @@ pub mod clock_service;
 pub mod drink_expiry_service;
 pub mod email_service;
 pub mod notification_service;
+pub mod push_service;
 
 pub use clock_service::{spawn_clock_service, ClockService};
 pub use drink_expiry_service::{spawn_drink_expiry_service, DrinkExpiryService};

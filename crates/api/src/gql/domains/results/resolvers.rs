@@ -279,6 +279,22 @@ impl ResultMutation {
                     };
                     crate::gql::subscriptions::publish_user_notification(notification);
 
+                    // Push to the player's devices for app-closed/backgrounded
+                    // delivery. `data.code` lets the app deep-link to the
+                    // achievement; best-effort, never blocks the result entry.
+                    crate::services::push_service::send_to_user(
+                        &db,
+                        user_id,
+                        "Achievement Unlocked",
+                        "You've earned a new achievement — tap to view.",
+                        serde_json::json!({
+                            "type": "ACHIEVEMENT_UNLOCKED",
+                            "code": achievement.code.clone(),
+                            "name_key": achievement.name_key.clone(),
+                        }),
+                    )
+                    .await;
+
                     // Also log to activity log
                     let _ = crate::gql::domains::activity_log::log_and_publish(
                         &db,

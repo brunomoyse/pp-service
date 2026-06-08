@@ -8,6 +8,7 @@ pub mod club_managers;
 pub mod club_tables;
 pub mod clubs;
 pub mod cosmetics;
+pub mod device_tokens;
 pub mod drink_ledger;
 pub mod drink_redemptions;
 pub mod drink_wallet_credentials;
