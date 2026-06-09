@@ -6,6 +6,9 @@ pub const TITLE_REGISTRATION_CONFIRMED: &str = "Registration Confirmed";
 pub const TITLE_TOURNAMENT_STARTING: &str = "Tournament Starting Soon";
 pub const TITLE_WAITLIST_PROMOTED: &str = "Waitlist Promoted";
 pub const TITLE_WAITLISTED: &str = "Added to Waitlist";
+pub const TITLE_SEAT_ASSIGNED: &str = "Seat Assigned";
+pub const TITLE_PLAYER_MOVED: &str = "Table Change";
+pub const TITLE_PLAYER_ELIMINATED: &str = "Eliminated";
 
 // Pagination types
 
@@ -99,6 +102,9 @@ pub enum NotificationType {
     WaitlistPromoted,
     TournamentStatusChanged,
     AchievementUnlocked,
+    SeatAssigned,
+    PlayerMoved,
+    PlayerEliminated,
 }
 
 #[derive(SimpleObject, Clone, Debug)]

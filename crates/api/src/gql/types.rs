@@ -4,15 +4,17 @@
 // Common types (Role, notifications, pagination)
 pub use crate::gql::common::types::{
     NotificationType, PaginatedResponse, PaginationInput, Role, UserNotification,
-    TITLE_REGISTRATION_CONFIRMED, TITLE_TOURNAMENT_STARTING, TITLE_WAITLISTED,
-    TITLE_WAITLIST_PROMOTED,
+    TITLE_PLAYER_ELIMINATED, TITLE_PLAYER_MOVED, TITLE_REGISTRATION_CONFIRMED, TITLE_SEAT_ASSIGNED,
+    TITLE_TOURNAMENT_STARTING, TITLE_WAITLISTED, TITLE_WAITLIST_PROMOTED,
 };
 
 // Activity log types
 pub use crate::gql::domains::activity_log::types::{ActivityEventCategory, ActivityLogEntry};
 
 // Club types
-pub use crate::gql::domains::clubs::types::{Club, ClubTable};
+pub use crate::gql::domains::clubs::types::{
+    Club, ClubTable, CompanyLookup, OnboardClubInput, OnboardClubPayload,
+};
 
 // Identity / roster types
 pub use crate::gql::domains::identity::types::{

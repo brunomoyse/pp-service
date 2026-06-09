@@ -3,12 +3,13 @@ use uuid::Uuid;
 
 use crate::gql::common::helpers::get_club_id_for_tournament;
 use crate::gql::error::ResultExt;
-use crate::gql::subscriptions::publish_seating_event;
+use crate::gql::subscriptions::{publish_seating_event, publish_user_notification};
 use crate::gql::types::{
     AssignPlayerToSeatInput, AssignTableToTournamentInput, AssignTablesToTournamentInput,
-    BalanceTablesInput, MovePlayerInput, SeatAssignment, SeatWithPlayer, SeatingChangeEvent,
-    SeatingEventType, TableWithSeats, Tournament, TournamentSeatingChart, TournamentTable,
-    UnassignTableFromTournamentInput, UnseatedPlayer, UpdateStackSizeInput, User,
+    BalanceTablesInput, MovePlayerInput, NotificationType, SeatAssignment, SeatWithPlayer,
+    SeatingChangeEvent, SeatingEventType, TableWithSeats, Tournament, TournamentSeatingChart,
+    TournamentTable, UnassignTableFromTournamentInput, UnseatedPlayer, UpdateStackSizeInput, User,
+    UserNotification, TITLE_PLAYER_ELIMINATED, TITLE_PLAYER_MOVED, TITLE_SEAT_ASSIGNED,
 };
 use crate::state::AppState;
 use infra::repos::{
@@ -504,6 +505,29 @@ impl SeatingMutation {
         };
         publish_seating_event(event);
 
+        // Tell the player their seat is ready (in-app now, push when backgrounded).
+        publish_user_notification(UserNotification {
+            id: ID::from(Uuid::new_v4().to_string()),
+            user_id: ID::from(user_id.to_string()),
+            notification_type: NotificationType::SeatAssigned,
+            title: TITLE_SEAT_ASSIGNED.to_string(),
+            message: format!("You have been assigned to seat {}", result.seat_number),
+            tournament_id: Some(ID::from(tournament_id.to_string())),
+            created_at: chrono::Utc::now(),
+        });
+        {
+            let db = state.db.clone();
+            tokio::spawn(async move {
+                crate::services::push_service::send_seating_event(
+                    &db,
+                    user_id,
+                    "SEAT_ASSIGNED",
+                    tournament_id,
+                )
+                .await;
+            });
+        }
+
         // Log activity
         {
             let db = state.db.clone();
@@ -598,6 +622,29 @@ impl SeatingMutation {
             timestamp: chrono::Utc::now(),
         };
         publish_seating_event(event);
+
+        // Tell the player they changed tables (in-app now, push when backgrounded).
+        publish_user_notification(UserNotification {
+            id: ID::from(Uuid::new_v4().to_string()),
+            user_id: ID::from(user_id.to_string()),
+            notification_type: NotificationType::PlayerMoved,
+            title: TITLE_PLAYER_MOVED.to_string(),
+            message: format!("You have been moved to seat {}", result.seat_number),
+            tournament_id: Some(ID::from(tournament_id.to_string())),
+            created_at: chrono::Utc::now(),
+        });
+        {
+            let db = state.db.clone();
+            tokio::spawn(async move {
+                crate::services::push_service::send_seating_event(
+                    &db,
+                    user_id,
+                    "PLAYER_MOVED",
+                    tournament_id,
+                )
+                .await;
+            });
+        }
 
         // Log activity
         {
@@ -842,6 +889,29 @@ impl SeatingMutation {
                 timestamp: chrono::Utc::now(),
             };
             publish_seating_event(event);
+
+            // Tell the player they're out (in-app now, push when backgrounded).
+            publish_user_notification(UserNotification {
+                id: ID::from(Uuid::new_v4().to_string()),
+                user_id: ID::from(user_uuid.to_string()),
+                notification_type: NotificationType::PlayerEliminated,
+                title: TITLE_PLAYER_ELIMINATED.to_string(),
+                message: "You have been eliminated from the tournament".to_string(),
+                tournament_id: Some(ID::from(tournament_uuid.to_string())),
+                created_at: chrono::Utc::now(),
+            });
+            {
+                let db = state.db.clone();
+                tokio::spawn(async move {
+                    crate::services::push_service::send_seating_event(
+                        &db,
+                        user_uuid,
+                        "PLAYER_ELIMINATED",
+                        tournament_uuid,
+                    )
+                    .await;
+                });
+            }
 
             // Auto-detect final table: check if remaining players fit on one table
             let remaining =

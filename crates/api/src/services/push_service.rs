@@ -34,9 +34,50 @@ fn achievement_copy(locale: Option<&str>) -> (&'static str, &'static str) {
     }
 }
 
-/// Push an achievement-unlock alert to every device registered for `user_id`,
-/// localized per device. `data.code` lets the app deep-link to the achievement.
-pub async fn send_achievement_unlock(db: &PgPool, user_id: Uuid, code: &str, name_key: &str) {
+/// Localized copy for seating-event pushes, keyed by the wire-format
+/// notification type. Table/seat specifics live in the in-app notification;
+/// the push deep-links to the tournament screen.
+fn seating_copy(event: &str, locale: Option<&str>) -> (&'static str, &'static str) {
+    match (event, locale.unwrap_or("en")) {
+        ("SEAT_ASSIGNED", "fr") => (
+            "Siège attribué",
+            "Votre siège est prêt — touchez pour voir votre table.",
+        ),
+        ("SEAT_ASSIGNED", "nl") => (
+            "Stoel toegewezen",
+            "Je stoel is klaar — tik om je tafel te bekijken.",
+        ),
+        ("SEAT_ASSIGNED", _) => (
+            "Seat assigned",
+            "Your seat is ready — tap to see your table.",
+        ),
+        ("PLAYER_MOVED", "fr") => (
+            "Changement de table",
+            "Vous changez de table — touchez pour voir votre nouveau siège.",
+        ),
+        ("PLAYER_MOVED", "nl") => (
+            "Tafelwissel",
+            "Je bent verplaatst — tik om je nieuwe stoel te bekijken.",
+        ),
+        ("PLAYER_MOVED", _) => (
+            "Table change",
+            "You've been moved — tap to see your new seat.",
+        ),
+        ("PLAYER_ELIMINATED", "fr") => ("Éliminé", "Vous avez été éliminé du tournoi."),
+        ("PLAYER_ELIMINATED", "nl") => ("Uitgeschakeld", "Je bent uitgeschakeld uit het toernooi."),
+        ("PLAYER_ELIMINATED", _) => ("Eliminated", "You've been eliminated from the tournament."),
+        _ => ("PocketPair", ""),
+    }
+}
+
+/// Push a message to every device registered for `user_id`, with title/body
+/// chosen per device locale by `copy`. Best-effort: errors are logged only.
+async fn send_to_user_devices(
+    db: &PgPool,
+    user_id: Uuid,
+    data: serde_json::Value,
+    copy: impl Fn(Option<&str>) -> (&'static str, &'static str),
+) {
     let devices = match device_tokens::list_for_user(db, user_id).await {
         Ok(d) if !d.is_empty() => d,
         Ok(_) => return,
@@ -46,17 +87,11 @@ pub async fn send_achievement_unlock(db: &PgPool, user_id: Uuid, code: &str, nam
         }
     };
 
-    let data = json!({
-        "type": "ACHIEVEMENT_UNLOCKED",
-        "code": code,
-        "name_key": name_key,
-    });
-
     let tokens: Vec<String> = devices.iter().map(|d| d.token.clone()).collect();
     let messages: Vec<serde_json::Value> = devices
         .iter()
         .map(|d| {
-            let (title, body) = achievement_copy(d.locale.as_deref());
+            let (title, body) = copy(d.locale.as_deref());
             json!({
                 "to": d.token,
                 "title": title,
@@ -70,6 +105,28 @@ pub async fn send_achievement_unlock(db: &PgPool, user_id: Uuid, code: &str, nam
         .collect();
 
     deliver(db, user_id, messages, tokens).await;
+}
+
+/// Push an achievement-unlock alert to every device registered for `user_id`,
+/// localized per device. `data.code` lets the app deep-link to the achievement.
+pub async fn send_achievement_unlock(db: &PgPool, user_id: Uuid, code: &str, name_key: &str) {
+    let data = json!({
+        "type": "ACHIEVEMENT_UNLOCKED",
+        "code": code,
+        "name_key": name_key,
+    });
+    send_to_user_devices(db, user_id, data, achievement_copy).await;
+}
+
+/// Push a seating-event alert (seat assigned / table change / eliminated).
+/// `event` is the wire-format notification type (e.g. "SEAT_ASSIGNED");
+/// `data.tournament_id` lets the app deep-link to the tournament screen.
+pub async fn send_seating_event(db: &PgPool, user_id: Uuid, event: &str, tournament_id: Uuid) {
+    let data = json!({
+        "type": event,
+        "tournament_id": tournament_id,
+    });
+    send_to_user_devices(db, user_id, data, |locale| seating_copy(event, locale)).await;
 }
 
 /// POST a batch of Expo messages and prune any tokens reported as dead.
