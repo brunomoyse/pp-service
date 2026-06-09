@@ -9,7 +9,10 @@ use infra::repos::{
     users::{CreateUserData, UpdateUserData, UserFilter},
 };
 
-use super::types::{CreatePlayerInput, UpdatePlayerInput};
+use super::types::{
+    CreatePlayerInput, NotificationPreferences, UpdateNotificationPreferencesInput,
+    UpdatePlayerInput,
+};
 
 #[derive(Default)]
 pub struct UserQuery;
@@ -50,6 +53,22 @@ impl UserQuery {
             offset,
             has_next_page,
         })
+    }
+
+    /// The current user's notification preferences (defaults when never set).
+    async fn my_notification_preferences(
+        &self,
+        ctx: &Context<'_>,
+    ) -> Result<NotificationPreferences> {
+        use crate::auth::jwt::Claims;
+
+        let state = ctx.data::<AppState>()?;
+        let claims = ctx.data::<Claims>()?;
+        let user_id = Uuid::parse_str(&claims.sub).gql_err("Invalid user ID")?;
+
+        let prefs =
+            infra::repos::notification_preferences::get_for_user(&state.db, user_id).await?;
+        Ok(prefs.into())
     }
 }
 
@@ -158,6 +177,61 @@ impl UserMutation {
             .ok_or_else(|| async_graphql::Error::new("User not found"))?;
 
         Ok(user_row.into())
+    }
+
+    /// Update the current user's notification preferences. Omitted fields
+    /// keep their current value.
+    async fn update_notification_preferences(
+        &self,
+        ctx: &Context<'_>,
+        input: UpdateNotificationPreferencesInput,
+    ) -> Result<NotificationPreferences> {
+        use crate::auth::jwt::Claims;
+        use infra::repos::notification_preferences;
+
+        let state = ctx.data::<AppState>()?;
+        let claims = ctx.data::<Claims>()?;
+        let user_id = Uuid::parse_str(&claims.sub).gql_err("Invalid user ID")?;
+
+        let mut prefs = notification_preferences::get_for_user(&state.db, user_id).await?;
+        if let Some(v) = input.tournament_reminders {
+            prefs.tournament_reminders = v;
+        }
+        if let Some(v) = input.registration_updates {
+            prefs.registration_updates = v;
+        }
+        if let Some(v) = input.seating_updates {
+            prefs.seating_updates = v;
+        }
+        if let Some(v) = input.achievements {
+            prefs.achievements = v;
+        }
+        notification_preferences::upsert(&state.db, user_id, prefs).await?;
+
+        Ok(prefs.into())
+    }
+
+    /// Permanently delete the current user's account (self-service, required
+    /// for App Store / GDPR). Personal data is anonymized and the account is
+    /// deactivated; tournament history is kept under an anonymous name.
+    async fn delete_my_account(&self, ctx: &Context<'_>) -> Result<bool> {
+        use crate::auth::jwt::Claims;
+        use infra::repos::{device_tokens, refresh_tokens};
+
+        let state = ctx.data::<AppState>()?;
+        let claims = ctx.data::<Claims>()?;
+        let user_id = Uuid::parse_str(&claims.sub).gql_err("Invalid user ID")?;
+
+        // Scrub PII and deactivate first — that's the part that must not be
+        // missed; session/device cleanup below is best-effort on top.
+        users::anonymize(&state.db, user_id)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("User not found"))?;
+
+        device_tokens::delete_all_for_user(&state.db, user_id).await?;
+        refresh_tokens::revoke_all_for_user(&state.db, user_id).await?;
+
+        Ok(true)
     }
 
     /// Reactivate a player - managers only

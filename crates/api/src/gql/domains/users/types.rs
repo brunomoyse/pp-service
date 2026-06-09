@@ -85,3 +85,35 @@ pub struct UpdatePlayerInput {
     pub username: Option<String>,
     pub phone: Option<String>,
 }
+
+/// Per-category notification preferences for the current user. Defaults are
+/// all on until the user changes something.
+#[derive(SimpleObject, Clone, Copy)]
+pub struct NotificationPreferences {
+    pub tournament_reminders: bool,
+    pub registration_updates: bool,
+    pub seating_updates: bool,
+    pub achievements: bool,
+}
+
+impl From<infra::repos::notification_preferences::NotificationPreferences>
+    for NotificationPreferences
+{
+    fn from(p: infra::repos::notification_preferences::NotificationPreferences) -> Self {
+        Self {
+            tournament_reminders: p.tournament_reminders,
+            registration_updates: p.registration_updates,
+            seating_updates: p.seating_updates,
+            achievements: p.achievements,
+        }
+    }
+}
+
+/// Partial update: omitted fields keep their current value.
+#[derive(InputObject)]
+pub struct UpdateNotificationPreferencesInput {
+    pub tournament_reminders: Option<bool>,
+    pub registration_updates: Option<bool>,
+    pub seating_updates: Option<bool>,
+    pub achievements: Option<bool>,
+}

@@ -166,6 +166,32 @@ pub async fn deactivate<'e>(executor: impl PgExecutor<'e>, id: Uuid) -> Result<O
     Ok(row)
 }
 
+/// Anonymize and deactivate an account (self-service deletion). Personal data
+/// is scrubbed but the row is kept so historical tournament results and
+/// leaderboards stay intact; the placeholder email keeps the UNIQUE
+/// constraint satisfied and can never be logged into.
+pub async fn anonymize<'e>(executor: impl PgExecutor<'e>, id: Uuid) -> Result<Option<UserRow>> {
+    let row = sqlx::query_as::<_, UserRow>(
+        r#"
+        UPDATE users
+        SET email = 'deleted+' || id::text || '@anonymized.invalid',
+            username = NULL,
+            first_name = 'Deleted',
+            last_name = 'Player',
+            phone = NULL,
+            is_active = false,
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING id, email, username, first_name, last_name, phone, is_active, role, locale, created_at, updated_at
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(executor)
+    .await?;
+
+    Ok(row)
+}
+
 pub async fn reactivate<'e>(executor: impl PgExecutor<'e>, id: Uuid) -> Result<Option<UserRow>> {
     let row = sqlx::query_as::<_, UserRow>(
         r#"

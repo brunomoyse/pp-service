@@ -97,6 +97,18 @@ pub async fn revoke_family(pool: &PgPool, family_id: Uuid) -> Result<(), sqlx::E
     Ok(())
 }
 
+/// Revoke every refresh token belonging to a user (account deletion).
+pub async fn revoke_all_for_user(pool: &PgPool, user_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 pub async fn delete_expired(pool: &PgPool) -> Result<u64, sqlx::Error> {
     let result = sqlx::query("DELETE FROM refresh_tokens WHERE expires_at < now()")
         .execute(pool)

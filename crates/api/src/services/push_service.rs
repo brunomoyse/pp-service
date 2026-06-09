@@ -10,7 +10,7 @@ use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use infra::repos::device_tokens;
+use infra::repos::{device_tokens, notification_preferences};
 
 const EXPO_PUSH_URL: &str = "https://exp.host/--/api/v2/push/send";
 
@@ -110,6 +110,14 @@ async fn send_to_user_devices(
 /// Push an achievement-unlock alert to every device registered for `user_id`,
 /// localized per device. `data.code` lets the app deep-link to the achievement.
 pub async fn send_achievement_unlock(db: &PgPool, user_id: Uuid, code: &str, name_key: &str) {
+    // Respect the user's preference; a lookup failure fails open (send).
+    let prefs = notification_preferences::get_for_user(db, user_id)
+        .await
+        .unwrap_or_default();
+    if !prefs.achievements {
+        return;
+    }
+
     let data = json!({
         "type": "ACHIEVEMENT_UNLOCKED",
         "code": code,
@@ -122,6 +130,14 @@ pub async fn send_achievement_unlock(db: &PgPool, user_id: Uuid, code: &str, nam
 /// `event` is the wire-format notification type (e.g. "SEAT_ASSIGNED");
 /// `data.tournament_id` lets the app deep-link to the tournament screen.
 pub async fn send_seating_event(db: &PgPool, user_id: Uuid, event: &str, tournament_id: Uuid) {
+    // Respect the user's preference; a lookup failure fails open (send).
+    let prefs = notification_preferences::get_for_user(db, user_id)
+        .await
+        .unwrap_or_default();
+    if !prefs.seating_updates {
+        return;
+    }
+
     let data = json!({
         "type": event,
         "tournament_id": tournament_id,

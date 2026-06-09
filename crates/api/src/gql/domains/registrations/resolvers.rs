@@ -18,7 +18,7 @@ use crate::gql::types::{
 };
 use crate::state::AppState;
 use infra::repos::{
-    table_seat_assignments, tournament_registrations,
+    notification_preferences, table_seat_assignments, tournament_registrations,
     tournament_registrations::CreateTournamentRegistration, tournaments, users,
 };
 
@@ -277,7 +277,11 @@ impl RegistrationMutation {
             .await;
         });
 
-        // Publish notification
+        // Publish notification (respecting the user's preference; lookup
+        // failures fail open)
+        let prefs = notification_preferences::get_for_user(&state.db, user_id)
+            .await
+            .unwrap_or_default();
         if is_waitlisted {
             // Get waitlist position for the notification
             let position =
@@ -298,7 +302,9 @@ impl RegistrationMutation {
                 tournament_id: Some(ID::from(tournament_id.to_string())),
                 created_at: Utc::now(),
             };
-            publish_user_notification(notification);
+            if prefs.registration_updates {
+                publish_user_notification(notification);
+            }
         } else {
             let notification = UserNotification {
                 id: ID::from(Uuid::new_v4().to_string()),
@@ -309,7 +315,9 @@ impl RegistrationMutation {
                 tournament_id: Some(ID::from(tournament_id.to_string())),
                 created_at: Utc::now(),
             };
-            publish_user_notification(notification);
+            if prefs.registration_updates {
+                publish_user_notification(notification);
+            }
 
             // Send confirmation email (fire-and-forget)
             if let Some(email_service) = state.email_service() {
@@ -609,7 +617,12 @@ impl RegistrationMutation {
                             tournament_id: Some(ID::from(tournament_id.to_string())),
                             created_at: Utc::now(),
                         };
-                        publish_user_notification(notification);
+                        let prefs = notification_preferences::get_for_user(&state.db, promoted_uid)
+                            .await
+                            .unwrap_or_default();
+                        if prefs.registration_updates {
+                            publish_user_notification(notification);
+                        }
 
                         // Send waitlist promotion email (fire-and-forget)
                         if let Some(email_service) = state.email_service() {

@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::gql::subscriptions::publish_user_notification;
 use crate::gql::types::{NotificationType, UserNotification, TITLE_TOURNAMENT_STARTING};
 use crate::AppState;
-use infra::repos::{tournament_registrations, tournaments, users};
+use infra::repos::{notification_preferences, tournament_registrations, tournaments, users};
 
 const NOTIFICATION_WINDOW_MINUTES: i32 = 16; // Check for tournaments starting within 16 minutes
 const CHECK_INTERVAL_SECONDS: u64 = 60; // Check every minute
@@ -74,6 +74,13 @@ impl NotificationService {
                 let Some(user_id) = registration.user_id else {
                     continue;
                 };
+                // Respect the user's preference; a lookup failure fails open.
+                let prefs = notification_preferences::get_for_user(&self.state.db, user_id)
+                    .await
+                    .unwrap_or_default();
+                if !prefs.tournament_reminders {
+                    continue;
+                }
                 let notification = UserNotification {
                     id: ID::from(Uuid::new_v4().to_string()),
                     user_id: ID::from(user_id.to_string()),

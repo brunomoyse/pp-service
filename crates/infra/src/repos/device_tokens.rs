@@ -47,6 +47,16 @@ pub async fn delete_for_user(pool: &PgPool, user_id: Uuid, token: &str) -> Resul
     Ok(())
 }
 
+/// Remove every token registered to a user (account deletion).
+pub async fn delete_all_for_user(pool: &PgPool, user_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM device_tokens WHERE user_id = $1")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
 /// All registered devices for a user (one per device), with their locale.
 pub async fn list_for_user(pool: &PgPool, user_id: Uuid) -> Result<Vec<DeviceToken>, sqlx::Error> {
     let rows = sqlx::query("SELECT token, locale FROM device_tokens WHERE user_id = $1")

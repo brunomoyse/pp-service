@@ -505,16 +505,22 @@ impl SeatingMutation {
         };
         publish_seating_event(event);
 
-        // Tell the player their seat is ready (in-app now, push when backgrounded).
-        publish_user_notification(UserNotification {
-            id: ID::from(Uuid::new_v4().to_string()),
-            user_id: ID::from(user_id.to_string()),
-            notification_type: NotificationType::SeatAssigned,
-            title: TITLE_SEAT_ASSIGNED.to_string(),
-            message: format!("You have been assigned to seat {}", result.seat_number),
-            tournament_id: Some(ID::from(tournament_id.to_string())),
-            created_at: chrono::Utc::now(),
-        });
+        // Tell the player their seat is ready (in-app now, push when
+        // backgrounded); both respect the seating_updates preference.
+        let prefs = infra::repos::notification_preferences::get_for_user(&state.db, user_id)
+            .await
+            .unwrap_or_default();
+        if prefs.seating_updates {
+            publish_user_notification(UserNotification {
+                id: ID::from(Uuid::new_v4().to_string()),
+                user_id: ID::from(user_id.to_string()),
+                notification_type: NotificationType::SeatAssigned,
+                title: TITLE_SEAT_ASSIGNED.to_string(),
+                message: format!("You have been assigned to seat {}", result.seat_number),
+                tournament_id: Some(ID::from(tournament_id.to_string())),
+                created_at: chrono::Utc::now(),
+            });
+        }
         {
             let db = state.db.clone();
             tokio::spawn(async move {
@@ -623,16 +629,22 @@ impl SeatingMutation {
         };
         publish_seating_event(event);
 
-        // Tell the player they changed tables (in-app now, push when backgrounded).
-        publish_user_notification(UserNotification {
-            id: ID::from(Uuid::new_v4().to_string()),
-            user_id: ID::from(user_id.to_string()),
-            notification_type: NotificationType::PlayerMoved,
-            title: TITLE_PLAYER_MOVED.to_string(),
-            message: format!("You have been moved to seat {}", result.seat_number),
-            tournament_id: Some(ID::from(tournament_id.to_string())),
-            created_at: chrono::Utc::now(),
-        });
+        // Tell the player they changed tables (in-app now, push when
+        // backgrounded); both respect the seating_updates preference.
+        let prefs = infra::repos::notification_preferences::get_for_user(&state.db, user_id)
+            .await
+            .unwrap_or_default();
+        if prefs.seating_updates {
+            publish_user_notification(UserNotification {
+                id: ID::from(Uuid::new_v4().to_string()),
+                user_id: ID::from(user_id.to_string()),
+                notification_type: NotificationType::PlayerMoved,
+                title: TITLE_PLAYER_MOVED.to_string(),
+                message: format!("You have been moved to seat {}", result.seat_number),
+                tournament_id: Some(ID::from(tournament_id.to_string())),
+                created_at: chrono::Utc::now(),
+            });
+        }
         {
             let db = state.db.clone();
             tokio::spawn(async move {
@@ -890,16 +902,22 @@ impl SeatingMutation {
             };
             publish_seating_event(event);
 
-            // Tell the player they're out (in-app now, push when backgrounded).
-            publish_user_notification(UserNotification {
-                id: ID::from(Uuid::new_v4().to_string()),
-                user_id: ID::from(user_uuid.to_string()),
-                notification_type: NotificationType::PlayerEliminated,
-                title: TITLE_PLAYER_ELIMINATED.to_string(),
-                message: "You have been eliminated from the tournament".to_string(),
-                tournament_id: Some(ID::from(tournament_uuid.to_string())),
-                created_at: chrono::Utc::now(),
-            });
+            // Tell the player they're out (in-app now, push when
+            // backgrounded); both respect the seating_updates preference.
+            let prefs = infra::repos::notification_preferences::get_for_user(&state.db, user_uuid)
+                .await
+                .unwrap_or_default();
+            if prefs.seating_updates {
+                publish_user_notification(UserNotification {
+                    id: ID::from(Uuid::new_v4().to_string()),
+                    user_id: ID::from(user_uuid.to_string()),
+                    notification_type: NotificationType::PlayerEliminated,
+                    title: TITLE_PLAYER_ELIMINATED.to_string(),
+                    message: "You have been eliminated from the tournament".to_string(),
+                    tournament_id: Some(ID::from(tournament_uuid.to_string())),
+                    created_at: chrono::Utc::now(),
+                });
+            }
             {
                 let db = state.db.clone();
                 tokio::spawn(async move {
