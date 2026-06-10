@@ -1,7 +1,9 @@
 use async_graphql::{Context, Object, Result};
 use uuid::Uuid;
 
-use crate::gql::types::{Club, ClubTable};
+use super::service;
+use crate::gql::types::{Club, ClubTable, CompanyLookup, OnboardClubInput, OnboardClubPayload};
+use crate::services::vies;
 use crate::state::AppState;
 use infra::repos::{club_tables, clubs, table_seat_assignments, tournaments};
 
@@ -21,6 +23,19 @@ impl ClubQuery {
     async fn club_provinces(&self, ctx: &Context<'_>) -> Result<Vec<String>> {
         let state = ctx.data::<AppState>()?;
         Ok(clubs::list_provinces(&state.db).await?)
+    }
+
+    /// Verify a company by VAT number against the EU VIES registry. Used by the
+    /// self-serve onboarding form to confirm the company on blur and autofill
+    /// its name/address. `available: false` means VIES didn't answer (treat as
+    /// "couldn't verify", not "invalid"). Unauthenticated; onboarding is public.
+    async fn lookup_company(
+        &self,
+        _ctx: &Context<'_>,
+        country: String,
+        vat_number: String,
+    ) -> Result<CompanyLookup> {
+        Ok(vies::lookup(&country, &vat_number).await.into())
     }
 
     /// Get all tables for a club
@@ -77,5 +92,23 @@ impl ClubQuery {
                 updated_at: table_row.updated_at,
             })
             .collect())
+    }
+}
+
+#[derive(Default)]
+pub struct ClubMutation;
+
+#[Object]
+impl ClubMutation {
+    /// Self-serve onboarding: create the owner's account + their club in one
+    /// transaction and return a JWT so the client logs straight in.
+    /// Unauthenticated; this is the public signup entry point.
+    async fn onboard_club(
+        &self,
+        ctx: &Context<'_>,
+        input: OnboardClubInput,
+    ) -> Result<OnboardClubPayload> {
+        let state = ctx.data::<AppState>()?;
+        service::onboard_club(state, input).await
     }
 }

@@ -12,6 +12,9 @@ pub struct ClubRow {
     pub postal_code: Option<String>,
     pub province: Option<String>,
     pub country: Option<String>,
+    pub address: Option<String>,
+    pub vat_number: Option<String>,
+    pub needs_review: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

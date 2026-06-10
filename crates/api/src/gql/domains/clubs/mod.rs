@@ -1,4 +1,5 @@
 pub mod resolvers;
+pub mod service;
 pub mod types;
 
-pub use resolvers::ClubQuery;
+pub use resolvers::{ClubMutation, ClubQuery};
