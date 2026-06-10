@@ -1,4 +1,4 @@
-use sqlx::{PgExecutor, PgPool, Result};
+use sqlx::{PgExecutor, Result};
 use uuid::Uuid;
 
 use crate::models::TournamentPayoutRow;
@@ -39,32 +39,6 @@ pub async fn get_by_id<'e>(
     .await?;
 
     Ok(row)
-}
-
-pub async fn recalculate(
-    pool: &PgPool,
-    tournament_id: Uuid,
-) -> Result<Option<TournamentPayoutRow>> {
-    // Delete existing payout
-    sqlx::query("DELETE FROM tournament_payouts WHERE tournament_id = $1")
-        .bind(tournament_id)
-        .execute(pool)
-        .await?;
-
-    // Trigger recalculation by updating tournament status
-    sqlx::query(
-        r#"
-        UPDATE tournaments
-        SET live_status = 'in_progress', updated_at = NOW()
-        WHERE id = $1 AND live_status = 'in_progress'
-        "#,
-    )
-    .bind(tournament_id)
-    .execute(pool)
-    .await?;
-
-    // Return the new payout
-    get_by_tournament(pool, tournament_id).await
 }
 
 pub async fn update_positions<'e>(

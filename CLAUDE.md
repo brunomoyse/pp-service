@@ -34,8 +34,6 @@ This is a Cargo workspace with two crates:
   - Pagination helpers
   - Scoring calculations (`scoring.rs`)
 
-Note: `crates/telemetry/` and `crates/types/` directories exist but are empty stubs.
-
 ### Key Architectural Patterns
 
 1. **Repository Pattern**: All database operations are in `crates/infra/src/repos/`. Each repository takes a `PgPool` clone and provides CRUD + domain-specific queries.

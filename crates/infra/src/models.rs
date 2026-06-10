@@ -133,18 +133,6 @@ pub struct PlayerDealRow {
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
-pub struct TournamentTableRow {
-    pub id: Uuid,
-    pub tournament_id: Uuid,
-    pub table_number: i32,
-    pub max_seats: i32,
-    pub is_active: bool,
-    pub table_name: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct ClubTableRow {
     pub id: Uuid,
     pub club_id: Uuid,

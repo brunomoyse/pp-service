@@ -3,34 +3,9 @@ use sqlx::{PgExecutor, Result as SqlxResult};
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
-pub struct CreateClubTable {
-    pub club_id: Uuid,
-    pub table_number: i32,
-    pub max_seats: i32,
-}
-
-#[derive(Debug, Clone)]
 pub struct UpdateClubTable {
     pub max_seats: Option<i32>,
     pub is_active: Option<bool>,
-}
-
-pub async fn create<'e>(
-    executor: impl PgExecutor<'e>,
-    data: CreateClubTable,
-) -> SqlxResult<ClubTableRow> {
-    sqlx::query_as::<_, ClubTableRow>(
-        r#"
-        INSERT INTO club_tables (club_id, table_number, max_seats)
-        VALUES ($1, $2, $3)
-        RETURNING id, club_id, table_number, max_seats, is_active, created_at, updated_at
-        "#,
-    )
-    .bind(data.club_id)
-    .bind(data.table_number)
-    .bind(data.max_seats)
-    .fetch_one(executor)
-    .await
 }
 
 pub async fn get_by_id<'e>(
