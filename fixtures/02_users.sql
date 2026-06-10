@@ -3,8 +3,8 @@
 INSERT INTO users (id, email, username, first_name, last_name, phone, role, is_active, password_hash) VALUES
     -- Club Managers
     ('ffffffff-ffff-ffff-ffff-ffffffffffff', 'contact@brunomoyse.be', null, 'Bruno', 'Moyse', '+32477123456', 'manager', true, '$2b$12$/5HEs8VNRQjb9olil8qV2.7FpVXROsv4ZRhqhG6qlhGiTG8A/GK86'),
-    -- Global Admin
-    ('f0f0f0f0-f0f0-f0f0-f0f0-f0f0f0f0f0f0', 'admin@pocketpair.be', 'super_admin', 'Admin', 'Global', '+32477999999', 'admin', true, '$2b$12$/5HEs8VNRQjb9olil8qV2.7FpVXROsv4ZRhqhG6qlhGiTG8A/GK86'),
+    -- Global Admin (test login: moyse94@gmail.com / admin)
+    ('f0f0f0f0-f0f0-f0f0-f0f0-f0f0f0f0f0f0', 'moyse94@gmail.com', 'super_admin', 'Admin', 'Global', '+32477999999', 'admin', true, '$2b$12$YkLUdU.KpnCZ78RF3eOMxuDK3DahuGBxf9Q.fqY1oqAZLQovqdjA6'),
     -- Belgian Players
     ('30303030-3030-3030-3030-303030303030', 'damien@email.com', 'ace_killer', 'Damien', 'Hupé', '+32477567890', 'player', true, null),
     ('40404040-4040-4040-4040-404040404040', 'rico@email.com', 'poker_king', 'Rico', 'Chevalot', '+32477678901', 'player', true, null),
