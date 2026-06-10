@@ -36,7 +36,7 @@ impl From<LeaderboardPeriod> for infra::repos::tournament_results::LeaderboardPe
 #[derive(SimpleObject, Clone)]
 pub struct LeaderboardEntry {
     /// The club roster identity — always present (account-less players rank too).
-    pub registered_player_id: ID,
+    pub club_player_id: ID,
     /// Display name (roster name; works for account-less players).
     pub display_name: String,
     pub user: Option<User>, // Full user object, when the player has an account

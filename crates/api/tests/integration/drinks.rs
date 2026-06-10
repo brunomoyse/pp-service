@@ -197,7 +197,7 @@ async fn test_claim_card_does_not_move_balance() {
 
     // Bearer wallet with 4 credits, no owner.
     let (token, _cred, wallet) = activate_wallet(&app_state, club_id, manager_id, Some(4)).await;
-    assert!(wallet.registered_player_id.is_none());
+    assert!(wallet.club_player_id.is_none());
 
     let ledger_before = ledger_sum(&app_state, wallet.id).await;
     let entries_before = count_rows(
@@ -220,7 +220,7 @@ async fn test_claim_card_does_not_move_balance() {
 
     assert_eq!(outcome.wallet.balance, 4, "balance unchanged after claim");
     assert!(
-        outcome.wallet.registered_player_id.is_some(),
+        outcome.wallet.club_player_id.is_some(),
         "wallet now has an owner"
     );
 
@@ -229,13 +229,11 @@ async fn test_claim_card_does_not_move_balance() {
         .await
         .unwrap()
         .unwrap();
-    let roster = infra::repos::registered_players::get_by_id(
-        &app_state.db,
-        wallet.registered_player_id.unwrap(),
-    )
-    .await
-    .unwrap()
-    .unwrap();
+    let roster =
+        infra::repos::club_players::get_by_id(&app_state.db, wallet.club_player_id.unwrap())
+            .await
+            .unwrap()
+            .unwrap();
     assert_eq!(roster.app_user_id, Some(player_id));
     assert_eq!(ledger_sum(&app_state, wallet.id).await, ledger_before);
     assert_eq!(

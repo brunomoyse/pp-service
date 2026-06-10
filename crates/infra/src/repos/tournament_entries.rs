@@ -3,15 +3,15 @@ use uuid::Uuid;
 
 use crate::models::TournamentEntryRow;
 
-const COLS: &str = "id, tournament_id, user_id, registered_player_id, entry_type, amount_cents, chips_received, recorded_by, notes, created_at, updated_at";
+const COLS: &str = "id, tournament_id, user_id, club_player_id, entry_type, amount_cents, chips_received, recorded_by, notes, created_at, updated_at";
 
 #[derive(Debug, Clone, Default)]
 pub struct CreateTournamentEntry {
     pub tournament_id: Uuid,
     /// App user, when the player has an account. The link trigger stamps
-    /// whichever of user_id / registered_player_id is missing.
+    /// whichever of user_id / club_player_id is missing.
     pub user_id: Option<Uuid>,
-    pub registered_player_id: Option<Uuid>,
+    pub club_player_id: Option<Uuid>,
     pub entry_type: String,
     pub amount_cents: i32,
     pub chips_received: Option<i32>,
@@ -38,12 +38,12 @@ pub async fn create<'e>(
 ) -> Result<TournamentEntryRow> {
     let row = sqlx::query_as::<_, TournamentEntryRow>(&format!(
         "INSERT INTO tournament_entries \
-            (tournament_id, user_id, registered_player_id, entry_type, amount_cents, chips_received, recorded_by, notes) \
+            (tournament_id, user_id, club_player_id, entry_type, amount_cents, chips_received, recorded_by, notes) \
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING {COLS}"
     ))
     .bind(data.tournament_id)
     .bind(data.user_id)
-    .bind(data.registered_player_id)
+    .bind(data.club_player_id)
     .bind(data.entry_type)
     .bind(data.amount_cents)
     .bind(data.chips_received)
@@ -108,7 +108,7 @@ pub async fn get_stats<'e>(
         SELECT
             COUNT(*) as total_entries,
             COALESCE(SUM(e.amount_cents), 0) as total_amount_cents,
-            COUNT(DISTINCT e.registered_player_id) as unique_players,
+            COUNT(DISTINCT e.club_player_id) as unique_players,
             COUNT(*) FILTER (WHERE e.entry_type = 'initial') as initial_count,
             COUNT(*) FILTER (WHERE e.entry_type = 'rebuy') as rebuy_count,
             COUNT(*) FILTER (WHERE e.entry_type = 're_entry') as re_entry_count,
@@ -187,45 +187,45 @@ pub async fn apply_early_bird_bonus<'e>(
 pub async fn grant_level_two_bonus<'e>(
     executor: impl PgExecutor<'e>,
     tournament_id: Uuid,
-    registered_player_ids: &[Uuid],
+    club_player_ids: &[Uuid],
     bonus_chips: i32,
 ) -> Result<i64> {
-    if registered_player_ids.is_empty() {
+    if club_player_ids.is_empty() {
         return Ok(0);
     }
 
     let count = sqlx::query_scalar::<_, i64>(
         r#"
         WITH eligible AS (
-            SELECT reg.registered_player_id
+            SELECT reg.club_player_id
             FROM tournament_registrations reg
             WHERE reg.tournament_id = $1
-              AND reg.registered_player_id = ANY($2::uuid[])
+              AND reg.club_player_id = ANY($2::uuid[])
               AND reg.status = 'seated'
               AND reg.level_two_bonus_awarded = false
         ),
         ins AS (
             INSERT INTO tournament_entries
-                (tournament_id, registered_player_id, user_id, entry_type,
+                (tournament_id, club_player_id, user_id, entry_type,
                  amount_cents, chips_received, notes)
-            SELECT $1, e.registered_player_id, NULL, 'bonus', 0, $3,
+            SELECT $1, e.club_player_id, NULL, 'bonus', 0, $3,
                    'Level-2 early-bird bonus'
             FROM eligible e
-            RETURNING registered_player_id
+            RETURNING club_player_id
         ),
         upd AS (
             UPDATE tournament_registrations reg
             SET level_two_bonus_awarded = true, updated_at = NOW()
             FROM ins
             WHERE reg.tournament_id = $1
-              AND reg.registered_player_id = ins.registered_player_id
-            RETURNING reg.registered_player_id
+              AND reg.club_player_id = ins.club_player_id
+            RETURNING reg.club_player_id
         )
         SELECT COUNT(*) FROM upd
         "#,
     )
     .bind(tournament_id)
-    .bind(registered_player_ids)
+    .bind(club_player_ids)
     .bind(bonus_chips)
     .fetch_one(executor)
     .await?;

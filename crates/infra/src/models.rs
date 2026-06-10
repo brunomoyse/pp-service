@@ -84,7 +84,7 @@ pub struct TournamentRegistrationRow {
     pub id: Uuid,
     pub tournament_id: Uuid,
     pub user_id: Option<Uuid>,
-    pub registered_player_id: Uuid,
+    pub club_player_id: Uuid,
     pub registration_time: DateTime<Utc>,
     pub status: String,
     pub notes: Option<String>,
@@ -97,7 +97,7 @@ pub struct TournamentResultRow {
     pub id: Uuid,
     pub tournament_id: Uuid,
     pub user_id: Option<Uuid>,
-    pub registered_player_id: Uuid,
+    pub club_player_id: Uuid,
     pub final_position: i32,
     pub prize_cents: i32,
     pub points: i32,
@@ -174,7 +174,7 @@ pub struct TableSeatAssignmentRow {
     pub tournament_id: Uuid,
     pub club_table_id: Uuid,
     pub user_id: Option<Uuid>,
-    pub registered_player_id: Uuid,
+    pub club_player_id: Uuid,
     pub seat_number: i32,
     pub stack_size: Option<i32>,
     pub is_current: bool,
@@ -462,7 +462,7 @@ pub struct ProEntitlementRow {
 pub struct PlayerNoteRow {
     pub id: Uuid,
     pub author_app_user_id: Uuid,
-    pub subject_registered_player_id: Uuid,
+    pub subject_club_player_id: Uuid,
     pub body: String,
     pub style: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -488,11 +488,12 @@ pub struct ShowdownObservationRow {
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
-pub struct RegisteredPlayerRow {
+pub struct ClubPlayerRow {
     pub id: Uuid,
     pub club_id: Uuid,
     pub display_name: String,
     pub app_user_id: Option<Uuid>,
+    pub is_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -542,7 +543,7 @@ pub struct TournamentEntryRow {
     pub id: Uuid,
     pub tournament_id: Uuid,
     pub user_id: Option<Uuid>,
-    pub registered_player_id: Uuid,
+    pub club_player_id: Uuid,
     pub entry_type: String,
     pub amount_cents: i32,
     pub chips_received: Option<i32>,
@@ -575,12 +576,12 @@ pub struct BarStationRow {
     pub updated_at: DateTime<Utc>,
 }
 
-/// A drink wallet. `registered_player_id` is None for a bearer (anonymous) wallet.
+/// A drink wallet. `club_player_id` is None for a bearer (anonymous) wallet.
 /// `balance` caches SUM(delta) of the wallet's ledger entries.
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct DrinkWalletRow {
     pub id: Uuid,
-    pub registered_player_id: Option<Uuid>,
+    pub club_player_id: Option<Uuid>,
     pub club_id: Uuid,
     pub balance: i32,
     pub created_at: DateTime<Utc>,

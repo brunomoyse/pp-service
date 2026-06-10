@@ -37,7 +37,7 @@ pub struct DrinkWallet {
     pub id: ID,
     pub club_id: ID,
     /// None for a bearer (anonymous) wallet.
-    pub registered_player_id: Option<ID>,
+    pub club_player_id: Option<ID>,
     /// Server-authoritative cached balance (= SUM of ledger deltas).
     pub balance: i32,
     pub created_at: DateTime<Utc>,
@@ -48,7 +48,7 @@ impl From<DrinkWalletRow> for DrinkWallet {
         Self {
             id: row.id.into(),
             club_id: row.club_id.into(),
-            registered_player_id: row.registered_player_id.map(Into::into),
+            club_player_id: row.club_player_id.map(Into::into),
             balance: row.balance,
             created_at: row.created_at,
         }

@@ -8,7 +8,7 @@ use crate::state::AppState;
 /// not they are an onboarded app user. `app_user_id` is set once claimed.
 #[derive(SimpleObject, Clone, Debug)]
 #[graphql(complex)]
-pub struct RegisteredPlayer {
+pub struct ClubPlayer {
     pub id: ID,
     pub club_id: ID,
     pub display_name: String,
@@ -16,10 +16,13 @@ pub struct RegisteredPlayer {
     pub app_user_id: Option<ID>,
     /// Whether this roster entry is linked to an onboarded app user.
     pub is_claimed: bool,
+    /// Whether this roster entry is active. Archived entries (`false`) are
+    /// hidden from the roster but keep their historical references.
+    pub is_active: bool,
 }
 
-impl From<infra::models::RegisteredPlayerRow> for RegisteredPlayer {
-    fn from(row: infra::models::RegisteredPlayerRow) -> Self {
+impl From<infra::models::ClubPlayerRow> for ClubPlayer {
+    fn from(row: infra::models::ClubPlayerRow) -> Self {
         let is_claimed = row.app_user_id.is_some();
         Self {
             id: row.id.into(),
@@ -27,12 +30,13 @@ impl From<infra::models::RegisteredPlayerRow> for RegisteredPlayer {
             display_name: row.display_name,
             app_user_id: row.app_user_id.map(Into::into),
             is_claimed,
+            is_active: row.is_active,
         }
     }
 }
 
 #[ComplexObject]
-impl RegisteredPlayer {
+impl ClubPlayer {
     /// The club this roster entry belongs to.
     async fn club(&self, ctx: &Context<'_>) -> async_graphql::Result<Option<Club>> {
         let state = ctx.data::<AppState>()?;
@@ -44,13 +48,73 @@ impl RegisteredPlayer {
 
 /// Manager input to add a person who is not (yet) an app user to the roster.
 #[derive(InputObject)]
-pub struct CreateRegisteredPlayerInput {
+pub struct CreateClubPlayerInput {
     pub club_id: ID,
     pub display_name: String,
 }
 
 /// Player input to claim an unclaimed roster entry as their own.
 #[derive(InputObject)]
-pub struct ClaimRegisteredPlayerInput {
-    pub registered_player_id: ID,
+pub struct ClaimClubPlayerInput {
+    pub club_player_id: ID,
+}
+
+/// Manager input to rename a roster entry.
+#[derive(InputObject)]
+pub struct UpdateClubPlayerInput {
+    pub id: ID,
+    pub display_name: String,
+}
+
+/// Manager input to archive (soft-delete) or restore a roster entry.
+#[derive(InputObject)]
+pub struct ArchiveClubPlayerInput {
+    pub id: ID,
+    /// `false` archives the entry; `true` restores it. Defaults to archive.
+    #[graphql(default = false)]
+    pub is_active: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Bulk import (Excel/CSV) — AI formatting + bulk roster creation.
+// ---------------------------------------------------------------------------
+
+/// One parsed spreadsheet row, normalized by the AI into a clean display name.
+#[derive(SimpleObject, Clone, Debug)]
+pub struct ImportCandidate {
+    /// Index of the originating row in the submitted `rows` array.
+    pub source_row_index: i32,
+    /// The cleaned, ready-to-import player display name.
+    pub display_name: String,
+}
+
+/// Manager input: the parsed spreadsheet to normalize via AI.
+#[derive(InputObject)]
+pub struct FormatRosterImportInput {
+    pub club_id: ID,
+    /// Column headers from the spreadsheet (first row).
+    pub headers: Vec<String>,
+    /// Data rows; each inner vec aligns positionally with `headers`.
+    pub rows: Vec<Vec<String>>,
+}
+
+/// Manager input: the confirmed names to insert into the roster.
+#[derive(InputObject)]
+pub struct CreateClubPlayersBulkInput {
+    pub club_id: ID,
+    pub display_names: Vec<String>,
+}
+
+/// A row that was not inserted during a bulk import, with the reason.
+#[derive(SimpleObject, Clone, Debug)]
+pub struct SkippedRow {
+    pub display_name: String,
+    pub reason: String,
+}
+
+/// Outcome of a bulk roster import.
+#[derive(SimpleObject, Clone, Debug)]
+pub struct BulkRosterResult {
+    pub created: Vec<ClubPlayer>,
+    pub skipped: Vec<SkippedRow>,
 }

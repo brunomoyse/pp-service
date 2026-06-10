@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::gql::domains::users::types::User;
 use crate::gql::error::ResultExt;
-use crate::gql::loaders::{RegisteredPlayerLoader, UserLoader};
+use crate::gql::loaders::{ClubPlayerLoader, UserLoader};
 use crate::gql::types::Tournament;
 
 #[derive(SimpleObject, Clone)]
@@ -16,7 +16,7 @@ pub struct TournamentResult {
     /// The app user, when this player has an account. Null for account-less players.
     pub user_id: Option<ID>,
     /// The club roster identity — always present.
-    pub registered_player_id: ID,
+    pub club_player_id: ID,
     pub final_position: i32,
     pub prize_cents: i32,
     pub points: i32,
@@ -30,7 +30,7 @@ impl From<infra::models::TournamentResultRow> for TournamentResult {
             id: row.id.into(),
             tournament_id: row.tournament_id.into(),
             user_id: row.user_id.map(Into::into),
-            registered_player_id: row.registered_player_id.into(),
+            club_player_id: row.club_player_id.into(),
             final_position: row.final_position,
             prize_cents: row.prize_cents,
             points: row.points,
@@ -44,9 +44,8 @@ impl From<infra::models::TournamentResultRow> for TournamentResult {
 impl TournamentResult {
     /// The player's display name (roster name; works for account-less players).
     async fn display_name(&self, ctx: &Context<'_>) -> async_graphql::Result<String> {
-        let rp_id =
-            Uuid::parse_str(self.registered_player_id.as_str()).gql_err("Invalid roster ID")?;
-        let loader = ctx.data::<DataLoader<RegisteredPlayerLoader>>()?;
+        let rp_id = Uuid::parse_str(self.club_player_id.as_str()).gql_err("Invalid roster ID")?;
+        let loader = ctx.data::<DataLoader<ClubPlayerLoader>>()?;
         Ok(loader
             .load_one(rp_id)
             .await

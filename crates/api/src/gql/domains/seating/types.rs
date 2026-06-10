@@ -35,7 +35,7 @@ pub struct SeatAssignment {
     /// The app user, when this player has an account. Null for account-less players.
     pub user_id: Option<ID>,
     /// The club roster identity — always present.
-    pub registered_player_id: ID,
+    pub club_player_id: ID,
     pub seat_number: i32,
     pub stack_size: Option<i32>,
     pub is_current: bool,
@@ -52,7 +52,7 @@ impl From<infra::models::TableSeatAssignmentRow> for SeatAssignment {
             tournament_id: row.tournament_id.into(),
             club_table_id: row.club_table_id.into(),
             user_id: row.user_id.map(Into::into),
-            registered_player_id: row.registered_player_id.into(),
+            club_player_id: row.club_player_id.into(),
             seat_number: row.seat_number,
             stack_size: row.stack_size,
             is_current: row.is_current,
@@ -82,7 +82,7 @@ pub struct SeatWithPlayer {
 /// A player who is registered/checked-in but not currently seated.
 #[derive(SimpleObject, Clone)]
 pub struct UnseatedPlayer {
-    pub registered_player_id: ID,
+    pub club_player_id: ID,
     pub display_name: String,
     pub user: Option<User>,
 }

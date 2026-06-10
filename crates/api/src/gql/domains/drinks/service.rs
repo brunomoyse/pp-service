@@ -12,8 +12,8 @@ use uuid::Uuid;
 
 use infra::models::{DrinkLedgerEntryRow, DrinkRedemptionRow, DrinkWalletRow};
 use infra::repos::{
-    bar_stations, drink_ledger, drink_ledger::NewLedgerEntry, drink_redemptions,
-    drink_wallet_credentials, drink_wallets, registered_players,
+    bar_stations, club_players, drink_ledger, drink_ledger::NewLedgerEntry, drink_redemptions,
+    drink_wallet_credentials, drink_wallets,
 };
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
@@ -300,16 +300,16 @@ pub async fn activate_printed_card(
         .ok_or("Card not found or already activated")?;
 
     // Optionally create a roster person to make this a named wallet.
-    let registered_player_id = match params.display_name.as_deref().map(str::trim) {
+    let club_player_id = match params.display_name.as_deref().map(str::trim) {
         Some(name) if !name.is_empty() => Some(
-            registered_players::create(&mut *tx, params.club_id, name, None)
+            club_players::create(&mut *tx, params.club_id, name, None)
                 .await?
                 .id,
         ),
         _ => None,
     };
 
-    let wallet = drink_wallets::create(&mut *tx, params.club_id, registered_player_id).await?;
+    let wallet = drink_wallets::create(&mut *tx, params.club_id, club_player_id).await?;
     drink_wallet_credentials::bind_to_wallet(&mut *tx, credential.id, wallet.id).await?;
 
     if let Some(amount) = params.initial_top_up {
@@ -377,9 +377,9 @@ pub async fn claim_card(
         .await?
         .ok_or("Wallet not found")?;
 
-    let message = match wallet.registered_player_id {
+    let message = match wallet.club_player_id {
         Some(rp_id) => {
-            let roster = registered_players::get_by_id(&mut *tx, rp_id)
+            let roster = club_players::get_by_id(&mut *tx, rp_id)
                 .await?
                 .ok_or("Roster entry missing")?;
             match roster.app_user_id {
@@ -390,7 +390,7 @@ pub async fn claim_card(
                     return Err("This card is already owned by another account".into());
                 }
                 None => {
-                    registered_players::claim(&mut *tx, rp_id, params.app_user_id)
+                    club_players::claim(&mut *tx, rp_id, params.app_user_id)
                         .await?
                         .ok_or("Failed to claim roster entry")?;
                     "Card linked to your account".to_string()
@@ -400,7 +400,7 @@ pub async fn claim_card(
         None => {
             // Bearer card: find or create the caller's roster entry in this club, then
             // bind the wallet to it.
-            let roster = match registered_players::find_by_club_and_app_user(
+            let roster = match club_players::find_by_club_and_app_user(
                 &mut *tx,
                 wallet.club_id,
                 params.app_user_id,
@@ -409,7 +409,7 @@ pub async fn claim_card(
             {
                 Some(rp) => rp,
                 None => {
-                    registered_players::create(
+                    club_players::create(
                         &mut *tx,
                         wallet.club_id,
                         &params.display_name,
@@ -421,9 +421,7 @@ pub async fn claim_card(
 
             // The genuine two-wallet case (Phase 3 merge) is out of scope: refuse
             // rather than silently stranding a balance.
-            if let Some(existing) =
-                drink_wallets::find_by_registered_player(&mut *tx, roster.id).await?
-            {
+            if let Some(existing) = drink_wallets::find_by_club_player(&mut *tx, roster.id).await? {
                 if existing.id != wallet.id {
                     return Err(
                         "You already have a drink wallet at this club; merging wallets is not supported yet"

@@ -18,7 +18,7 @@ pub use crate::gql::domains::clubs::types::{
 
 // Identity / roster types
 pub use crate::gql::domains::identity::types::{
-    ClaimRegisteredPlayerInput, CreateRegisteredPlayerInput, RegisteredPlayer,
+    ClaimClubPlayerInput, ClubPlayer, CreateClubPlayerInput,
 };
 
 // Notes types

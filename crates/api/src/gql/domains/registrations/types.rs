@@ -7,7 +7,7 @@ use crate::gql::domains::seating::types::SeatAssignment;
 use crate::gql::domains::tournaments::types::Tournament;
 use crate::gql::domains::users::types::User;
 use crate::gql::error::ResultExt;
-use crate::gql::loaders::{RegisteredPlayerLoader, TournamentLoader, UserLoader};
+use crate::gql::loaders::{ClubPlayerLoader, TournamentLoader, UserLoader};
 use crate::state::AppState;
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
@@ -79,7 +79,7 @@ pub struct TournamentRegistration {
     /// The app user, when this player has an account. Null for account-less players.
     pub user_id: Option<ID>,
     /// The club roster identity — always present.
-    pub registered_player_id: ID,
+    pub club_player_id: ID,
     pub registration_time: DateTime<Utc>,
     pub status: RegistrationStatus,
     pub notes: Option<String>,
@@ -91,7 +91,7 @@ impl From<infra::models::TournamentRegistrationRow> for TournamentRegistration {
             id: row.id.into(),
             tournament_id: row.tournament_id.into(),
             user_id: row.user_id.map(Into::into),
-            registered_player_id: row.registered_player_id.into(),
+            club_player_id: row.club_player_id.into(),
             registration_time: row.registration_time,
             status: row.status.into(),
             notes: row.notes,
@@ -121,9 +121,8 @@ impl TournamentRegistration {
 
     /// The player's display name (roster name; works for account-less players).
     async fn display_name(&self, ctx: &Context<'_>) -> async_graphql::Result<String> {
-        let rp_id =
-            Uuid::parse_str(self.registered_player_id.as_str()).gql_err("Invalid roster ID")?;
-        let loader = ctx.data::<DataLoader<RegisteredPlayerLoader>>()?;
+        let rp_id = Uuid::parse_str(self.club_player_id.as_str()).gql_err("Invalid roster ID")?;
+        let loader = ctx.data::<DataLoader<ClubPlayerLoader>>()?;
         Ok(loader
             .load_one(rp_id)
             .await
@@ -157,13 +156,13 @@ impl TournamentRegistration {
         let state = ctx.data::<AppState>()?;
         let tournament_id =
             Uuid::parse_str(self.tournament_id.as_str()).gql_err("Invalid tournament ID")?;
-        let registered_player_id =
-            Uuid::parse_str(self.registered_player_id.as_str()).gql_err("Invalid roster ID")?;
+        let club_player_id =
+            Uuid::parse_str(self.club_player_id.as_str()).gql_err("Invalid roster ID")?;
 
         let position = infra::repos::tournament_registrations::get_waitlist_position(
             &state.db,
             tournament_id,
-            registered_player_id,
+            club_player_id,
         )
         .await
         .gql_err("Failed to get waitlist position")?;
@@ -200,7 +199,7 @@ pub struct RegisterForTournamentInput {
 #[derive(InputObject)]
 pub struct RegisterRosterPlayerInput {
     pub tournament_id: ID,
-    pub registered_player_id: ID,
+    pub club_player_id: ID,
     pub notes: Option<String>,
 }
 

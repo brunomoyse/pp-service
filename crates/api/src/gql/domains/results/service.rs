@@ -101,7 +101,7 @@ pub async fn enter_tournament_results(
         let result_data = CreateTournamentResult {
             tournament_id: params.tournament_id,
             user_id: Some(user_id),
-            registered_player_id: None,
+            club_player_id: None,
             final_position: position_input.final_position,
             prize_cents: *payout_amount,
             notes: None,

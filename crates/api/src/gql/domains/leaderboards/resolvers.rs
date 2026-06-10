@@ -58,7 +58,7 @@ impl LeaderboardQuery {
             .into_iter()
             .enumerate()
             .map(|(index, entry)| LeaderboardEntry {
-                registered_player_id: entry.registered_player_id.into(),
+                club_player_id: entry.club_player_id.into(),
                 display_name: entry.display_name.clone(),
                 // Attach the app user only when this roster player has an account.
                 user: entry.user_id.map(|uid| User {

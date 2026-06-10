@@ -77,6 +77,9 @@ pub struct UserMutation;
 
 #[Object]
 impl UserMutation {
+    #[graphql(
+        deprecation = "Managers create club roster entries via createClubPlayer, not app users. App users self-onboard and claim their roster entry."
+    )]
     async fn create_player(&self, ctx: &Context<'_>, input: CreatePlayerInput) -> Result<User> {
         use crate::auth::permissions::require_club_manager;
 
@@ -112,6 +115,9 @@ impl UserMutation {
     }
 
     /// Update an existing player (managers only)
+    #[graphql(
+        deprecation = "Roster entries are renamed via updateClubPlayer; app users manage their own profile."
+    )]
     async fn update_player(&self, ctx: &Context<'_>, input: UpdatePlayerInput) -> Result<User> {
         use crate::auth::permissions::require_role;
 
@@ -162,6 +168,9 @@ impl UserMutation {
     }
 
     /// Deactivate a player (soft delete) - managers only
+    #[graphql(
+        deprecation = "Managers archive roster entries via archiveClubPlayer; this acts on app-user accounts."
+    )]
     async fn deactivate_player(&self, ctx: &Context<'_>, id: ID) -> Result<User> {
         use crate::auth::permissions::require_role;
 

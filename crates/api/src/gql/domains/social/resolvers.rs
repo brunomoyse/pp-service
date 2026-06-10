@@ -216,7 +216,7 @@ impl SocialMutation {
         let create_data = infra::repos::tournament_registrations::CreateTournamentRegistration {
             tournament_id: tournament_uuid,
             user_id: Some(friend_id),
-            registered_player_id: None,
+            club_player_id: None,
             notes: Some("Registered by a friend".to_string()),
             status: None,
         };

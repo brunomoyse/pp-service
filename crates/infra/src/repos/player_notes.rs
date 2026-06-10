@@ -28,20 +28,20 @@ pub struct FieldNoteRow {
 }
 
 const NOTE_COLS: &str =
-    "id, author_app_user_id, subject_registered_player_id, body, style, created_at, updated_at";
+    "id, author_app_user_id, subject_club_player_id, body, style, created_at, updated_at";
 
 /// The author's note on a specific subject, if one exists.
 pub async fn get_for_subject<'e>(
     executor: impl PgExecutor<'e>,
     author_app_user_id: Uuid,
-    subject_registered_player_id: Uuid,
+    subject_club_player_id: Uuid,
 ) -> SqlxResult<Option<PlayerNoteRow>> {
     sqlx::query_as::<_, PlayerNoteRow>(&format!(
         "SELECT {NOTE_COLS} FROM player_note \
-         WHERE author_app_user_id = $1 AND subject_registered_player_id = $2"
+         WHERE author_app_user_id = $1 AND subject_club_player_id = $2"
     ))
     .bind(author_app_user_id)
-    .bind(subject_registered_player_id)
+    .bind(subject_club_player_id)
     .fetch_optional(executor)
     .await
 }
@@ -89,19 +89,19 @@ pub async fn count_subjects_for_author<'e>(
 pub async fn upsert<'e>(
     executor: impl PgExecutor<'e>,
     author_app_user_id: Uuid,
-    subject_registered_player_id: Uuid,
+    subject_club_player_id: Uuid,
     body: &str,
     style: Option<&str>,
 ) -> SqlxResult<PlayerNoteRow> {
     sqlx::query_as::<_, PlayerNoteRow>(&format!(
-        "INSERT INTO player_note (author_app_user_id, subject_registered_player_id, body, style) \
+        "INSERT INTO player_note (author_app_user_id, subject_club_player_id, body, style) \
          VALUES ($1, $2, $3, $4) \
-         ON CONFLICT (author_app_user_id, subject_registered_player_id) DO UPDATE SET \
+         ON CONFLICT (author_app_user_id, subject_club_player_id) DO UPDATE SET \
             body = EXCLUDED.body, style = EXCLUDED.style, updated_at = NOW() \
          RETURNING {NOTE_COLS}"
     ))
     .bind(author_app_user_id)
-    .bind(subject_registered_player_id)
+    .bind(subject_club_player_id)
     .bind(body)
     .bind(style)
     .fetch_one(executor)
@@ -219,9 +219,9 @@ pub async fn field_with_notes<'e>(
             pn.id AS pn_id, pn.body AS pn_body, pn.style AS pn_style, \
             pn.created_at AS pn_created_at, pn.updated_at AS pn_updated_at \
          FROM tournament_registrations reg \
-         JOIN registered_player rp ON rp.id = reg.registered_player_id \
+         JOIN club_player rp ON rp.id = reg.club_player_id \
          LEFT JOIN player_note pn \
-            ON pn.subject_registered_player_id = rp.id AND pn.author_app_user_id = $2 \
+            ON pn.subject_club_player_id = rp.id AND pn.author_app_user_id = $2 \
          WHERE reg.tournament_id = $1 \
            AND reg.status NOT IN ('cancelled', 'no_show') \
            AND rp.app_user_id IS DISTINCT FROM $2 \

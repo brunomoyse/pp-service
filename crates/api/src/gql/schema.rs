@@ -4,7 +4,7 @@ use async_graphql::dataloader::DataLoader;
 use async_graphql::Schema;
 
 use super::loaders::{
-    ClubLoader, DrinkLedgerLoader, DrinkWalletLoader, RegisteredPlayerLoader, TournamentLoader,
+    ClubLoader, ClubPlayerLoader, DrinkLedgerLoader, DrinkWalletLoader, TournamentLoader,
     UserLoader,
 };
 use super::{MutationRoot, QueryRoot, SubscriptionRoot};
@@ -15,8 +15,7 @@ pub fn build_schema(state: AppState) -> Schema<QueryRoot, MutationRoot, Subscrip
     let club_loader = DataLoader::new(ClubLoader::new(state.db.clone()), tokio::spawn);
     let user_loader = DataLoader::new(UserLoader::new(state.db.clone()), tokio::spawn);
     let tournament_loader = DataLoader::new(TournamentLoader::new(state.db.clone()), tokio::spawn);
-    let registered_player_loader =
-        DataLoader::new(RegisteredPlayerLoader::new(state.db.clone()), tokio::spawn);
+    let club_player_loader = DataLoader::new(ClubPlayerLoader::new(state.db.clone()), tokio::spawn);
     let drink_wallet_loader =
         DataLoader::new(DrinkWalletLoader::new(state.db.clone()), tokio::spawn);
     let drink_ledger_loader =
@@ -48,7 +47,7 @@ pub fn build_schema(state: AppState) -> Schema<QueryRoot, MutationRoot, Subscrip
     .data(club_loader)
     .data(user_loader)
     .data(tournament_loader)
-    .data(registered_player_loader)
+    .data(club_player_loader)
     .data(drink_wallet_loader)
     .data(drink_ledger_loader)
     .limit_depth(depth_limit)

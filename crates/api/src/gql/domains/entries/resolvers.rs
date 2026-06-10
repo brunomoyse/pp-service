@@ -89,7 +89,7 @@ impl EntryMutation {
         let create_data = CreateTournamentEntry {
             tournament_id,
             user_id: Some(user_id),
-            registered_player_id: None,
+            club_player_id: None,
             entry_type: String::from(input.entry_type),
             amount_cents,
             chips_received: input.chips_received,
@@ -106,7 +106,7 @@ impl EntryMutation {
             let voucher_data = CreateTournamentEntry {
                 tournament_id,
                 user_id: entry_row.user_id,
-                registered_player_id: Some(entry_row.registered_player_id),
+                club_player_id: Some(entry_row.club_player_id),
                 entry_type: "voucher".to_string(),
                 amount_cents: tournament.voucher_value_cents,
                 chips_received: None,
@@ -144,7 +144,7 @@ impl EntryMutation {
         &self,
         ctx: &Context<'_>,
         tournament_id: ID,
-        registered_player_ids: Vec<ID>,
+        club_player_ids: Vec<ID>,
     ) -> Result<i32> {
         use crate::auth::permissions::require_club_manager;
 
@@ -161,9 +161,9 @@ impl EntryMutation {
             async_graphql::Error::new("This tournament has no level-2 bonus configured")
         })?;
 
-        let rp_ids: Vec<Uuid> = registered_player_ids
+        let rp_ids: Vec<Uuid> = club_player_ids
             .iter()
-            .map(|id| Uuid::parse_str(id.as_str()).gql_err("Invalid registered player ID"))
+            .map(|id| Uuid::parse_str(id.as_str()).gql_err("Invalid club player ID"))
             .collect::<Result<Vec<_>>>()?;
 
         let awarded = tournament_entries::grant_level_two_bonus(

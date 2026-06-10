@@ -98,7 +98,7 @@ impl From<infra::models::ShowdownObservationRow> for ShowdownObservation {
 #[graphql(complex)]
 pub struct PlayerNote {
     pub id: ID,
-    pub subject_registered_player_id: ID,
+    pub subject_club_player_id: ID,
     pub body: String,
     pub style: Option<PlayerStyle>,
     pub created_at: DateTime<Utc>,
@@ -109,7 +109,7 @@ impl From<infra::models::PlayerNoteRow> for PlayerNote {
     fn from(r: infra::models::PlayerNoteRow) -> Self {
         Self {
             id: r.id.into(),
-            subject_registered_player_id: r.subject_registered_player_id.into(),
+            subject_club_player_id: r.subject_club_player_id.into(),
             body: r.body,
             style: r.style.as_deref().and_then(PlayerStyle::from_db),
             created_at: r.created_at,
@@ -124,11 +124,11 @@ impl PlayerNote {
     async fn subject(
         &self,
         ctx: &Context<'_>,
-    ) -> async_graphql::Result<Option<crate::gql::domains::identity::types::RegisteredPlayer>> {
+    ) -> async_graphql::Result<Option<crate::gql::domains::identity::types::ClubPlayer>> {
         let state = ctx.data::<AppState>()?;
-        let subject_id = uuid::Uuid::parse_str(self.subject_registered_player_id.as_str())?;
-        let row = infra::repos::registered_players::get_by_id(&state.db, subject_id).await?;
-        Ok(row.map(crate::gql::domains::identity::types::RegisteredPlayer::from))
+        let subject_id = uuid::Uuid::parse_str(self.subject_club_player_id.as_str())?;
+        let row = infra::repos::club_players::get_by_id(&state.db, subject_id).await?;
+        Ok(row.map(crate::gql::domains::identity::types::ClubPlayer::from))
     }
 
     async fn tags(&self, ctx: &Context<'_>) -> async_graphql::Result<Vec<PlayerNoteTag>> {
@@ -153,13 +153,13 @@ impl PlayerNote {
 /// The pre-game-prep payload: surface who's registered and what you know on them.
 #[derive(SimpleObject, Clone, Debug)]
 pub struct FieldPlayerNote {
-    pub registered_player: crate::gql::domains::identity::types::RegisteredPlayer,
+    pub club_player: crate::gql::domains::identity::types::ClubPlayer,
     pub note: Option<PlayerNote>,
 }
 
 #[derive(InputObject)]
 pub struct UpsertPlayerNoteInput {
-    pub subject_registered_player_id: ID,
+    pub subject_club_player_id: ID,
     pub body: Option<String>,
     pub style: Option<PlayerStyle>,
 }

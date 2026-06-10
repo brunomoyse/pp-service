@@ -16,8 +16,8 @@
 --   tournaments     d0000000-...-0000000000NN
 --   club tables     e0000000-...-0000000000NN
 --   payout tmpl     f0000000-...-0000000000NN
--- The link_registered_player() trigger stamps user_id from the roster, so child
--- rows (registrations/entries/results/seats) only ever supply registered_player_id.
+-- The link_club_player() trigger stamps user_id from the roster, so child
+-- rows (registrations/entries/results/seats) only ever supply club_player_id.
 -- ============================================================================
 
 BEGIN;
@@ -37,7 +37,7 @@ TRUNCATE
     player_note_tag, player_note, friendship, user_privacy_settings,
     prediction_entry, prediction_point_ledger, player_achievements,
     user_cosmetic, season_pass, quest_completion, season, pro_entitlement,
-    club_managers, registered_player, tournaments, payout_templates, users
+    club_managers, club_player, tournaments, payout_templates, users
     RESTART IDENTITY CASCADE;
 -- Remove clubs with a row-level DELETE (NOT truncate-cascade, which would wipe the
 -- global cosmetic_item catalog via its club_id FK). Children are already empty.
@@ -77,7 +77,7 @@ INSERT INTO users (id, email, username, first_name, last_name, role, locale, pas
 
 -- Roster entries for the app users (app_user_id links the account to the roster).
 -- The roster id mirrors the user id with a 'b' prefix instead of 'a'.
-INSERT INTO registered_player (id, club_id, display_name, app_user_id)
+INSERT INTO club_player (id, club_id, display_name, app_user_id)
 SELECT ('b' || substr(u.id::text, 2))::uuid,
        '11111111-1111-1111-1111-111111111111',
        u.first_name || ' ' || u.last_name,
@@ -91,7 +91,7 @@ INSERT INTO club_managers (club_id, user_id) VALUES
 -- ---------------------------------------------------------------------------
 -- 4. Account-less roster players (31) — real club members without an app account
 -- ---------------------------------------------------------------------------
-INSERT INTO registered_player (id, club_id, display_name, app_user_id)
+INSERT INTO club_player (id, club_id, display_name, app_user_id)
 SELECT ('b0000000-0000-0000-0000-0000000001' || lpad(n::text, 2, '0'))::uuid,
        '11111111-1111-1111-1111-111111111111',
        (ARRAY['Marc','Sophie','Thomas','Julie','Nicolas','Laura','Pierre','Emma','Olivier','Chloé',
@@ -155,7 +155,7 @@ BEGIN
         FOR rec IN
             SELECT rp.id AS rp_id,
                    row_number() OVER (ORDER BY md5(rp.id::text || v_tid::text)) AS rn
-            FROM registered_player rp
+            FROM club_player rp
             WHERE rp.club_id = v_club
             ORDER BY rn
             LIMIT v_field
@@ -163,13 +163,13 @@ BEGIN
             v_rp  := rec.rp_id;
             v_pos := rec.rn;  -- finishing position 1..N (deterministic but arbitrary)
 
-            INSERT INTO tournament_registrations (tournament_id, registered_player_id, status, registration_time)
+            INSERT INTO tournament_registrations (tournament_id, club_player_id, status, registration_time)
             VALUES (v_tid, v_rp, 'busted', fin_dates[i] + time '19:00');
 
             -- Buy-in + mandatory voucher entries.
-            INSERT INTO tournament_entries (tournament_id, registered_player_id, entry_type, amount_cents, chips_received)
+            INSERT INTO tournament_entries (tournament_id, club_player_id, entry_type, amount_cents, chips_received)
             VALUES (v_tid, v_rp, 'initial', 2500, 20000);
-            INSERT INTO tournament_entries (tournament_id, registered_player_id, entry_type, amount_cents, chips_received)
+            INSERT INTO tournament_entries (tournament_id, club_player_id, entry_type, amount_cents, chips_received)
             VALUES (v_tid, v_rp, 'voucher', 1000, NULL);
 
             -- Prize for the top 5; 0 otherwise.
@@ -179,7 +179,7 @@ BEGIN
                 v_prize := 0;
             END IF;
 
-            INSERT INTO tournament_results (tournament_id, registered_player_id, final_position, prize_cents)
+            INSERT INTO tournament_results (tournament_id, club_player_id, final_position, prize_cents)
             VALUES (v_tid, v_rp, v_pos, v_prize);
         END LOOP;
 
@@ -221,21 +221,21 @@ BEGIN
     FOR rec IN
         SELECT rp.id AS rp_id, rp.app_user_id,
                row_number() OVER (ORDER BY md5(rp.id::text || v_t1::text)) AS rn
-        FROM registered_player rp WHERE rp.club_id = v_club
+        FROM club_player rp WHERE rp.club_id = v_club
         ORDER BY rn LIMIT 28
     LOOP
         v_rp := rec.rp_id;
         n := n + 1;
         -- First ~16 are pre-registered & checked-in (early-bird granted); rest just registered.
         IF n <= 16 THEN
-            INSERT INTO tournament_registrations (tournament_id, registered_player_id, status, early_bird_bonus_awarded)
+            INSERT INTO tournament_registrations (tournament_id, club_player_id, status, early_bird_bonus_awarded)
             VALUES (v_t1, v_rp, 'checked_in', true);
-            INSERT INTO tournament_entries (tournament_id, registered_player_id, entry_type, amount_cents, chips_received)
+            INSERT INTO tournament_entries (tournament_id, club_player_id, entry_type, amount_cents, chips_received)
             VALUES (v_t1, v_rp, 'initial', 2500, 25000);  -- 20K + 5K early-bird
-            INSERT INTO tournament_entries (tournament_id, registered_player_id, entry_type, amount_cents)
+            INSERT INTO tournament_entries (tournament_id, club_player_id, entry_type, amount_cents)
             VALUES (v_t1, v_rp, 'voucher', 1000);
         ELSE
-            INSERT INTO tournament_registrations (tournament_id, registered_player_id, status)
+            INSERT INTO tournament_registrations (tournament_id, club_player_id, status)
             VALUES (v_t1, v_rp, 'registered');
         END IF;
     END LOOP;
@@ -244,10 +244,10 @@ BEGIN
     FOR rec IN
         SELECT rp.id AS rp_id,
                row_number() OVER (ORDER BY md5(rp.id::text || v_t2::text)) AS rn
-        FROM registered_player rp WHERE rp.club_id = v_club
+        FROM club_player rp WHERE rp.club_id = v_club
         ORDER BY rn LIMIT 22
     LOOP
-        INSERT INTO tournament_registrations (tournament_id, registered_player_id, status)
+        INSERT INTO tournament_registrations (tournament_id, club_player_id, status)
         VALUES (v_t2, rec.rp_id, 'registered');
     END LOOP;
 
@@ -255,7 +255,7 @@ BEGIN
     UPDATE tournament_registrations
        SET notes = 'Registered by a friend'
      WHERE tournament_id = v_t2
-       AND registered_player_id = 'b0000000-0000-0000-0000-000000000001';
+       AND club_player_id = 'b0000000-0000-0000-0000-000000000001';
 END
 $up$;
 
@@ -286,7 +286,7 @@ BEGIN
     FOR rec IN
         SELECT rp.id AS rp_id,
                row_number() OVER (ORDER BY md5(rp.id::text || v_tid::text)) AS rn
-        FROM registered_player rp WHERE rp.club_id = v_club
+        FROM club_player rp WHERE rp.club_id = v_club
         ORDER BY rn LIMIT 18
     LOOP
         v_rp := rec.rp_id;
@@ -294,13 +294,13 @@ BEGIN
         tbl  := CASE WHEN idx <= 9 THEN 1 ELSE 2 END;
         seat := CASE WHEN idx <= 9 THEN idx ELSE idx - 9 END;
 
-        INSERT INTO tournament_registrations (tournament_id, registered_player_id, status)
+        INSERT INTO tournament_registrations (tournament_id, club_player_id, status)
         VALUES (v_tid, v_rp, 'seated');
-        INSERT INTO tournament_entries (tournament_id, registered_player_id, entry_type, amount_cents, chips_received)
+        INSERT INTO tournament_entries (tournament_id, club_player_id, entry_type, amount_cents, chips_received)
         VALUES (v_tid, v_rp, 'initial', 2500, 25000);
-        INSERT INTO tournament_entries (tournament_id, registered_player_id, entry_type, amount_cents)
+        INSERT INTO tournament_entries (tournament_id, club_player_id, entry_type, amount_cents)
         VALUES (v_tid, v_rp, 'voucher', 1000);
-        INSERT INTO table_seat_assignments (tournament_id, registered_player_id, club_table_id, seat_number, stack_size)
+        INSERT INTO table_seat_assignments (tournament_id, club_player_id, club_table_id, seat_number, stack_size)
         VALUES (v_tid, v_rp,
                 ('e0000000-0000-0000-0000-00000000000' || tbl)::uuid, seat, 25000);
 
@@ -308,12 +308,12 @@ BEGIN
     END LOOP;
 
     -- Grant the level-2 bonus to the first 10 seated players (bonus entry + flag).
-    INSERT INTO tournament_entries (tournament_id, registered_player_id, entry_type, amount_cents, chips_received, notes)
+    INSERT INTO tournament_entries (tournament_id, club_player_id, entry_type, amount_cents, chips_received, notes)
     SELECT v_tid, rp, 'bonus', 0, 5000, 'Level-2 early-bird bonus'
     FROM unnest(seated_rps[1:10]) AS rp;
     UPDATE tournament_registrations
        SET level_two_bonus_awarded = true
-     WHERE tournament_id = v_tid AND registered_player_id = ANY(seated_rps[1:10]);
+     WHERE tournament_id = v_tid AND club_player_id = ANY(seated_rps[1:10]);
 
     -- Start the clock (level 4, running).
     UPDATE tournament_clocks
@@ -335,7 +335,7 @@ DECLARE
 BEGIN
     -- Player notes by Bruno on a few players (+ tags + showdown style).
     v_note := gen_random_uuid();
-    INSERT INTO player_note (id, author_app_user_id, subject_registered_player_id, body, style)
+    INSERT INTO player_note (id, author_app_user_id, subject_club_player_id, body, style)
     VALUES (v_note, v_bruno, 'b0000000-0000-0000-0000-000000000101',
             'Très agressif en position. Bluffe les boards secs.', 'LAG');
     INSERT INTO player_note_tag (note_id, kind, tag) VALUES
@@ -345,7 +345,7 @@ BEGIN
       (v_note, 'd0000000-0000-0000-0000-000000000005', '3-bet bluff A5s OTB vs UTG, montré au showdown');
 
     v_note := gen_random_uuid();
-    INSERT INTO player_note (id, author_app_user_id, subject_registered_player_id, body, style)
+    INSERT INTO player_note (id, author_app_user_id, subject_club_player_id, body, style)
     VALUES (v_note, v_bruno, 'b0000000-0000-0000-0000-000000000003', 'Joueur solide, peu de bluffs.', 'TP');
     INSERT INTO player_note_tag (note_id, kind, tag) VALUES (v_note, 'tag', 'nit');
 
@@ -424,7 +424,7 @@ COMMIT;
 -- ---------------------------------------------------------------------------
 SELECT 'clubs' AS t, count(*) FROM clubs
 UNION ALL SELECT 'users', count(*) FROM users
-UNION ALL SELECT 'registered_player', count(*) FROM registered_player
+UNION ALL SELECT 'club_player', count(*) FROM club_player
 UNION ALL SELECT 'tournaments', count(*) FROM tournaments
 UNION ALL SELECT 'registrations', count(*) FROM tournament_registrations
 UNION ALL SELECT 'entries', count(*) FROM tournament_entries

@@ -13,7 +13,7 @@ use crate::gql::types::{
 };
 use crate::state::AppState;
 use infra::repos::{
-    club_tables, registered_players, table_seat_assignments,
+    club_players, club_tables, table_seat_assignments,
     table_seat_assignments::CreateSeatAssignment, table_seat_assignments::SeatAssignmentFilter,
     table_seat_assignments::UpdateSeatAssignment, tournament_registrations, tournaments, users,
 };
@@ -77,7 +77,7 @@ impl SeatingQuery {
         let unassigned_players: Vec<UnseatedPlayer> = unassigned_player_rows
             .into_iter()
             .map(|rp| UnseatedPlayer {
-                registered_player_id: rp.id.into(),
+                club_player_id: rp.id.into(),
                 display_name: rp.display_name,
                 user: None,
             })
@@ -475,7 +475,7 @@ impl SeatingMutation {
             tournament_id,
             club_table_id,
             user_id: Some(user_id),
-            registered_player_id: None,
+            club_player_id: None,
             seat_number: input.seat_number,
             stack_size: input.stack_size,
             assigned_by: Some(manager_id),
@@ -580,11 +580,10 @@ impl SeatingMutation {
 
         // Seat assignments are keyed on the club roster, not the app user. Resolve
         // the user's roster entry for this club before moving them.
-        let registered_player_id =
-            registered_players::find_by_club_and_app_user(&state.db, club_id, user_id)
-                .await?
-                .ok_or_else(|| async_graphql::Error::new("Player is not on this club's roster"))?
-                .id;
+        let club_player_id = club_players::find_by_club_and_app_user(&state.db, club_id, user_id)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Player is not on this club's roster"))?
+            .id;
 
         // Check if new seat is available
         let is_available = table_seat_assignments::is_seat_available(
@@ -600,7 +599,7 @@ impl SeatingMutation {
         let assignment_row = table_seat_assignments::move_player(
             &state.db,
             tournament_id,
-            registered_player_id,
+            club_player_id,
             new_club_table_id,
             input.new_seat_number,
             Some(manager_id),
@@ -887,7 +886,7 @@ impl SeatingMutation {
                     tournament_id: assignment.tournament_id.into(),
                     club_table_id: assignment.club_table_id.into(),
                     user_id: assignment.user_id.map(Into::into),
-                    registered_player_id: assignment.registered_player_id.into(),
+                    club_player_id: assignment.club_player_id.into(),
                     seat_number: assignment.seat_number,
                     stack_size: Some(0),
                     is_current: false,

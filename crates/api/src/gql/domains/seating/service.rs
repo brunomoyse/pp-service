@@ -123,7 +123,7 @@ pub async fn balance_tables(
                     table_seat_assignments::unassign_current_seat(
                         &mut *tx,
                         params.tournament_id,
-                        player.registered_player_id,
+                        player.club_player_id,
                         Some(params.manager_id),
                     )
                     .await?;
@@ -134,7 +134,7 @@ pub async fn balance_tables(
                             tournament_id: params.tournament_id,
                             club_table_id: target_table.id,
                             user_id: player.user_id,
-                            registered_player_id: Some(player.registered_player_id),
+                            club_player_id: Some(player.club_player_id),
                             seat_number: seat_num,
                             stack_size: player.stack_size,
                             assigned_by: Some(params.manager_id),

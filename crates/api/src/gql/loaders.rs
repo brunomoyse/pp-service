@@ -1,26 +1,26 @@
 use async_graphql::dataloader::Loader;
 use infra::{
-    db::Db, models::ClubRow, models::DrinkLedgerEntryRow, models::DrinkWalletRow,
-    models::RegisteredPlayerRow, models::TournamentRow, models::UserRow,
+    db::Db, models::ClubPlayerRow, models::ClubRow, models::DrinkLedgerEntryRow,
+    models::DrinkWalletRow, models::TournamentRow, models::UserRow,
 };
 use std::{collections::HashMap, future::Future, sync::Arc};
 use uuid::Uuid;
 
-// RegisteredPlayerLoader - batch load roster entries (the club-scoped player
+// ClubPlayerLoader - batch load roster entries (the club-scoped player
 // identity) by id. Used to render an account-less player's display name.
 #[derive(Clone)]
-pub struct RegisteredPlayerLoader {
+pub struct ClubPlayerLoader {
     pool: Db,
 }
 
-impl RegisteredPlayerLoader {
+impl ClubPlayerLoader {
     pub fn new(pool: Db) -> Self {
         Self { pool }
     }
 }
 
-impl Loader<Uuid> for RegisteredPlayerLoader {
-    type Value = RegisteredPlayerRow;
+impl Loader<Uuid> for ClubPlayerLoader {
+    type Value = ClubPlayerRow;
     type Error = Arc<sqlx::Error>;
 
     fn load(
@@ -36,10 +36,10 @@ impl Loader<Uuid> for RegisteredPlayerLoader {
                 return Ok(HashMap::new());
             }
 
-            let rows: Vec<RegisteredPlayerRow> = sqlx::query_as::<_, RegisteredPlayerRow>(
+            let rows: Vec<ClubPlayerRow> = sqlx::query_as::<_, ClubPlayerRow>(
                 r#"
-                SELECT id, club_id, display_name, app_user_id, created_at, updated_at
-                FROM registered_player
+                SELECT id, club_id, display_name, app_user_id, is_active, created_at, updated_at
+                FROM club_player
                 WHERE id = ANY($1::uuid[])
                 "#,
             )
@@ -176,7 +176,7 @@ impl Loader<Uuid> for DrinkWalletLoader {
 
             let rows: Vec<DrinkWalletRow> = sqlx::query_as::<_, DrinkWalletRow>(
                 r#"
-                SELECT id, registered_player_id, club_id, balance, created_at, updated_at
+                SELECT id, club_player_id, club_id, balance, created_at, updated_at
                 FROM drink_wallet
                 WHERE id = ANY($1::uuid[])
                 "#,

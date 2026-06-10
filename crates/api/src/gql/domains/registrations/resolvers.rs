@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::gql::common::helpers::get_club_id_for_tournament;
 use crate::gql::error::ResultExt;
-use crate::gql::loaders::{RegisteredPlayerLoader, UserLoader};
+use crate::gql::loaders::{ClubPlayerLoader, UserLoader};
 use crate::gql::subscriptions::{
     publish_registration_event, publish_seating_event, publish_user_notification,
 };
@@ -71,12 +71,9 @@ impl RegistrationQuery {
         )?;
 
         // Batch load roster entries (display names) and the app users that exist.
-        let rp_ids: Vec<Uuid> = registrations
-            .iter()
-            .map(|r| r.registered_player_id)
-            .collect();
+        let rp_ids: Vec<Uuid> = registrations.iter().map(|r| r.club_player_id).collect();
         let user_ids: Vec<Uuid> = registrations.iter().filter_map(|r| r.user_id).collect();
-        let rp_loader = ctx.data::<DataLoader<RegisteredPlayerLoader>>()?;
+        let rp_loader = ctx.data::<DataLoader<ClubPlayerLoader>>()?;
         let user_loader = ctx.data::<DataLoader<UserLoader>>()?;
         let (rosters, users) =
             tokio::try_join!(rp_loader.load_many(rp_ids), user_loader.load_many(user_ids),)
@@ -87,7 +84,7 @@ impl RegistrationQuery {
         let mut players = Vec::new();
         for registration in registrations {
             let display_name = rosters
-                .get(&registration.registered_player_id)
+                .get(&registration.club_player_id)
                 .map(|rp| rp.display_name.clone())
                 .unwrap_or_else(|| "Unknown".to_string());
             let user = registration
@@ -220,7 +217,7 @@ impl RegistrationMutation {
         let create_data = CreateTournamentRegistration {
             tournament_id,
             user_id: Some(user_id),
-            registered_player_id: None,
+            club_player_id: None,
             notes: input.notes.clone(),
             status,
         };
@@ -353,8 +350,8 @@ impl RegistrationMutation {
 
         let tournament_id =
             Uuid::parse_str(input.tournament_id.as_str()).gql_err("Invalid tournament ID")?;
-        let registered_player_id = Uuid::parse_str(input.registered_player_id.as_str())
-            .gql_err("Invalid registered player ID")?;
+        let club_player_id =
+            Uuid::parse_str(input.club_player_id.as_str()).gql_err("Invalid club player ID")?;
 
         // Manager auth scoped to the tournament's club
         let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
@@ -405,7 +402,7 @@ impl RegistrationMutation {
         let create_data = CreateTournamentRegistration {
             tournament_id,
             user_id: None,
-            registered_player_id: Some(registered_player_id),
+            club_player_id: Some(club_player_id),
             notes: input.notes.clone(),
             status,
         };
@@ -416,9 +413,9 @@ impl RegistrationMutation {
         let tournament_registration: TournamentRegistration = row.into();
 
         // Emit subscription event (no app user — render by roster display name)
-        let rp_loader = ctx.data::<DataLoader<RegisteredPlayerLoader>>()?;
+        let rp_loader = ctx.data::<DataLoader<ClubPlayerLoader>>()?;
         let display_name = rp_loader
-            .load_one(registered_player_id)
+            .load_one(club_player_id)
             .await
             .gql_err("Loading roster failed")?
             .map(|rp| rp.display_name)
@@ -455,7 +452,7 @@ impl RegistrationMutation {
                 action,
                 Some(manager_id),
                 None,
-                serde_json::json!({ "registered_player_id": registered_player_id }),
+                serde_json::json!({ "club_player_id": club_player_id }),
             )
             .await;
         });
@@ -563,7 +560,7 @@ impl RegistrationMutation {
                 super::service::promote_next_waitlisted(&state.db, tournament_id).await
             {
                 let promoted_user_id = promotion.promoted_registration.user_id;
-                let promoted_rp_id = promotion.promoted_registration.registered_player_id;
+                let promoted_rp_id = promotion.promoted_registration.club_player_id;
                 let promoted_registration: TournamentRegistration =
                     promotion.promoted_registration.into();
 
@@ -576,7 +573,7 @@ impl RegistrationMutation {
                 let display_name = match &promoted_user_row {
                     Some(u) => display_name_from_user(u),
                     None => {
-                        let rp_loader = ctx.data::<DataLoader<RegisteredPlayerLoader>>()?;
+                        let rp_loader = ctx.data::<DataLoader<ClubPlayerLoader>>()?;
                         rp_loader
                             .load_one(promoted_rp_id)
                             .await

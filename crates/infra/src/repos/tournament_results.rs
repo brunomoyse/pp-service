@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::models::TournamentResultRow;
 
-const COLS: &str = "id, tournament_id, user_id, registered_player_id, final_position, prize_cents, points, notes, created_at, updated_at";
+const COLS: &str = "id, tournament_id, user_id, club_player_id, final_position, prize_cents, points, notes, created_at, updated_at";
 
 #[derive(Debug, Clone)]
 pub struct UserStatistics {
@@ -15,12 +15,12 @@ pub struct UserStatistics {
     pub roi_percentage: f64,
 }
 
-/// One leaderboard row. The roster entry (registered_player) is the identity;
+/// One leaderboard row. The roster entry (club_player) is the identity;
 /// `user_id` and the user fields are present only when the player has an app
 /// account. `display_name` always renders the player.
 #[derive(Debug, Clone)]
 pub struct LeaderboardEntry {
-    pub registered_player_id: Uuid,
+    pub club_player_id: Uuid,
     pub display_name: String,
     pub user_id: Option<Uuid>,
     pub username: Option<String>,
@@ -57,9 +57,9 @@ pub enum LeaderboardPeriod {
 pub struct CreateTournamentResult {
     pub tournament_id: Uuid,
     /// App user, when the player has an account. The link trigger stamps
-    /// whichever of user_id / registered_player_id is missing.
+    /// whichever of user_id / club_player_id is missing.
     pub user_id: Option<Uuid>,
-    pub registered_player_id: Option<Uuid>,
+    pub club_player_id: Option<Uuid>,
     pub final_position: i32,
     pub prize_cents: i32,
     pub notes: Option<String>,
@@ -70,12 +70,12 @@ pub async fn create<'e>(
     data: CreateTournamentResult,
 ) -> Result<TournamentResultRow> {
     let row = sqlx::query_as::<_, TournamentResultRow>(&format!(
-        "INSERT INTO tournament_results (tournament_id, user_id, registered_player_id, final_position, prize_cents, points, notes) \
+        "INSERT INTO tournament_results (tournament_id, user_id, club_player_id, final_position, prize_cents, points, notes) \
          VALUES ($1, $2, $3, $4, $5, 0, $6) RETURNING {COLS}"
     ))
     .bind(data.tournament_id)
     .bind(data.user_id)
-    .bind(data.registered_player_id)
+    .bind(data.club_player_id)
     .bind(data.final_position)
     .bind(data.prize_cents)
     .bind(data.notes)
@@ -119,7 +119,7 @@ pub async fn list_user_recent<'e>(
     limit: i64,
 ) -> Result<Vec<TournamentResultRow>> {
     let rows = sqlx::query_as::<_, TournamentResultRow>(
-        "SELECT tr.id, tr.tournament_id, tr.user_id, tr.registered_player_id, tr.final_position, \
+        "SELECT tr.id, tr.tournament_id, tr.user_id, tr.club_player_id, tr.final_position, \
                 tr.prize_cents, tr.points, tr.notes, tr.created_at, tr.updated_at \
          FROM tournament_results tr \
          JOIN tournaments t ON tr.tournament_id = t.id \
@@ -287,7 +287,7 @@ pub async fn get_leaderboard(
         r#"
         WITH player_stats AS (
             SELECT
-                rp.id as registered_player_id,
+                rp.id as club_player_id,
                 rp.display_name,
                 u.id as user_id,
                 u.username, u.first_name, u.last_name, u.email, u.phone,
@@ -300,11 +300,11 @@ pub async fn get_leaderboard(
                 SUM(CASE WHEN tr.final_position = 1 THEN 1 ELSE 0 END) as first_places,
                 SUM(CASE WHEN tr.final_position <= 9 THEN 1 ELSE 0 END) as final_tables,
                 COALESCE(SUM(tr.points), 0) as total_points
-            FROM registered_player rp
+            FROM club_player rp
             LEFT JOIN users u ON u.id = rp.app_user_id
-            JOIN tournament_registrations reg ON reg.registered_player_id = rp.id
+            JOIN tournament_registrations reg ON reg.club_player_id = rp.id
             JOIN tournaments t ON reg.tournament_id = t.id
-            LEFT JOIN tournament_results tr ON tr.registered_player_id = rp.id AND tr.tournament_id = t.id
+            LEFT JOIN tournament_results tr ON tr.club_player_id = rp.id AND tr.tournament_id = t.id
             WHERE (u.id IS NULL OR (u.role = 'player' AND u.is_active = true))
                 {} {} {}
             GROUP BY rp.id, rp.display_name, u.id, u.username, u.first_name, u.last_name,
@@ -312,7 +312,7 @@ pub async fn get_leaderboard(
             HAVING COUNT(DISTINCT reg.tournament_id) > 0
         )
         SELECT
-            registered_player_id,
+            club_player_id,
             display_name,
             user_id,
             username, first_name, last_name, email, phone, is_active, role, locale,
@@ -353,7 +353,7 @@ pub async fn get_leaderboard(
     let mut leaderboard = Vec::new();
     for row in rows {
         let entry = LeaderboardEntry {
-            registered_player_id: row.try_get("registered_player_id")?,
+            club_player_id: row.try_get("club_player_id")?,
             display_name: row.try_get("display_name")?,
             user_id: row.try_get("user_id")?,
             username: row.try_get("username")?,
@@ -408,9 +408,9 @@ pub async fn count_leaderboard(
         r#"
         SELECT COUNT(*) as total FROM (
             SELECT rp.id
-            FROM registered_player rp
+            FROM club_player rp
             LEFT JOIN users u ON u.id = rp.app_user_id
-            JOIN tournament_registrations reg ON reg.registered_player_id = rp.id
+            JOIN tournament_registrations reg ON reg.club_player_id = rp.id
             JOIN tournaments t ON reg.tournament_id = t.id
             WHERE (u.id IS NULL OR (u.role = 'player' AND u.is_active = true))
                 {} {} {}

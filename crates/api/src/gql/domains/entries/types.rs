@@ -47,7 +47,7 @@ pub struct TournamentEntry {
     /// The app user, when this player has an account. Null for account-less players.
     pub user_id: Option<ID>,
     /// The club roster identity — always present.
-    pub registered_player_id: ID,
+    pub club_player_id: ID,
     pub entry_type: EntryType,
     pub amount_cents: i32,
     pub chips_received: Option<i32>,
@@ -63,7 +63,7 @@ impl From<infra::models::TournamentEntryRow> for TournamentEntry {
             id: row.id.into(),
             tournament_id: row.tournament_id.into(),
             user_id: row.user_id.map(Into::into),
-            registered_player_id: row.registered_player_id.into(),
+            club_player_id: row.club_player_id.into(),
             entry_type: EntryType::from(row.entry_type),
             amount_cents: row.amount_cents,
             chips_received: row.chips_received,

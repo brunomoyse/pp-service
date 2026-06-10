@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::models::DrinkWalletRow;
 
-const COLUMNS: &str = "id, registered_player_id, club_id, balance, created_at, updated_at";
+const COLUMNS: &str = "id, club_player_id, club_id, balance, created_at, updated_at";
 
 /// Get a single wallet by id.
 pub async fn get_by_id<'e>(
@@ -34,30 +34,30 @@ pub async fn get_by_id_for_update<'e>(
 }
 
 /// Find the wallet owned by a roster person, if any.
-pub async fn find_by_registered_player<'e>(
+pub async fn find_by_club_player<'e>(
     executor: impl PgExecutor<'e>,
-    registered_player_id: Uuid,
+    club_player_id: Uuid,
 ) -> SqlxResult<Option<DrinkWalletRow>> {
     sqlx::query_as::<_, DrinkWalletRow>(&format!(
-        "SELECT {COLUMNS} FROM drink_wallet WHERE registered_player_id = $1"
+        "SELECT {COLUMNS} FROM drink_wallet WHERE club_player_id = $1"
     ))
-    .bind(registered_player_id)
+    .bind(club_player_id)
     .fetch_optional(executor)
     .await
 }
 
-/// Create a wallet. `registered_player_id` None creates a bearer (anonymous) wallet.
+/// Create a wallet. `club_player_id` None creates a bearer (anonymous) wallet.
 pub async fn create<'e>(
     executor: impl PgExecutor<'e>,
     club_id: Uuid,
-    registered_player_id: Option<Uuid>,
+    club_player_id: Option<Uuid>,
 ) -> SqlxResult<DrinkWalletRow> {
     sqlx::query_as::<_, DrinkWalletRow>(&format!(
-        "INSERT INTO drink_wallet (club_id, registered_player_id) \
+        "INSERT INTO drink_wallet (club_id, club_player_id) \
          VALUES ($1, $2) RETURNING {COLUMNS}"
     ))
     .bind(club_id)
-    .bind(registered_player_id)
+    .bind(club_player_id)
     .fetch_one(executor)
     .await
 }
@@ -84,13 +84,13 @@ pub async fn apply_balance_delta<'e>(
 pub async fn set_owner<'e>(
     executor: impl PgExecutor<'e>,
     id: Uuid,
-    registered_player_id: Uuid,
+    club_player_id: Uuid,
 ) -> SqlxResult<DrinkWalletRow> {
     sqlx::query_as::<_, DrinkWalletRow>(&format!(
-        "UPDATE drink_wallet SET registered_player_id = $2 WHERE id = $1 RETURNING {COLUMNS}"
+        "UPDATE drink_wallet SET club_player_id = $2 WHERE id = $1 RETURNING {COLUMNS}"
     ))
     .bind(id)
-    .bind(registered_player_id)
+    .bind(club_player_id)
     .fetch_one(executor)
     .await
 }

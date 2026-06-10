@@ -14,7 +14,7 @@ use super::types::{
     TopUpWalletPayload,
 };
 
-use infra::repos::{bar_stations, drink_wallets, registered_players, users};
+use infra::repos::{bar_stations, club_players, drink_wallets, users};
 
 /// Resolve the authenticated user id from the JWT claims.
 fn current_user_id(ctx: &Context<'_>) -> Result<Uuid> {
@@ -53,8 +53,8 @@ impl DrinksQuery {
 
         // Owner access: the caller owns the roster person this wallet is bound to.
         let user_id = current_user_id(ctx)?;
-        let is_owner = match wallet.registered_player_id {
-            Some(rp_id) => registered_players::get_by_id(&state.db, rp_id)
+        let is_owner = match wallet.club_player_id {
+            Some(rp_id) => club_players::get_by_id(&state.db, rp_id)
                 .await?
                 .and_then(|rp| rp.app_user_id)
                 .is_some_and(|owner| owner == user_id),

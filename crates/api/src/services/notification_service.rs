@@ -44,7 +44,7 @@ impl NotificationService {
         }
     }
 
-    /// Check for tournaments starting soon and notify registered players
+    /// Check for tournaments starting soon and notify club players
     async fn check_upcoming_tournaments(
         &mut self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -58,7 +58,7 @@ impl NotificationService {
                 continue;
             }
 
-            // Get all registered players for this tournament
+            // Get all club players for this tournament
             let registrations =
                 tournament_registrations::list_by_tournament(&self.state.db, tournament.id).await?;
 
@@ -68,7 +68,7 @@ impl NotificationService {
                 registrations.len()
             );
 
-            // Send notification to each registered player that has an account.
+            // Send notification to each club player that has an account.
             // Account-less players (no user_id) cannot be notified.
             for registration in registrations {
                 let Some(user_id) = registration.user_id else {

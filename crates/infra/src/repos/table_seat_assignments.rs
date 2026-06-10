@@ -3,16 +3,16 @@ use chrono::{DateTime, Utc};
 use sqlx::{PgExecutor, PgPool, Result as SqlxResult};
 use uuid::Uuid;
 
-const COLS: &str = "id, tournament_id, club_table_id, user_id, registered_player_id, seat_number, stack_size, is_current, assigned_at, unassigned_at, assigned_by, notes, created_at, updated_at";
+const COLS: &str = "id, tournament_id, club_table_id, user_id, club_player_id, seat_number, stack_size, is_current, assigned_at, unassigned_at, assigned_by, notes, created_at, updated_at";
 
 #[derive(Debug, Clone, Default)]
 pub struct CreateSeatAssignment {
     pub tournament_id: Uuid,
     pub club_table_id: Uuid,
     /// App user, when the player has an account. The link trigger stamps
-    /// whichever of user_id / registered_player_id is missing.
+    /// whichever of user_id / club_player_id is missing.
     pub user_id: Option<Uuid>,
-    pub registered_player_id: Option<Uuid>,
+    pub club_player_id: Option<Uuid>,
     pub seat_number: i32,
     pub stack_size: Option<i32>,
     pub assigned_by: Option<Uuid>,
@@ -50,13 +50,13 @@ pub async fn create<'e>(
 ) -> SqlxResult<TableSeatAssignmentRow> {
     sqlx::query_as::<_, TableSeatAssignmentRow>(&format!(
         "INSERT INTO table_seat_assignments \
-            (tournament_id, club_table_id, user_id, registered_player_id, seat_number, stack_size, assigned_by, notes) \
+            (tournament_id, club_table_id, user_id, club_player_id, seat_number, stack_size, assigned_by, notes) \
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING {COLS}"
     ))
     .bind(data.tournament_id)
     .bind(data.club_table_id)
     .bind(data.user_id)
-    .bind(data.registered_player_id)
+    .bind(data.club_player_id)
     .bind(data.seat_number)
     .bind(data.stack_size)
     .bind(data.assigned_by)
@@ -140,7 +140,7 @@ pub async fn list_current_with_players_for_table<'e>(
         tournament_id: Uuid,
         club_table_id: Uuid,
         user_id: Option<Uuid>,
-        registered_player_id: Uuid,
+        club_player_id: Uuid,
         seat_number: i32,
         stack_size: Option<i32>,
         is_current: bool,
@@ -167,14 +167,14 @@ pub async fn list_current_with_players_for_table<'e>(
     let rows = sqlx::query_as::<_, JoinedRow>(
         r#"
         SELECT
-            tsa.id, tsa.tournament_id, tsa.club_table_id, tsa.user_id, tsa.registered_player_id,
+            tsa.id, tsa.tournament_id, tsa.club_table_id, tsa.user_id, tsa.club_player_id,
             tsa.seat_number, tsa.stack_size, tsa.is_current, tsa.assigned_at, tsa.unassigned_at,
             tsa.assigned_by, tsa.notes, tsa.created_at, tsa.updated_at,
             rp.display_name,
             u.email, u.username, u.first_name, u.last_name, u.phone, u.is_active, u.role,
             u.locale, u.created_at as user_created_at, u.updated_at as user_updated_at
         FROM table_seat_assignments tsa
-        JOIN registered_player rp ON tsa.registered_player_id = rp.id
+        JOIN club_player rp ON tsa.club_player_id = rp.id
         LEFT JOIN users u ON tsa.user_id = u.id
         WHERE tsa.club_table_id = $1 AND tsa.is_current = true
         ORDER BY tsa.seat_number ASC
@@ -209,7 +209,7 @@ pub async fn list_current_with_players_for_table<'e>(
                     tournament_id: row.tournament_id,
                     club_table_id: row.club_table_id,
                     user_id: row.user_id,
-                    registered_player_id: row.registered_player_id,
+                    club_player_id: row.club_player_id,
                     seat_number: row.seat_number,
                     stack_size: row.stack_size,
                     is_current: row.is_current,
@@ -293,7 +293,7 @@ pub async fn unassign<'e>(
 pub async fn unassign_current_seat<'e>(
     executor: impl PgExecutor<'e>,
     tournament_id: Uuid,
-    registered_player_id: Uuid,
+    club_player_id: Uuid,
     moved_by: Option<Uuid>,
 ) -> SqlxResult<()> {
     sqlx::query(
@@ -303,11 +303,11 @@ pub async fn unassign_current_seat<'e>(
             unassigned_at = NOW(),
             assigned_by = COALESCE($3, assigned_by),
             updated_at = NOW()
-        WHERE tournament_id = $1 AND registered_player_id = $2 AND is_current = true
+        WHERE tournament_id = $1 AND club_player_id = $2 AND is_current = true
         "#,
     )
     .bind(tournament_id)
-    .bind(registered_player_id)
+    .bind(club_player_id)
     .bind(moved_by)
     .execute(executor)
     .await?;
@@ -319,18 +319,18 @@ pub async fn unassign_current_seat<'e>(
 pub async fn move_player(
     pool: &PgPool,
     tournament_id: Uuid,
-    registered_player_id: Uuid,
+    club_player_id: Uuid,
     new_club_table_id: Uuid,
     new_seat_number: i32,
     moved_by: Option<Uuid>,
     notes: Option<String>,
 ) -> SqlxResult<TableSeatAssignmentRow> {
     let mut tx = pool.begin().await?;
-    unassign_current_seat(&mut *tx, tournament_id, registered_player_id, moved_by).await?;
+    unassign_current_seat(&mut *tx, tournament_id, club_player_id, moved_by).await?;
     let result = create_seat_in_tx(
         &mut *tx,
         tournament_id,
-        registered_player_id,
+        club_player_id,
         new_club_table_id,
         new_seat_number,
         moved_by,
@@ -345,7 +345,7 @@ pub async fn move_player(
 async fn create_seat_in_tx<'e>(
     executor: impl PgExecutor<'e>,
     tournament_id: Uuid,
-    registered_player_id: Uuid,
+    club_player_id: Uuid,
     new_club_table_id: Uuid,
     new_seat_number: i32,
     moved_by: Option<Uuid>,
@@ -353,12 +353,12 @@ async fn create_seat_in_tx<'e>(
 ) -> SqlxResult<TableSeatAssignmentRow> {
     sqlx::query_as::<_, TableSeatAssignmentRow>(&format!(
         "INSERT INTO table_seat_assignments \
-            (tournament_id, club_table_id, registered_player_id, seat_number, assigned_by, notes) \
+            (tournament_id, club_table_id, club_player_id, seat_number, assigned_by, notes) \
          VALUES ($1, $2, $3, $4, $5, $6) RETURNING {COLS}"
     ))
     .bind(tournament_id)
     .bind(new_club_table_id)
-    .bind(registered_player_id)
+    .bind(club_player_id)
     .bind(new_seat_number)
     .bind(moved_by)
     .bind(notes)
@@ -385,13 +385,13 @@ pub async fn count_players_at_table<'e>(
 pub async fn list_unassigned_players<'e>(
     executor: impl PgExecutor<'e>,
     tournament_id: Uuid,
-) -> SqlxResult<Vec<crate::models::RegisteredPlayerRow>> {
-    sqlx::query_as::<_, crate::models::RegisteredPlayerRow>(
+) -> SqlxResult<Vec<crate::models::ClubPlayerRow>> {
+    sqlx::query_as::<_, crate::models::ClubPlayerRow>(
         r#"
-        SELECT rp.id, rp.club_id, rp.display_name, rp.app_user_id, rp.created_at, rp.updated_at
+        SELECT rp.id, rp.club_id, rp.display_name, rp.app_user_id, rp.is_active, rp.created_at, rp.updated_at
         FROM tournament_registrations tr
-        JOIN registered_player rp ON rp.id = tr.registered_player_id
-        LEFT JOIN table_seat_assignments tsa ON tsa.registered_player_id = rp.id
+        JOIN club_player rp ON rp.id = tr.club_player_id
+        LEFT JOIN table_seat_assignments tsa ON tsa.club_player_id = rp.id
             AND tsa.tournament_id = $1 AND tsa.is_current = true
         WHERE tr.tournament_id = $1
           AND tr.status IN ('registered', 'checked_in', 'seated')

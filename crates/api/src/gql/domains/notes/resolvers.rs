@@ -4,10 +4,10 @@ use uuid::Uuid;
 use crate::auth::jwt::Claims;
 use crate::auth::permissions::require_pro;
 use crate::features::{require_feature, Feature};
-use crate::gql::domains::identity::types::RegisteredPlayer;
+use crate::gql::domains::identity::types::ClubPlayer;
 use crate::gql::error::ResultExt;
 use crate::state::AppState;
-use infra::models::{PlayerNoteRow, RegisteredPlayerRow};
+use infra::models::{ClubPlayerRow, PlayerNoteRow};
 use infra::repos::player_notes;
 
 use super::service;
@@ -30,12 +30,12 @@ impl NotesQuery {
     async fn player_note(
         &self,
         ctx: &Context<'_>,
-        subject_registered_player_id: ID,
+        subject_club_player_id: ID,
     ) -> Result<Option<PlayerNote>> {
         require_feature(Feature::Notes)?;
         let author = author_id(ctx)?;
         let subject =
-            Uuid::parse_str(subject_registered_player_id.as_str()).gql_err("Invalid subject ID")?;
+            Uuid::parse_str(subject_club_player_id.as_str()).gql_err("Invalid subject ID")?;
 
         let state = ctx.data::<AppState>()?;
         let row = player_notes::get_for_subject(&state.db, author, subject).await?;
@@ -69,11 +69,15 @@ impl NotesQuery {
         let field = rows
             .into_iter()
             .map(|r| {
-                let rp = RegisteredPlayerRow {
+                let rp = ClubPlayerRow {
                     id: r.rp_id,
                     club_id: r.rp_club_id,
                     display_name: r.rp_display_name,
                     app_user_id: r.rp_app_user_id,
+                    // These rows are players currently in a tournament field, so
+                    // they are active by construction; the scouting query does
+                    // not select is_active.
+                    is_active: true,
                     created_at: r.rp_created_at,
                     updated_at: r.rp_updated_at,
                 };
@@ -81,7 +85,7 @@ impl NotesQuery {
                     PlayerNote::from(PlayerNoteRow {
                         id,
                         author_app_user_id: author,
-                        subject_registered_player_id: r.rp_id,
+                        subject_club_player_id: r.rp_id,
                         body: r.pn_body.unwrap_or_default(),
                         style: r.pn_style,
                         created_at: r.pn_created_at.unwrap_or(r.rp_created_at),
@@ -89,7 +93,7 @@ impl NotesQuery {
                     })
                 });
                 FieldPlayerNote {
-                    registered_player: RegisteredPlayer::from(rp),
+                    club_player: ClubPlayer::from(rp),
                     note,
                 }
             })
@@ -111,8 +115,8 @@ impl NotesMutation {
     ) -> Result<PlayerNote> {
         require_feature(Feature::Notes)?;
         let author = author_id(ctx)?;
-        let subject = Uuid::parse_str(input.subject_registered_player_id.as_str())
-            .gql_err("Invalid subject ID")?;
+        let subject =
+            Uuid::parse_str(input.subject_club_player_id.as_str()).gql_err("Invalid subject ID")?;
 
         let state = ctx.data::<AppState>()?;
         let row = service::upsert_note(

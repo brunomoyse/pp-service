@@ -2,7 +2,7 @@ use sqlx::PgPool;
 use tracing::{info, warn};
 
 use crate::auth::{AuthConfig, JwtService, OAuthService};
-use crate::services::{EmailConfig, EmailService};
+use crate::services::{EmailConfig, EmailService, OpenRouterConfig, OpenRouterService};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -11,6 +11,7 @@ pub struct AppState {
     jwt_service: JwtService,
     oauth_service: OAuthService,
     email_service: Option<EmailService>,
+    openrouter_service: Option<OpenRouterService>,
 }
 
 impl AppState {
@@ -30,12 +31,24 @@ impl AppState {
             }
         };
 
+        let openrouter_service = match OpenRouterConfig::from_env() {
+            Some(config) => {
+                info!("OpenRouter service configured (model: {})", config.model);
+                Some(OpenRouterService::new(config))
+            }
+            None => {
+                warn!("OpenRouter service not configured: missing OPENROUTER_API_KEY (AI roster import will be unavailable)");
+                None
+            }
+        };
+
         Ok(Self {
             db,
             auth_config,
             jwt_service,
             oauth_service,
             email_service,
+            openrouter_service,
         })
     }
 
@@ -53,5 +66,9 @@ impl AppState {
 
     pub fn email_service(&self) -> Option<&EmailService> {
         self.email_service.as_ref()
+    }
+
+    pub fn openrouter_service(&self) -> Option<&OpenRouterService> {
+        self.openrouter_service.as_ref()
     }
 }
