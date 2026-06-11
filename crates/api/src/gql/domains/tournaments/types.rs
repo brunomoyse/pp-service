@@ -220,6 +220,9 @@ pub struct Tournament {
     pub bounty_type: BountyType,              // none | fixed | progressive (PKO)
     pub bounty_amount_cents: i32,             // Bounty slice of each buy-in / rebuy / re-entry
     pub leaderboard_config_id: Option<ID>,    // Optional league tag (feeds `tagged` leagues)
+    pub series_id: Option<ID>,                // Multi-day series (NULL = standalone single-day)
+    pub flight_label: Option<String>,         // e.g. "Day 1A", "Day 2"
+    pub is_final_day: bool,                   // Series final day: results, points, aggregate pool
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -278,6 +281,9 @@ impl From<infra::models::TournamentRow> for Tournament {
             bounty_type: BountyType::from(row.bounty_type),
             bounty_amount_cents: row.bounty_amount_cents,
             leaderboard_config_id: row.leaderboard_config_id.map(|id| id.into()),
+            series_id: row.series_id.map(|id| id.into()),
+            flight_label: row.flight_label,
+            is_final_day: row.is_final_day,
             created_at: row.created_at,
             updated_at: row.updated_at,
         }

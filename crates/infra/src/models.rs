@@ -49,6 +49,12 @@ pub struct TournamentRow {
     pub bounty_amount_cents: i32,
     /// Optional league tag (feeds `tagged` leaderboard configs). NULL = untagged.
     pub leaderboard_config_id: Option<Uuid>,
+    /// Multi-day series this tournament belongs to. NULL = standalone single-day.
+    pub series_id: Option<Uuid>,
+    /// Flight label within the series (e.g. "Day 1A", "Day 2"). NULL = standalone.
+    pub flight_label: Option<String>,
+    /// True for the series' final day (carries results, points, aggregate pool).
+    pub is_final_day: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -96,6 +102,9 @@ pub struct TournamentRegistrationRow {
     pub notes: Option<String>,
     /// Live progressive-knockout head for this player, in cents (0 for non-PKO).
     pub current_bounty_cents: i32,
+    /// Chip stack carried into this tournament (imported Day 2 qualifier stack).
+    /// NULL = use the default starting stack.
+    pub starting_stack: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

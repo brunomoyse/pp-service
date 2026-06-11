@@ -177,7 +177,7 @@ impl RegistrationMutation {
 
         // Lock the tournament row to prevent concurrent registrations from racing
         let tournament = sqlx::query_as::<_, infra::models::TournamentRow>(
-            "SELECT id, club_id, name, description, start_time, end_time, buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents, late_registration_level, bounty_type, bounty_amount_cents, leaderboard_config_id, created_at, updated_at FROM tournaments WHERE id = $1 FOR UPDATE",
+            "SELECT id, club_id, name, description, start_time, end_time, buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents, late_registration_level, bounty_type, bounty_amount_cents, leaderboard_config_id, series_id, flight_label, is_final_day, created_at, updated_at FROM tournaments WHERE id = $1 FOR UPDATE",
         )
         .bind(tournament_id)
         .fetch_optional(&mut *tx)
@@ -362,7 +362,7 @@ impl RegistrationMutation {
 
         // Lock the tournament row to prevent concurrent registrations from racing
         let tournament = sqlx::query_as::<_, infra::models::TournamentRow>(
-            "SELECT id, club_id, name, description, start_time, end_time, buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents, late_registration_level, bounty_type, bounty_amount_cents, leaderboard_config_id, created_at, updated_at FROM tournaments WHERE id = $1 FOR UPDATE",
+            "SELECT id, club_id, name, description, start_time, end_time, buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents, late_registration_level, bounty_type, bounty_amount_cents, leaderboard_config_id, series_id, flight_label, is_final_day, created_at, updated_at FROM tournaments WHERE id = $1 FOR UPDATE",
         )
         .bind(tournament_id)
         .fetch_optional(&mut *tx)

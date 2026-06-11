@@ -117,6 +117,11 @@ impl TournamentMutation {
                 .map(|id| Uuid::parse_str(id.as_str()))
                 .transpose()
                 .gql_err("Invalid league ID")?,
+            // Standalone tournaments are not part of a series; series flights are
+            // created via the `createTournamentSeries` mutation.
+            series_id: None,
+            flight_label: None,
+            is_final_day: false,
         };
 
         // Create tournament

@@ -22,6 +22,7 @@ pub mod results;
 pub mod scouting;
 pub mod seasons;
 pub mod seating;
+pub mod series;
 pub mod social;
 pub mod system;
 pub mod templates;

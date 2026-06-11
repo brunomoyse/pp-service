@@ -20,6 +20,7 @@ use crate::gql::domains::results::ResultQuery;
 use crate::gql::domains::scouting::ScoutingQuery;
 use crate::gql::domains::seasons::SeasonsQuery;
 use crate::gql::domains::seating::SeatingQuery;
+use crate::gql::domains::series::SeriesQuery;
 use crate::gql::domains::social::SocialQuery;
 use crate::gql::domains::system::SystemQuery;
 use crate::gql::domains::templates::TemplateQuery;
@@ -48,6 +49,7 @@ pub struct QueryRoot(
     ScoutingQuery,
     SeasonsQuery,
     SeatingQuery,
+    SeriesQuery,
     SocialQuery,
     SystemQuery,
     TemplateQuery,

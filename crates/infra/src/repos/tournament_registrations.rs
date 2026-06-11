@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::models::TournamentRegistrationRow;
 
 const COLS: &str =
-    "id, tournament_id, user_id, club_player_id, registration_time, status, notes, current_bounty_cents, created_at, updated_at";
+    "id, tournament_id, user_id, club_player_id, registration_time, status, notes, current_bounty_cents, starting_stack, created_at, updated_at";
 
 #[derive(Debug, Clone, Default)]
 pub struct CreateTournamentRegistration {
@@ -26,7 +26,7 @@ pub async fn create<'e>(
         r#"
         INSERT INTO tournament_registrations (tournament_id, user_id, club_player_id, notes, status)
         VALUES ($1, $2, $3, $4, COALESCE($5, 'registered'))
-        RETURNING id, tournament_id, user_id, club_player_id, registration_time, status, notes, current_bounty_cents, created_at, updated_at
+        RETURNING id, tournament_id, user_id, club_player_id, registration_time, status, notes, current_bounty_cents, starting_stack, created_at, updated_at
         "#
     )
     .bind(data.tournament_id)
@@ -34,6 +34,36 @@ pub async fn create<'e>(
     .bind(data.club_player_id)
     .bind(data.notes)
     .bind(data.status)
+    .fetch_one(executor)
+    .await?;
+
+    Ok(row)
+}
+
+/// Seed a final-day registration for a Day-2 qualifier: status `checked_in`
+/// with the carried-over `starting_stack`. Idempotent on
+/// (tournament_id, club_player_id): re-running updates the stack (best stack
+/// forward) without creating a duplicate registration.
+pub async fn upsert_checked_in_with_stack<'e>(
+    executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
+    club_player_id: Uuid,
+    starting_stack: i32,
+) -> Result<TournamentRegistrationRow> {
+    let row = sqlx::query_as::<_, TournamentRegistrationRow>(
+        r#"
+        INSERT INTO tournament_registrations (tournament_id, club_player_id, status, starting_stack)
+        VALUES ($1, $2, 'checked_in', $3)
+        ON CONFLICT (tournament_id, club_player_id) DO UPDATE SET
+            status = 'checked_in',
+            starting_stack = EXCLUDED.starting_stack,
+            updated_at = NOW()
+        RETURNING id, tournament_id, user_id, club_player_id, registration_time, status, notes, current_bounty_cents, starting_stack, created_at, updated_at
+        "#,
+    )
+    .bind(tournament_id)
+    .bind(club_player_id)
+    .bind(starting_stack)
     .fetch_one(executor)
     .await?;
 

@@ -145,6 +145,74 @@ pub async fn send_seating_event(db: &PgPool, user_id: Uuid, event: &str, tournam
     send_to_user_devices(db, user_id, data, |locale| seating_copy(event, locale)).await;
 }
 
+/// Localized copy for a Day-2 qualification push. The chip count is interpolated
+/// into the body; tapping deep-links to the (final-day) tournament screen.
+fn qualified_for_day2_copy(chip_count: i32, locale: Option<&str>) -> (&'static str, String) {
+    match locale.unwrap_or("en") {
+        "fr" => (
+            "Qualifié pour le Day 2",
+            format!("Vous êtes qualifié pour le Day 2 avec {chip_count} jetons."),
+        ),
+        "nl" => (
+            "Gekwalificeerd voor Dag 2",
+            format!("Je bent gekwalificeerd voor Dag 2 met {chip_count} chips."),
+        ),
+        _ => (
+            "Qualified for Day 2",
+            format!("You've qualified for Day 2 with {chip_count} chips."),
+        ),
+    }
+}
+
+/// Push a "qualified for Day 2" alert. Gated by the registration-updates
+/// preference; `data.tournament_id` deep-links to the final-day screen.
+pub async fn send_qualified_for_day2(
+    db: &PgPool,
+    user_id: Uuid,
+    final_day_id: Uuid,
+    chip_count: i32,
+) {
+    let prefs = notification_preferences::get_for_user(db, user_id)
+        .await
+        .unwrap_or_default();
+    if !prefs.registration_updates {
+        return;
+    }
+
+    let data = json!({
+        "type": "QUALIFIED_FOR_DAY_2",
+        "tournament_id": final_day_id,
+        "chip_count": chip_count,
+    });
+    // send_to_user_devices wants &'static str copy; build per-locale messages here
+    // since the body carries the (dynamic) chip count.
+    let devices = match device_tokens::list_for_user(db, user_id).await {
+        Ok(d) if !d.is_empty() => d,
+        Ok(_) => return,
+        Err(e) => {
+            tracing::warn!(%user_id, error = %e, "push: failed to load device tokens");
+            return;
+        }
+    };
+    let tokens: Vec<String> = devices.iter().map(|d| d.token.clone()).collect();
+    let messages: Vec<serde_json::Value> = devices
+        .iter()
+        .map(|d| {
+            let (title, body) = qualified_for_day2_copy(chip_count, d.locale.as_deref());
+            json!({
+                "to": d.token,
+                "title": title,
+                "body": body,
+                "data": data,
+                "sound": "default",
+                "channelId": "default",
+                "priority": "high",
+            })
+        })
+        .collect();
+    deliver(db, user_id, messages, tokens).await;
+}
+
 /// POST a batch of Expo messages and prune any tokens reported as dead.
 /// `tokens` is parallel to `messages` so error receipts map back to a token.
 async fn deliver(

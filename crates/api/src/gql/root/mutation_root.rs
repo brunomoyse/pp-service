@@ -17,6 +17,7 @@ use crate::gql::domains::results::ResultMutation;
 use crate::gql::domains::scouting::ScoutingMutation;
 use crate::gql::domains::seasons::SeasonsMutation;
 use crate::gql::domains::seating::SeatingMutation;
+use crate::gql::domains::series::SeriesMutation;
 use crate::gql::domains::social::SocialMutation;
 use crate::gql::domains::templates::TemplateMutation;
 use crate::gql::domains::tournaments::{TournamentClockMutation, TournamentMutation};
@@ -41,6 +42,7 @@ pub struct MutationRoot(
     ScoutingMutation,
     SeasonsMutation,
     SeatingMutation,
+    SeriesMutation,
     SocialMutation,
     TemplateMutation,
     TournamentClockMutation,
