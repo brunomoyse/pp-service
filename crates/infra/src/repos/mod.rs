@@ -29,6 +29,7 @@ pub mod rivalries;
 pub mod scouting;
 pub mod seasons;
 pub mod table_seat_assignments;
+pub mod tournament_bounties;
 pub mod tournament_clock;
 pub mod tournament_entries;
 pub mod tournament_payouts;

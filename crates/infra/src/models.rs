@@ -43,6 +43,10 @@ pub struct TournamentRow {
     /// Add-on price in cents (flyer display).
     pub addon_price_cents: Option<i32>,
     pub late_registration_level: Option<i32>,
+    /// Bounty / PKO format: none | fixed | progressive.
+    pub bounty_type: String,
+    /// Slice of each buy-in (and rebuy / re-entry) diverted to the bounty pool.
+    pub bounty_amount_cents: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -88,6 +92,8 @@ pub struct TournamentRegistrationRow {
     pub registration_time: DateTime<Utc>,
     pub status: String,
     pub notes: Option<String>,
+    /// Live progressive-knockout head for this player, in cents (0 for non-PKO).
+    pub current_bounty_cents: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

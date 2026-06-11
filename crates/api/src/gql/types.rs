@@ -76,8 +76,8 @@ pub use crate::gql::domains::seating::types::{
     AssignPlayerToSeatInput, AssignTableToTournamentInput, AssignTablesToTournamentInput,
     BalanceTablesInput, BulkAssignTableEntry, CreateTournamentTableInput, MovePlayerInput,
     SeatAssignment, SeatWithPlayer, SeatingChangeEvent, SeatingEventType, TableWithSeats,
-    TournamentSeatingChart, TournamentTable, UnassignTableFromTournamentInput, UnseatedPlayer,
-    UpdateStackSizeInput,
+    TournamentBounty, TournamentSeatingChart, TournamentTable, UnassignTableFromTournamentInput,
+    UnseatedPlayer, UpdateStackSizeInput,
 };
 
 // Tournament types

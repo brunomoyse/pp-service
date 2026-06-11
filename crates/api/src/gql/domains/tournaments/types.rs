@@ -168,6 +168,34 @@ impl From<ClockStatus> for infra::repos::tournament_clock::ClockStatus {
 
 // Core tournament objects
 
+#[derive(async_graphql::Enum, Copy, Clone, Eq, PartialEq, Debug)]
+pub enum BountyType {
+    None,
+    Fixed,
+    Progressive,
+}
+
+impl From<String> for BountyType {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "fixed" => BountyType::Fixed,
+            "progressive" => BountyType::Progressive,
+            _ => BountyType::None,
+        }
+    }
+}
+
+impl From<BountyType> for String {
+    fn from(b: BountyType) -> Self {
+        match b {
+            BountyType::None => "none",
+            BountyType::Fixed => "fixed",
+            BountyType::Progressive => "progressive",
+        }
+        .to_string()
+    }
+}
+
 #[derive(SimpleObject, Clone)]
 #[graphql(complex)]
 pub struct Tournament {
@@ -189,6 +217,8 @@ pub struct Tournament {
     pub addon_chips: Option<i32>,          // Add-on chip amount (flyer display)
     pub addon_price_cents: Option<i32>,    // Add-on price in cents (flyer display)
     pub late_registration_level: Option<i32>, // Blind level until which late registration stays open
+    pub bounty_type: BountyType,              // none | fixed | progressive (PKO)
+    pub bounty_amount_cents: i32,             // Bounty slice of each buy-in / rebuy / re-entry
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -244,6 +274,8 @@ impl From<infra::models::TournamentRow> for Tournament {
             addon_chips: row.addon_chips,
             addon_price_cents: row.addon_price_cents,
             late_registration_level: row.late_registration_level,
+            bounty_type: BountyType::from(row.bounty_type),
+            bounty_amount_cents: row.bounty_amount_cents,
             created_at: row.created_at,
             updated_at: row.updated_at,
         }
@@ -382,6 +414,8 @@ pub struct CreateTournamentInput {
     pub addon_chips: Option<i32>,
     pub addon_price_cents: Option<i32>,
     pub late_registration_level: Option<i32>,
+    pub bounty_type: Option<BountyType>,
+    pub bounty_amount_cents: Option<i32>,
     /// Blind structure template ID - if provided, copies levels from template
     pub template_id: Option<ID>,
     /// Custom blind structure levels - only used if template_id is not provided
@@ -405,6 +439,8 @@ pub struct UpdateTournamentInput {
     pub addon_chips: Option<i32>,
     pub addon_price_cents: Option<i32>,
     pub late_registration_level: Option<i32>,
+    pub bounty_type: Option<BountyType>,
+    pub bounty_amount_cents: Option<i32>,
     /// Blind structure template ID - if provided, replaces structure with template levels
     pub template_id: Option<ID>,
     /// Custom blind structure levels - only used if template_id is not provided

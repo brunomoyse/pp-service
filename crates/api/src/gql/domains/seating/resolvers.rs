@@ -7,15 +7,17 @@ use crate::gql::subscriptions::{publish_seating_event, publish_user_notification
 use crate::gql::types::{
     AssignPlayerToSeatInput, AssignTableToTournamentInput, AssignTablesToTournamentInput,
     BalanceTablesInput, MovePlayerInput, NotificationType, SeatAssignment, SeatWithPlayer,
-    SeatingChangeEvent, SeatingEventType, TableWithSeats, Tournament, TournamentSeatingChart,
-    TournamentTable, UnassignTableFromTournamentInput, UnseatedPlayer, UpdateStackSizeInput, User,
-    UserNotification, TITLE_PLAYER_ELIMINATED, TITLE_PLAYER_MOVED, TITLE_SEAT_ASSIGNED,
+    SeatingChangeEvent, SeatingEventType, TableWithSeats, Tournament, TournamentBounty,
+    TournamentSeatingChart, TournamentTable, UnassignTableFromTournamentInput, UnseatedPlayer,
+    UpdateStackSizeInput, User, UserNotification, TITLE_PLAYER_ELIMINATED, TITLE_PLAYER_MOVED,
+    TITLE_SEAT_ASSIGNED,
 };
 use crate::state::AppState;
 use infra::repos::{
     club_players, club_tables, table_seat_assignments,
     table_seat_assignments::CreateSeatAssignment, table_seat_assignments::SeatAssignmentFilter,
-    table_seat_assignments::UpdateSeatAssignment, tournament_registrations, tournaments, users,
+    table_seat_assignments::UpdateSeatAssignment, tournament_bounties, tournament_registrations,
+    tournaments, users,
 };
 
 #[derive(Default)]
@@ -158,6 +160,54 @@ impl SeatingQuery {
         Ok(assignment_rows
             .into_iter()
             .map(SeatAssignment::from)
+            .collect())
+    }
+
+    /// All recorded knockouts for a bounty / PKO tournament, most recent first.
+    async fn tournament_bounties(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: ID,
+    ) -> Result<Vec<TournamentBounty>> {
+        let state = ctx.data::<AppState>()?;
+        let tournament_uuid =
+            Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+
+        let rows = tournament_bounties::list_by_tournament(&state.db, tournament_uuid).await?;
+
+        // Resolve roster display names for the players involved.
+        let mut ids: Vec<Uuid> = rows
+            .iter()
+            .flat_map(|r| [r.hunter_club_player_id, r.victim_club_player_id])
+            .collect();
+        ids.sort();
+        ids.dedup();
+
+        let mut names: std::collections::HashMap<Uuid, String> = std::collections::HashMap::new();
+        for id in ids {
+            if let Some(cp) = club_players::get_by_id(&state.db, id).await? {
+                names.insert(id, cp.display_name);
+            }
+        }
+
+        Ok(rows
+            .into_iter()
+            .map(|r| TournamentBounty {
+                id: r.id.into(),
+                tournament_id: r.tournament_id.into(),
+                hunter_name: names
+                    .get(&r.hunter_club_player_id)
+                    .cloned()
+                    .unwrap_or_default(),
+                victim_name: names
+                    .get(&r.victim_club_player_id)
+                    .cloned()
+                    .unwrap_or_default(),
+                hunter_club_player_id: r.hunter_club_player_id.into(),
+                victim_club_player_id: r.victim_club_player_id.into(),
+                amount_cents: r.amount_cents,
+                created_at: r.created_at,
+            })
             .collect())
     }
 }
@@ -827,6 +877,8 @@ impl SeatingMutation {
         ctx: &Context<'_>,
         tournament_id: ID,
         user_id: ID,
+        #[graphql(desc = "The player who made the knockout (for bounty / PKO tournaments).")]
+        hunter_user_id: Option<ID>,
         notes: Option<String>,
     ) -> Result<bool> {
         use crate::auth::permissions::require_club_manager;
@@ -841,6 +893,11 @@ impl SeatingMutation {
         let manager = require_club_manager(ctx, club_id).await?;
         let user_uuid = Uuid::parse_str(user_id.as_str()).gql_err("Invalid user ID")?;
         let manager_id = Uuid::parse_str(manager.id.as_str()).gql_err("Invalid manager ID")?;
+        let hunter_uuid = hunter_user_id
+            .as_ref()
+            .map(|id| Uuid::parse_str(id.as_str()))
+            .transpose()
+            .gql_err("Invalid hunter user ID")?;
 
         // Get current assignment for user
         let current_assignment =
@@ -869,6 +926,39 @@ impl SeatingMutation {
             // Update registration status to busted
             tournament_registrations::update_status(&mut *tx, tournament_uuid, user_uuid, "busted")
                 .await?;
+
+            // Record the bounty if this is a PKO tournament and a hunter was named.
+            let mut bounty_outcome: Option<infra::repos::tournament_bounties::KnockoutOutcome> =
+                None;
+            if let Some(hunter_uuid) = hunter_uuid {
+                let tournament = tournaments::get_by_id(&state.db, tournament_uuid)
+                    .await?
+                    .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
+
+                if tournament.bounty_type != "none" && tournament.bounty_amount_cents > 0 {
+                    // The hunter must be a registered player in this tournament.
+                    let hunter_reg = tournament_registrations::get_by_tournament_and_user(
+                        &mut *tx,
+                        tournament_uuid,
+                        hunter_uuid,
+                    )
+                    .await?;
+                    let hunter_cp = hunter_reg.map(|r| r.club_player_id).ok_or_else(|| {
+                        async_graphql::Error::new("Hunter is not registered in this tournament")
+                    })?;
+
+                    // victim's club_player_id comes from the eliminated player's seat
+                    bounty_outcome = tournament_bounties::record_knockout(
+                        &mut tx,
+                        tournament_uuid,
+                        hunter_cp,
+                        assignment.club_player_id,
+                        &tournament.bounty_type,
+                        tournament.bounty_amount_cents,
+                    )
+                    .await?;
+                }
+            }
 
             tx.commit().await.gql_err("Failed to commit transaction")?;
 
@@ -967,9 +1057,11 @@ impl SeatingMutation {
                 }
             }
 
-            // Log activity
+            // Log activity (the bounty cash, if any, is attached to the event)
             {
                 let db = state.db.clone();
+                let bounty_cents = bounty_outcome.map(|o| o.cash_cents);
+                let hunter = hunter_uuid;
                 tokio::spawn(async move {
                     crate::gql::domains::activity_log::log_and_publish(
                         &db,
@@ -978,9 +1070,29 @@ impl SeatingMutation {
                         "player_eliminated",
                         Some(manager_id),
                         Some(user_uuid),
-                        serde_json::json!({}),
+                        serde_json::json!({
+                            "hunter_user_id": hunter.map(|h| h.to_string()),
+                            "bounty_cents": bounty_cents,
+                        }),
                     )
                     .await;
+
+                    // Distinct event for a collected bounty, so feeds can surface it.
+                    if let Some(cash) = bounty_cents {
+                        crate::gql::domains::activity_log::log_and_publish(
+                            &db,
+                            tournament_uuid,
+                            "seating",
+                            "bounty_collected",
+                            Some(manager_id),
+                            hunter,
+                            serde_json::json!({
+                                "victim_user_id": user_uuid.to_string(),
+                                "bounty_cents": cash,
+                            }),
+                        )
+                        .await;
+                    }
                 });
             }
 

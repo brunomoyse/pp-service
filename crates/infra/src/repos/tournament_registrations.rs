@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::models::TournamentRegistrationRow;
 
 const COLS: &str =
-    "id, tournament_id, user_id, club_player_id, registration_time, status, notes, created_at, updated_at";
+    "id, tournament_id, user_id, club_player_id, registration_time, status, notes, current_bounty_cents, created_at, updated_at";
 
 #[derive(Debug, Clone, Default)]
 pub struct CreateTournamentRegistration {
@@ -26,7 +26,7 @@ pub async fn create<'e>(
         r#"
         INSERT INTO tournament_registrations (tournament_id, user_id, club_player_id, notes, status)
         VALUES ($1, $2, $3, $4, COALESCE($5, 'registered'))
-        RETURNING id, tournament_id, user_id, club_player_id, registration_time, status, notes, created_at, updated_at
+        RETURNING id, tournament_id, user_id, club_player_id, registration_time, status, notes, current_bounty_cents, created_at, updated_at
         "#
     )
     .bind(data.tournament_id)
@@ -137,7 +137,7 @@ pub async fn list_user_current<'e>(
 ) -> Result<Vec<TournamentRegistrationRow>> {
     let rows = sqlx::query_as::<_, TournamentRegistrationRow>(
         "SELECT tr.id, tr.tournament_id, tr.user_id, tr.club_player_id, tr.registration_time, \
-                tr.status, tr.notes, tr.created_at, tr.updated_at \
+                tr.status, tr.notes, tr.current_bounty_cents, tr.created_at, tr.updated_at \
          FROM tournament_registrations tr \
          JOIN tournaments t ON tr.tournament_id = t.id \
          WHERE tr.user_id = $1 AND (t.end_time IS NULL OR t.end_time > NOW()) \

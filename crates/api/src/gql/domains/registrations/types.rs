@@ -83,6 +83,8 @@ pub struct TournamentRegistration {
     pub registration_time: DateTime<Utc>,
     pub status: RegistrationStatus,
     pub notes: Option<String>,
+    /// Live progressive-knockout head for this player, in cents (0 for non-PKO).
+    pub current_bounty_cents: i32,
 }
 
 impl From<infra::models::TournamentRegistrationRow> for TournamentRegistration {
@@ -95,6 +97,7 @@ impl From<infra::models::TournamentRegistrationRow> for TournamentRegistration {
             registration_time: row.registration_time,
             status: row.status.into(),
             notes: row.notes,
+            current_bounty_cents: row.current_bounty_cents,
         }
     }
 }

@@ -170,3 +170,17 @@ pub struct BalanceTablesInput {
     pub tournament_id: ID,
     pub target_players_per_table: Option<i32>,
 }
+
+/// A single recorded knockout in a bounty / PKO tournament.
+#[derive(SimpleObject)]
+pub struct TournamentBounty {
+    pub id: ID,
+    pub tournament_id: ID,
+    pub hunter_club_player_id: ID,
+    pub victim_club_player_id: ID,
+    pub hunter_name: String,
+    pub victim_name: String,
+    /// Cash the hunter collected for this knockout, in cents.
+    pub amount_cents: i32,
+    pub created_at: DateTime<Utc>,
+}

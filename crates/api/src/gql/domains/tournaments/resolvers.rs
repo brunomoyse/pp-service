@@ -109,6 +109,8 @@ impl TournamentMutation {
             addon_chips: input.addon_chips,
             addon_price_cents: input.addon_price_cents,
             late_registration_level: input.late_registration_level,
+            bounty_type: input.bounty_type.map(String::from),
+            bounty_amount_cents: input.bounty_amount_cents,
         };
 
         // Create tournament
@@ -211,6 +213,8 @@ impl TournamentMutation {
             addon_chips: input.addon_chips,
             addon_price_cents: input.addon_price_cents,
             late_registration_level: input.late_registration_level,
+            bounty_type: input.bounty_type.map(String::from),
+            bounty_amount_cents: input.bounty_amount_cents,
         };
 
         let updated_row = tournaments::update(&state.db, tournament_id, data)
