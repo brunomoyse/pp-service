@@ -12,7 +12,7 @@ use uuid::Uuid;
 use super::types::{
     CustomPayout, DealType, EnterTournamentResultsInput, EnterTournamentResultsResponse,
     PayoutPosition, PlayerDeal, PlayerStatistics, PlayerStatsResponse, TournamentPayout,
-    UserTournamentResult,
+    TournamentResult, UserTournamentResult,
 };
 
 #[derive(Default)]
@@ -155,6 +155,23 @@ impl ResultQuery {
         } else {
             Ok(None)
         }
+    }
+
+    /// Get the recorded final results of a tournament (position, prize, points
+    /// per player), ordered by finishing position. Public, like the payout
+    /// structure — it feeds the signable payout sheet and result exports.
+    async fn tournament_results(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: ID,
+    ) -> Result<Vec<TournamentResult>> {
+        let state = ctx.data::<AppState>()?;
+
+        let tournament_id =
+            Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+
+        let rows = tournament_results::list_by_tournament(&state.db, tournament_id).await?;
+        Ok(rows.into_iter().map(Into::into).collect())
     }
 }
 
