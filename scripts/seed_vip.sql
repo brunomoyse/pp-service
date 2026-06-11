@@ -320,6 +320,11 @@ BEGIN
        SET level_two_bonus_awarded = true
      WHERE tournament_id = v_tid AND club_player_id = ANY(seated_rps[1:10]);
 
+    -- A few re-entries (max one per player) so the field looks realistic.
+    INSERT INTO tournament_entries (tournament_id, club_player_id, entry_type, amount_cents, chips_received)
+    SELECT v_tid, rp, 're_entry', 2500, 25000
+    FROM unnest(seated_rps[1:4]) AS rp;
+
     -- Start the clock (level 4, running).
     UPDATE tournament_clocks
        SET clock_status = 'running', current_level = 4,
@@ -328,6 +333,73 @@ BEGIN
      WHERE tournament_id = v_tid;
 END
 $live$;
+
+-- ---------------------------------------------------------------------------
+-- 8b. Blind structures (per-tournament levels) + reusable templates
+-- ---------------------------------------------------------------------------
+-- Per-tournament levels for the live + upcoming tournaments so the clock shows
+-- real blinds. Standard 20-min levels, BB ante from level 4.
+INSERT INTO tournament_structures (tournament_id, level_number, small_blind, big_blind, ante, duration_minutes, is_break)
+SELECT t.tid, l.lvl, l.sb, l.bb, l.ante, 20, false
+FROM (VALUES
+  ('d0000000-0000-0000-0000-000000000020'::uuid),
+  ('d0000000-0000-0000-0000-000000000011'::uuid),
+  ('d0000000-0000-0000-0000-000000000012'::uuid)
+) AS t(tid)
+CROSS JOIN (VALUES
+  (1,25,50,0),(2,50,100,0),(3,75,150,0),(4,100,200,200),(5,150,300,300),
+  (6,200,400,400),(7,300,600,600),(8,400,800,800),(9,500,1000,1000),
+  (10,700,1400,1400),(11,1000,2000,2000),(12,1500,3000,3000),
+  (13,2000,4000,4000),(14,3000,6000,6000),(15,5000,10000,10000)
+) AS l(lvl,sb,bb,ante)
+ON CONFLICT (tournament_id, level_number) DO NOTHING;
+
+-- Reusable blind-structure templates for the Templates library.
+WITH meta(id,name,descr) AS (VALUES
+  ('f1000000-0000-0000-0000-000000000001'::uuid,'Standard 20 min','Niveaux de 20 minutes, pause après le niveau 6.'),
+  ('f1000000-0000-0000-0000-000000000002'::uuid,'Turbo 15 min','Niveaux de 15 minutes, montée rapide.'),
+  ('f1000000-0000-0000-0000-000000000003'::uuid,'Deepstack 30 min','Niveaux de 30 minutes pour du jeu profond, pause après le niveau 5.')
+),
+lvls(id,lvl,sb,bb,ante,dur,brk,bdur) AS (VALUES
+  ('f1000000-0000-0000-0000-000000000001'::uuid,1,25,50,0,20,false,NULL::int),
+  ('f1000000-0000-0000-0000-000000000001'::uuid,2,50,100,0,20,false,NULL),
+  ('f1000000-0000-0000-0000-000000000001'::uuid,3,75,150,0,20,false,NULL),
+  ('f1000000-0000-0000-0000-000000000001'::uuid,4,100,200,100,20,false,NULL),
+  ('f1000000-0000-0000-0000-000000000001'::uuid,5,150,300,150,20,false,NULL),
+  ('f1000000-0000-0000-0000-000000000001'::uuid,6,200,400,200,20,false,NULL),
+  ('f1000000-0000-0000-0000-000000000001'::uuid,7,0,0,0,0,true,15),
+  ('f1000000-0000-0000-0000-000000000001'::uuid,8,300,600,300,20,false,NULL),
+  ('f1000000-0000-0000-0000-000000000001'::uuid,9,400,800,400,20,false,NULL),
+  ('f1000000-0000-0000-0000-000000000001'::uuid,10,500,1000,500,20,false,NULL),
+  ('f1000000-0000-0000-0000-000000000001'::uuid,11,700,1400,700,20,false,NULL),
+  ('f1000000-0000-0000-0000-000000000001'::uuid,12,1000,2000,1000,20,false,NULL),
+  ('f1000000-0000-0000-0000-000000000002'::uuid,1,50,100,0,15,false,NULL),
+  ('f1000000-0000-0000-0000-000000000002'::uuid,2,100,200,0,15,false,NULL),
+  ('f1000000-0000-0000-0000-000000000002'::uuid,3,150,300,0,15,false,NULL),
+  ('f1000000-0000-0000-0000-000000000002'::uuid,4,200,400,400,15,false,NULL),
+  ('f1000000-0000-0000-0000-000000000002'::uuid,5,300,600,600,15,false,NULL),
+  ('f1000000-0000-0000-0000-000000000002'::uuid,6,500,1000,1000,15,false,NULL),
+  ('f1000000-0000-0000-0000-000000000002'::uuid,7,800,1600,1600,15,false,NULL),
+  ('f1000000-0000-0000-0000-000000000002'::uuid,8,1200,2400,2400,15,false,NULL),
+  ('f1000000-0000-0000-0000-000000000002'::uuid,9,2000,4000,4000,15,false,NULL),
+  ('f1000000-0000-0000-0000-000000000002'::uuid,10,3000,6000,6000,15,false,NULL),
+  ('f1000000-0000-0000-0000-000000000003'::uuid,1,25,50,0,30,false,NULL),
+  ('f1000000-0000-0000-0000-000000000003'::uuid,2,50,100,0,30,false,NULL),
+  ('f1000000-0000-0000-0000-000000000003'::uuid,3,75,150,0,30,false,NULL),
+  ('f1000000-0000-0000-0000-000000000003'::uuid,4,100,200,200,30,false,NULL),
+  ('f1000000-0000-0000-0000-000000000003'::uuid,5,150,300,300,30,false,NULL),
+  ('f1000000-0000-0000-0000-000000000003'::uuid,6,0,0,0,0,true,20),
+  ('f1000000-0000-0000-0000-000000000003'::uuid,7,200,400,400,30,false,NULL),
+  ('f1000000-0000-0000-0000-000000000003'::uuid,8,300,600,600,30,false,NULL),
+  ('f1000000-0000-0000-0000-000000000003'::uuid,9,400,800,800,30,false,NULL),
+  ('f1000000-0000-0000-0000-000000000003'::uuid,10,600,1200,1200,30,false,NULL)
+)
+INSERT INTO blind_structure_templates (id, name, description, levels)
+SELECT m.id, m.name, m.descr,
+  jsonb_agg(jsonb_build_object('levelNumber',l.lvl,'smallBlind',l.sb,'bigBlind',l.bb,'ante',l.ante,'durationMinutes',l.dur,'isBreak',l.brk,'breakDurationMinutes',l.bdur) ORDER BY l.lvl)
+FROM meta m JOIN lvls l USING (id)
+GROUP BY m.id, m.name, m.descr
+ON CONFLICT (id) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- 9. Cross-feature data (so nothing is empty for the demo)
