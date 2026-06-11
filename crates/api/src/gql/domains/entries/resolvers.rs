@@ -49,6 +49,8 @@ impl EntryQuery {
             re_entry_count: stats.re_entry_count as i32,
             addon_count: stats.addon_count as i32,
             total_rake_cents: stats.total_rake_cents as i32,
+            total_chips: stats.total_chips,
+            players_remaining: stats.players_remaining as i32,
         })
     }
 }

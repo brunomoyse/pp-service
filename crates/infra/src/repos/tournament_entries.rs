@@ -30,6 +30,8 @@ pub struct TournamentEntryStats {
     pub re_entry_count: i64,
     pub addon_count: i64,
     pub total_rake_cents: i64,
+    pub total_chips: i64,
+    pub players_remaining: i64,
 }
 
 pub async fn create<'e>(
@@ -103,7 +105,7 @@ pub async fn get_stats<'e>(
     executor: impl PgExecutor<'e>,
     tournament_id: Uuid,
 ) -> Result<TournamentEntryStats> {
-    let row = sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, i64, i64)>(
+    let row = sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64)>(
         r#"
         SELECT
             COUNT(*) as total_entries,
@@ -117,7 +119,17 @@ pub async fn get_stats<'e>(
                 COUNT(*) FILTER (WHERE e.entry_type IN ('initial', 're_entry'))
                 * (SELECT rake_cents FROM tournaments WHERE id = $1),
                 0
-            ) as total_rake_cents
+            ) as total_rake_cents,
+            COALESCE(SUM(e.chips_received), 0)
+                + (SELECT COALESCE(COUNT(*) FILTER (WHERE r.early_bird_bonus_awarded), 0)
+                       * (SELECT COALESCE(early_bird_bonus_chips, 0) FROM tournaments WHERE id = $1)
+                       + COALESCE(COUNT(*) FILTER (WHERE r.level_two_bonus_awarded), 0)
+                       * (SELECT COALESCE(level_two_bonus_chips, 0) FROM tournaments WHERE id = $1)
+                   FROM tournament_registrations r
+                   WHERE r.tournament_id = $1) as total_chips,
+            (SELECT COUNT(*) FROM tournament_registrations r
+             WHERE r.tournament_id = $1
+               AND r.status IN ('registered', 'checked_in', 'seated')) as players_remaining
         FROM tournament_entries e
         WHERE e.tournament_id = $1
         "#,
@@ -136,6 +148,8 @@ pub async fn get_stats<'e>(
         re_entry_count: row.5,
         addon_count: row.6,
         total_rake_cents: row.7,
+        total_chips: row.8,
+        players_remaining: row.9,
     })
 }
 
