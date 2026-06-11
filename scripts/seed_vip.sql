@@ -208,11 +208,11 @@ BEGIN
                              seat_cap, late_registration_level, live_status)
     VALUES
       (v_t1, v_club, 'Tournoi Sans Ante',
-       'Structure sans ante — 20K de tapis de départ. Re-cave x2, add-on 30K.',
+       'Structure sans ante. 20K de tapis de départ. Re-cave x2, add-on 30K.',
        timestamptz '2026-06-12 19:30+02',
        2500, 0, 1000, 5000, 5000, 2, 30000, 2000, 50, 5, 'registration_open'),
-      (v_t2, v_club, '7BELLO ON TOUR — powered by BOSS',
-       '50K de tapis de départ — 20 min/niveau. Re-cave x1, add-on 50K.',
+      (v_t2, v_club, '7BELLO ON TOUR, powered by BOSS',
+       '50K de tapis de départ. 20 min/niveau. Re-cave x1, add-on 50K.',
        timestamptz '2026-06-20 19:00+02',
        4000, 0, 1000, 5000, 5000, 1, 50000, 1000, 60, 6, 'registration_open');
 
@@ -278,9 +278,14 @@ BEGIN
                              early_bird_bonus_chips, level_two_bonus_chips,
                              seat_cap, late_registration_level, live_status)
     VALUES (v_tid, v_club, 'VIP Live Tonight',
-            'Tournoi en cours — démo du flux live.',
+            'Tournoi en cours, démo du flux live.',
             now() - interval '90 minutes',
             2500, 0, 1000, 5000, 5000, 60, 5, 'in_progress');
+
+    -- Link tables 1 & 2 to the tournament (players are seated there below).
+    INSERT INTO tournament_table_assignments (tournament_id, club_table_id, is_active)
+    SELECT v_tid, ('e0000000-0000-0000-0000-00000000000' || n)::uuid, true
+    FROM generate_series(1, 2) AS n;
 
     -- 18 seated players across tables 1-2 (9 each).
     FOR rec IN
@@ -335,7 +340,7 @@ DECLARE
 BEGIN
     -- Player notes by Bruno on a few players (+ tags + showdown style).
     v_note := gen_random_uuid();
-    INSERT INTO player_note (id, author_app_user_id, subject_club_player_id, body, style)
+    INSERT INTO player_note (id, author_app_user_id, subject_registered_player_id, body, style)
     VALUES (v_note, v_bruno, 'b0000000-0000-0000-0000-000000000101',
             'Très agressif en position. Bluffe les boards secs.', 'LAG');
     INSERT INTO player_note_tag (note_id, kind, tag) VALUES
@@ -345,7 +350,7 @@ BEGIN
       (v_note, 'd0000000-0000-0000-0000-000000000005', '3-bet bluff A5s OTB vs UTG, montré au showdown');
 
     v_note := gen_random_uuid();
-    INSERT INTO player_note (id, author_app_user_id, subject_club_player_id, body, style)
+    INSERT INTO player_note (id, author_app_user_id, subject_registered_player_id, body, style)
     VALUES (v_note, v_bruno, 'b0000000-0000-0000-0000-000000000003', 'Joueur solide, peu de bluffs.', 'TP');
     INSERT INTO player_note_tag (note_id, kind, tag) VALUES (v_note, 'tag', 'nit');
 
