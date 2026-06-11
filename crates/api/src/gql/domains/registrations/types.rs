@@ -85,6 +85,8 @@ pub struct TournamentRegistration {
     pub notes: Option<String>,
     /// Live progressive-knockout head for this player, in cents (0 for non-PKO).
     pub current_bounty_cents: i32,
+    /// Carried-over chip stack for a multi-day final-day seat (null otherwise).
+    pub starting_stack: Option<i32>,
 }
 
 impl From<infra::models::TournamentRegistrationRow> for TournamentRegistration {
@@ -98,6 +100,7 @@ impl From<infra::models::TournamentRegistrationRow> for TournamentRegistration {
             status: row.status.into(),
             notes: row.notes,
             current_bounty_cents: row.current_bounty_cents,
+            starting_stack: row.starting_stack,
         }
     }
 }
