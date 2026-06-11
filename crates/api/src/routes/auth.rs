@@ -92,6 +92,7 @@ pub async fn callback(
         &state.db,
         user_id,
         auth_config.refresh_token_expiration_days,
+        true, // OAuth logins always persist the session
     )
     .await?;
 

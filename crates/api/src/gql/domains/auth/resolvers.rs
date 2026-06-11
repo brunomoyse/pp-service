@@ -119,6 +119,7 @@ impl AuthMutation {
             &state.db,
             user_id,
             auth_config.refresh_token_expiration_days,
+            true, // OAuth logins always persist the session
         )
         .await
         .gql_err("Failed to create refresh token")?;
@@ -300,6 +301,7 @@ impl AuthMutation {
             &state.db,
             user_id,
             auth_config.refresh_token_expiration_days,
+            input.remember_me,
         )
         .await
         .gql_err("Failed to create refresh token")?;

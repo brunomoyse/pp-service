@@ -51,7 +51,13 @@ pub async fn refresh_handler(
 
     // Build new refresh cookie
     let auth_config = state.auth_config();
-    let max_age_secs = Some(auth_config.refresh_token_expiration_days * 24 * 60 * 60);
+    // Preserve the login-time "remember me" choice across rotations: only a
+    // remembered session gets a persistent (Max-Age) cookie back.
+    let max_age_secs = if result.remember_me {
+        Some(auth_config.refresh_token_expiration_days * 24 * 60 * 60)
+    } else {
+        None
+    };
     let cookie_value = build_refresh_cookie(
         &result.new_raw_token,
         max_age_secs,

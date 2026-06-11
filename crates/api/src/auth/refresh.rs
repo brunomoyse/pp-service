@@ -10,6 +10,7 @@ use crate::error::AppError;
 pub struct RotateResult {
     pub user_id: Uuid,
     pub new_raw_token: String,
+    pub remember_me: bool,
 }
 
 pub fn hash_token(raw: &str) -> String {
@@ -30,6 +31,7 @@ pub async fn create_refresh_token(
     pool: &PgPool,
     user_id: Uuid,
     expiration_days: u64,
+    remember_me: bool,
 ) -> Result<String, AppError> {
     let raw_token: String = rand::rng()
         .sample_iter(&Alphanumeric)
@@ -41,9 +43,16 @@ pub async fn create_refresh_token(
     let family_id = Uuid::new_v4();
     let expires_at = Utc::now() + Duration::days(expiration_days as i64);
 
-    infra::repos::refresh_tokens::create(pool, &token_hash, user_id, family_id, expires_at)
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to create refresh token: {}", e)))?;
+    infra::repos::refresh_tokens::create(
+        pool,
+        &token_hash,
+        user_id,
+        family_id,
+        expires_at,
+        remember_me,
+    )
+    .await
+    .map_err(|e| AppError::Internal(format!("Failed to create refresh token: {}", e)))?;
 
     Ok(raw_token)
 }
@@ -83,6 +92,7 @@ pub async fn rotate_refresh_token(
                 token_row.user_id,
                 token_row.family_id,
                 expires_at,
+                token_row.remember_me,
             )
             .await
             .map_err(|e| AppError::Internal(format!("Failed to create new token: {}", e)))?;
@@ -90,6 +100,7 @@ pub async fn rotate_refresh_token(
             Ok(RotateResult {
                 user_id: token_row.user_id,
                 new_raw_token: new_raw,
+                remember_me: token_row.remember_me,
             })
         }
         None => {

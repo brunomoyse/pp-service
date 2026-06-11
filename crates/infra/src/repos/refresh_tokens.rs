@@ -10,6 +10,7 @@ pub struct RefreshTokenRow {
     pub expires_at: DateTime<Utc>,
     pub revoked_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
+    pub remember_me: bool,
 }
 
 pub async fn create(
@@ -18,14 +19,16 @@ pub async fn create(
     user_id: Uuid,
     family_id: Uuid,
     expires_at: DateTime<Utc>,
+    remember_me: bool,
 ) -> Result<Uuid, sqlx::Error> {
     let row = sqlx::query(
-        "INSERT INTO refresh_tokens (token_hash, user_id, family_id, expires_at) VALUES ($1, $2, $3, $4) RETURNING id",
+        "INSERT INTO refresh_tokens (token_hash, user_id, family_id, expires_at, remember_me) VALUES ($1, $2, $3, $4, $5) RETURNING id",
     )
     .bind(token_hash)
     .bind(user_id)
     .bind(family_id)
     .bind(expires_at)
+    .bind(remember_me)
     .fetch_one(pool)
     .await?;
 
@@ -37,7 +40,7 @@ pub async fn find_by_hash(
     token_hash: &str,
 ) -> Result<Option<RefreshTokenRow>, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT id, token_hash, user_id, family_id, expires_at, revoked_at, created_at FROM refresh_tokens WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now()",
+        "SELECT id, token_hash, user_id, family_id, expires_at, revoked_at, created_at, remember_me FROM refresh_tokens WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now()",
     )
     .bind(token_hash)
     .fetch_optional(pool)
@@ -51,6 +54,7 @@ pub async fn find_by_hash(
         expires_at: r.get("expires_at"),
         revoked_at: r.get("revoked_at"),
         created_at: r.get("created_at"),
+        remember_me: r.get("remember_me"),
     }))
 }
 
