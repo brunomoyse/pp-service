@@ -537,6 +537,7 @@ pub struct TournamentEntryRow {
     pub chips_received: Option<i32>,
     pub recorded_by: Option<Uuid>,
     pub notes: Option<String>,
+    pub payment_method: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

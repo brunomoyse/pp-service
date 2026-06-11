@@ -40,6 +40,44 @@ impl From<EntryType> for String {
     }
 }
 
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
+pub enum PaymentMethod {
+    Cash,
+    Card,
+    BankTransfer,
+    Voucher,
+    Comp,
+    Other,
+}
+
+impl From<String> for PaymentMethod {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "cash" => PaymentMethod::Cash,
+            "card" => PaymentMethod::Card,
+            "bank_transfer" => PaymentMethod::BankTransfer,
+            "voucher" => PaymentMethod::Voucher,
+            "comp" => PaymentMethod::Comp,
+            "other" => PaymentMethod::Other,
+            _ => PaymentMethod::Cash,
+        }
+    }
+}
+
+impl From<PaymentMethod> for String {
+    fn from(m: PaymentMethod) -> Self {
+        match m {
+            PaymentMethod::Cash => "cash",
+            PaymentMethod::Card => "card",
+            PaymentMethod::BankTransfer => "bank_transfer",
+            PaymentMethod::Voucher => "voucher",
+            PaymentMethod::Comp => "comp",
+            PaymentMethod::Other => "other",
+        }
+        .to_string()
+    }
+}
+
 #[derive(SimpleObject, Clone)]
 pub struct TournamentEntry {
     pub id: ID,
@@ -53,6 +91,7 @@ pub struct TournamentEntry {
     pub chips_received: Option<i32>,
     pub recorded_by: Option<ID>,
     pub notes: Option<String>,
+    pub payment_method: PaymentMethod,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -69,6 +108,7 @@ impl From<infra::models::TournamentEntryRow> for TournamentEntry {
             chips_received: row.chips_received,
             recorded_by: row.recorded_by.map(|id| id.into()),
             notes: row.notes,
+            payment_method: PaymentMethod::from(row.payment_method),
             created_at: row.created_at,
             updated_at: row.updated_at,
         }
@@ -98,4 +138,28 @@ pub struct AddTournamentEntryInput {
     pub amount_cents: Option<i32>,
     pub chips_received: Option<i32>,
     pub notes: Option<String>,
+    /// How the player paid; defaults to CASH when omitted.
+    pub payment_method: Option<PaymentMethod>,
+}
+
+/// One cell of the cash report: money taken in for a (method, type) pair.
+#[derive(SimpleObject, Clone)]
+pub struct CashReportLine {
+    pub payment_method: PaymentMethod,
+    pub entry_type: EntryType,
+    pub amount_cents: i32,
+    pub count: i32,
+}
+
+/// End-of-night cash report for a single tournament. The manager pivots
+/// `lines` into a method-by-type matrix; the totals reconcile the drawer.
+#[derive(SimpleObject, Clone)]
+pub struct TournamentCashReport {
+    pub tournament_id: ID,
+    pub lines: Vec<CashReportLine>,
+    /// Sum of every entry's amount across all methods (gross collected).
+    pub total_collected_cents: i32,
+    pub total_rake_cents: i32,
+    pub prize_pool_cents: i32,
+    pub entry_count: i32,
 }

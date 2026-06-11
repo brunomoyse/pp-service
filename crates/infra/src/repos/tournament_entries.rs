@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::models::TournamentEntryRow;
 
-const COLS: &str = "id, tournament_id, user_id, club_player_id, entry_type, amount_cents, chips_received, recorded_by, notes, created_at, updated_at";
+const COLS: &str = "id, tournament_id, user_id, club_player_id, entry_type, amount_cents, chips_received, recorded_by, notes, payment_method, created_at, updated_at";
 
 #[derive(Debug, Clone, Default)]
 pub struct CreateTournamentEntry {
@@ -17,6 +17,9 @@ pub struct CreateTournamentEntry {
     pub chips_received: Option<i32>,
     pub recorded_by: Option<Uuid>,
     pub notes: Option<String>,
+    /// How the player paid: cash | card | bank_transfer | voucher | comp | other.
+    /// An empty value (e.g. from `Default`) is coerced to "cash" in `create`.
+    pub payment_method: String,
 }
 
 #[derive(Debug, Clone)]
@@ -38,10 +41,15 @@ pub async fn create<'e>(
     executor: impl PgExecutor<'e>,
     data: CreateTournamentEntry,
 ) -> Result<TournamentEntryRow> {
+    let payment_method = if data.payment_method.is_empty() {
+        "cash".to_string()
+    } else {
+        data.payment_method
+    };
     let row = sqlx::query_as::<_, TournamentEntryRow>(&format!(
         "INSERT INTO tournament_entries \
-            (tournament_id, user_id, club_player_id, entry_type, amount_cents, chips_received, recorded_by, notes) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING {COLS}"
+            (tournament_id, user_id, club_player_id, entry_type, amount_cents, chips_received, recorded_by, notes, payment_method) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING {COLS}"
     ))
     .bind(data.tournament_id)
     .bind(data.user_id)
@@ -51,6 +59,7 @@ pub async fn create<'e>(
     .bind(data.chips_received)
     .bind(data.recorded_by)
     .bind(data.notes)
+    .bind(payment_method)
     .fetch_one(executor)
     .await?;
 
@@ -151,6 +160,50 @@ pub async fn get_stats<'e>(
         total_chips: row.8,
         players_remaining: row.9,
     })
+}
+
+/// One row of the end-of-night cash report: money taken in for a given
+/// (payment method, entry type) pair. The resolver pivots these into a
+/// method-by-type matrix and per-method totals.
+#[derive(Debug, Clone)]
+pub struct CashReportLine {
+    pub payment_method: String,
+    pub entry_type: String,
+    pub amount_cents: i64,
+    pub count: i64,
+}
+
+pub async fn get_cash_report<'e>(
+    executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
+) -> Result<Vec<CashReportLine>> {
+    let rows = sqlx::query_as::<_, (String, String, i64, i64)>(
+        r#"
+        SELECT payment_method,
+               entry_type,
+               COALESCE(SUM(amount_cents), 0) AS amount_cents,
+               COUNT(*) AS cnt
+        FROM tournament_entries
+        WHERE tournament_id = $1
+        GROUP BY payment_method, entry_type
+        ORDER BY payment_method, entry_type
+        "#,
+    )
+    .bind(tournament_id)
+    .fetch_all(executor)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(payment_method, entry_type, amount_cents, count)| CashReportLine {
+                payment_method,
+                entry_type,
+                amount_cents,
+                count,
+            },
+        )
+        .collect())
 }
 
 pub async fn delete<'e>(executor: impl PgExecutor<'e>, id: Uuid) -> Result<bool> {

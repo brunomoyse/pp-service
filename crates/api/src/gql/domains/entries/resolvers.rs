@@ -3,9 +3,14 @@ use uuid::Uuid;
 
 use crate::gql::error::ResultExt;
 use crate::state::AppState;
-use infra::repos::{tournament_entries, tournament_entries::CreateTournamentEntry, tournaments};
+use infra::repos::{
+    tournament_entries, tournament_entries::CreateTournamentEntry, tournament_payouts, tournaments,
+};
 
-use super::types::{AddTournamentEntryInput, EntryType, TournamentEntry, TournamentEntryStats};
+use super::types::{
+    AddTournamentEntryInput, CashReportLine, EntryType, PaymentMethod, TournamentCashReport,
+    TournamentEntry, TournamentEntryStats,
+};
 
 #[derive(Default)]
 pub struct EntryQuery;
@@ -53,6 +58,52 @@ impl EntryQuery {
             players_remaining: stats.players_remaining as i32,
         })
     }
+
+    /// End-of-night cash report: money taken in per payment method and entry
+    /// type, plus rake and prize pool. Manager-only (sensitive financials).
+    async fn tournament_cash_report(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: ID,
+    ) -> Result<TournamentCashReport> {
+        use crate::auth::permissions::require_club_manager;
+
+        let state = ctx.data::<AppState>()?;
+        let tournament_id =
+            Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+
+        let tournament = tournaments::get_by_id(&state.db, tournament_id)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
+        require_club_manager(ctx, tournament.club_id).await?;
+
+        let raw_lines = tournament_entries::get_cash_report(&state.db, tournament_id).await?;
+        let stats = tournament_entries::get_stats(&state.db, tournament_id).await?;
+        let prize_pool_cents = tournament_payouts::get_by_tournament(&state.db, tournament_id)
+            .await?
+            .map(|p| p.total_prize_pool)
+            .unwrap_or(0);
+
+        let total_collected_cents: i64 = raw_lines.iter().map(|l| l.amount_cents).sum();
+        let lines = raw_lines
+            .into_iter()
+            .map(|l| CashReportLine {
+                payment_method: PaymentMethod::from(l.payment_method),
+                entry_type: EntryType::from(l.entry_type),
+                amount_cents: l.amount_cents as i32,
+                count: l.count as i32,
+            })
+            .collect();
+
+        Ok(TournamentCashReport {
+            tournament_id: tournament_id.into(),
+            lines,
+            total_collected_cents: total_collected_cents as i32,
+            total_rake_cents: stats.total_rake_cents as i32,
+            prize_pool_cents,
+            entry_count: stats.total_entries as i32,
+        })
+    }
 }
 
 #[derive(Default)]
@@ -87,6 +138,11 @@ impl EntryMutation {
         // Use provided amount or default to tournament buy_in_cents
         let amount_cents = input.amount_cents.unwrap_or(tournament.buy_in_cents);
         let is_initial = matches!(input.entry_type, EntryType::Initial);
+        let payment_method = String::from(
+            input
+                .payment_method
+                .unwrap_or(super::types::PaymentMethod::Cash),
+        );
 
         let create_data = CreateTournamentEntry {
             tournament_id,
@@ -97,6 +153,7 @@ impl EntryMutation {
             chips_received: input.chips_received,
             recorded_by: Some(manager_id),
             notes: input.notes,
+            payment_method: payment_method.clone(),
         };
 
         let entry_row = tournament_entries::create(&state.db, create_data).await?;
@@ -114,6 +171,8 @@ impl EntryMutation {
                 chips_received: None,
                 recorded_by: Some(manager_id),
                 notes: Some("Mandatory drink voucher".to_string()),
+                // The voucher is paid together with the buy-in, same method.
+                payment_method: payment_method.clone(),
             };
             tournament_entries::create(&state.db, voucher_data).await?;
         }
