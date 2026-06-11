@@ -525,7 +525,8 @@ async fn test_entry_stats_total_rake_with_rake_tournament() {
     let data = response.data.into_json().unwrap();
     let stats = &data["tournamentEntryStats"];
 
-    assert_eq!(stats["totalEntries"], 5);
+    // Entries count buy-ins only (initial + rebuy + re_entry); the add-on is excluded.
+    assert_eq!(stats["totalEntries"], 4);
     assert_eq!(stats["totalAmountCents"], 18500); // 5000 + 2500 + 1000 + 5000 + 5000
     assert_eq!(stats["uniquePlayers"], 2);
     assert_eq!(stats["initialCount"], 2);

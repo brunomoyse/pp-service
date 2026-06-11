@@ -167,7 +167,7 @@ pub async fn list_user_current<'e>(
 ) -> Result<Vec<TournamentRegistrationRow>> {
     let rows = sqlx::query_as::<_, TournamentRegistrationRow>(
         "SELECT tr.id, tr.tournament_id, tr.user_id, tr.club_player_id, tr.registration_time, \
-                tr.status, tr.notes, tr.current_bounty_cents, tr.created_at, tr.updated_at \
+                tr.status, tr.notes, tr.current_bounty_cents, tr.starting_stack, tr.created_at, tr.updated_at \
          FROM tournament_registrations tr \
          JOIN tournaments t ON tr.tournament_id = t.id \
          WHERE tr.user_id = $1 AND (t.end_time IS NULL OR t.end_time > NOW()) \

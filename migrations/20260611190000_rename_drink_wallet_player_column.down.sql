@@ -1,0 +1,4 @@
+ALTER TABLE player_note RENAME COLUMN subject_club_player_id TO subject_registered_player_id;
+
+ALTER INDEX drink_wallet_club_player_id_idx RENAME TO drink_wallet_registered_player_id_idx;
+ALTER TABLE drink_wallet RENAME COLUMN club_player_id TO registered_player_id;
