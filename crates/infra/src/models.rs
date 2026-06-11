@@ -47,6 +47,8 @@ pub struct TournamentRow {
     pub bounty_type: String,
     /// Slice of each buy-in (and rebuy / re-entry) diverted to the bounty pool.
     pub bounty_amount_cents: i32,
+    /// Optional league tag (feeds `tagged` leaderboard configs). NULL = untagged.
+    pub leaderboard_config_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

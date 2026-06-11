@@ -1,16 +1,71 @@
-/// Tournament scoring utility with authoritative formula
+//! Tournament scoring.
+//!
+//! The default (club-wide) formula is the authoritative one stored on
+//! `tournament_results.points`:
+//!
+//! ```text
+//! points = min(60, round(3 * (sqrt(field_size) / sqrt(rank)) * (log10(buy_in_eur) + 1) + 2))
+//! ```
+//!
+//! Leagues (configurable leaderboards) parameterize this shape via
+//! [`ScoringFormula`] and compute points on read with [`event_points_with`].
+//! [`ScoringFormula::default`] reproduces the formula above exactly.
+
+use serde::{Deserialize, Serialize};
+
+/// Shape of the per-position factor in the scoring formula.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PositionCurve {
+    /// `1 / sqrt(rank)` — the default; gentle decay rewarding deep runs.
+    #[default]
+    Sqrt,
+    /// `1 / rank` — steeper, top-heavy.
+    Harmonic,
+    /// `(N - rank + 1) / N` — flat, linear by finishing position.
+    Linear,
+}
+
+/// Parameterized scoring formula for a league.
 ///
-/// Formula: points = min(60, round(3 * (sqrt(field_size) / sqrt(rank)) * (log10(buy_in_eur) + 1) + 2))
+/// `raw = base_points + field_multiplier * sqrt(N) *
+///        (buyin_multiplier * log10(buy_in_eur) + 1) * position_factor(rank, N)`
 ///
-/// # Arguments
+/// then `points = 0` when `N < min_players`, else `clamp(round(raw), 0, cap)`.
 ///
-/// * `field_size` - Number of confirmed entrants (N ≥ 1)
-/// * `rank` - Final position (1 = winner)
-/// * `buy_in_eur` - Buy-in amount in euros (> 0)
-///
-/// # Returns
-///
-/// Points awarded (0-60), or 0 if inputs invalid
+/// [`Self::default`] reproduces the authoritative club formula.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ScoringFormula {
+    pub base_points: f64,
+    pub field_multiplier: f64,
+    pub buyin_multiplier: f64,
+    #[serde(default)]
+    pub position_curve: PositionCurve,
+    /// Tournaments with fewer entrants than this award 0 points.
+    pub min_players: u32,
+    /// Maximum points a single result can score.
+    pub cap: u32,
+    /// When set, a player's leaderboard total counts only their best N results.
+    /// `None` counts every result. (Applied at aggregation time, not here.)
+    #[serde(default)]
+    pub count_best_n: Option<u32>,
+}
+
+impl Default for ScoringFormula {
+    fn default() -> Self {
+        Self {
+            base_points: 2.0,
+            field_multiplier: 3.0,
+            buyin_multiplier: 1.0,
+            position_curve: PositionCurve::Sqrt,
+            min_players: 1,
+            cap: 60,
+            count_best_n: None,
+        }
+    }
+}
+
+/// Points for one result under the authoritative (default) formula.
 ///
 /// # Examples
 ///
@@ -22,29 +77,46 @@
 /// assert_eq!(event_points(80, 9, 50.0), 26);
 /// ```
 pub fn event_points(field_size: u32, rank: u32, buy_in_eur: f64) -> u32 {
-    // Guardrails: validate inputs
+    event_points_with(&ScoringFormula::default(), field_size, rank, buy_in_eur)
+}
+
+/// Points for one result under an arbitrary [`ScoringFormula`].
+///
+/// Returns 0 for invalid inputs (`field_size < 1`, `rank` out of range,
+/// `buy_in_eur <= 0`) or when `field_size < formula.min_players`.
+pub fn event_points_with(
+    formula: &ScoringFormula,
+    field_size: u32,
+    rank: u32,
+    buy_in_eur: f64,
+) -> u32 {
+    // Guardrails: validate inputs.
     if field_size < 1 || rank < 1 || rank > field_size || buy_in_eur <= 0.0 {
         return 0;
     }
+    if field_size < formula.min_players {
+        return 0;
+    }
 
-    // Convert to f64 for calculations
     let field_size_f = field_size as f64;
     let rank_f = rank as f64;
 
-    // Formula: 3 * (sqrt(field_size) / sqrt(rank)) * (log10(buy_in_eur) + 1) + 2
-    let sqrt_field = field_size_f.sqrt();
-    let sqrt_rank = rank_f.sqrt();
-    let log_buy_in = buy_in_eur.log10();
+    let position_factor = match formula.position_curve {
+        PositionCurve::Sqrt => 1.0 / rank_f.sqrt(),
+        PositionCurve::Harmonic => 1.0 / rank_f,
+        PositionCurve::Linear => (field_size_f - rank_f + 1.0) / field_size_f,
+    };
+    let buyin_factor = formula.buyin_multiplier * buy_in_eur.log10() + 1.0;
 
-    let raw_points = 3.0 * (sqrt_field / sqrt_rank) * (log_buy_in + 1.0) + 2.0;
+    let raw_points = formula.base_points
+        + formula.field_multiplier * field_size_f.sqrt() * buyin_factor * position_factor;
 
-    // Ensure points are non-negative, round, and cap at 60
     if raw_points <= 0.0 {
         return 0;
     }
 
     let rounded_points = raw_points.round() as u32;
-    std::cmp::min(60, rounded_points)
+    std::cmp::min(formula.cap, rounded_points)
 }
 
 #[cfg(test)]
@@ -127,5 +199,74 @@ mod tests {
         // Test that points are capped at 60
         let max_points = event_points(1000, 1, 1000.0);
         assert_eq!(max_points, 60);
+    }
+
+    #[test]
+    fn test_default_formula_matches_legacy() {
+        // The parameterized default must reproduce the authoritative formula.
+        let f = ScoringFormula::default();
+        assert_eq!(event_points_with(&f, 40, 1, 20.0), 46);
+        assert_eq!(event_points_with(&f, 50, 2, 30.0), 39);
+        assert_eq!(event_points_with(&f, 80, 9, 50.0), 26);
+    }
+
+    #[test]
+    fn test_position_curves_differ() {
+        // For a non-winner, harmonic decays faster than sqrt, linear is flattest.
+        let sqrt = ScoringFormula {
+            position_curve: PositionCurve::Sqrt,
+            ..Default::default()
+        };
+        let harmonic = ScoringFormula {
+            position_curve: PositionCurve::Harmonic,
+            ..Default::default()
+        };
+        let linear = ScoringFormula {
+            position_curve: PositionCurve::Linear,
+            ..Default::default()
+        };
+
+        let p_sqrt = event_points_with(&sqrt, 50, 5, 30.0);
+        let p_harm = event_points_with(&harmonic, 50, 5, 30.0);
+        assert!(p_harm < p_sqrt, "harmonic should decay faster than sqrt");
+
+        // Linear keeps mid-pack finishers higher than harmonic for a deep field.
+        let p_lin = event_points_with(&linear, 50, 5, 30.0);
+        assert!(p_lin > p_harm);
+    }
+
+    #[test]
+    fn test_min_players_gate() {
+        let f = ScoringFormula {
+            min_players: 10,
+            ..Default::default()
+        };
+        assert_eq!(event_points_with(&f, 9, 1, 20.0), 0); // below threshold
+        assert!(event_points_with(&f, 10, 1, 20.0) > 0); // at threshold
+    }
+
+    #[test]
+    fn test_cap_is_configurable() {
+        let high = ScoringFormula {
+            cap: 100,
+            ..Default::default()
+        };
+        // A huge field/buy-in that the default would clamp to 60.
+        assert!(event_points_with(&high, 1000, 1, 1000.0) > 60);
+        let low = ScoringFormula {
+            cap: 10,
+            ..Default::default()
+        };
+        assert_eq!(event_points_with(&low, 1000, 1, 1000.0), 10);
+    }
+
+    #[test]
+    fn test_multipliers_scale() {
+        // Doubling the field weight raises a 40-field/€20 winner above the default's 46.
+        let f = ScoringFormula {
+            field_multiplier: 6.0,
+            ..Default::default()
+        };
+        assert!(event_points_with(&f, 40, 1, 20.0) > 46);
     }
 }

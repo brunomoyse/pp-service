@@ -15,6 +15,8 @@ pub mod drink_redemptions;
 pub mod drink_wallet_credentials;
 pub mod drink_wallets;
 pub mod friendships;
+pub mod leaderboard_adjustments;
+pub mod leaderboard_configs;
 pub mod notification_preferences;
 pub mod password_reset_tokens;
 pub mod payout_templates;

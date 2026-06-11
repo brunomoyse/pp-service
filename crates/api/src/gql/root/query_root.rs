@@ -10,6 +10,7 @@ use crate::gql::domains::cosmetics::CosmeticsQuery;
 use crate::gql::domains::drinks::DrinksQuery;
 use crate::gql::domains::entries::EntryQuery;
 use crate::gql::domains::identity::IdentityQuery;
+use crate::gql::domains::leaderboard_configs::LeaderboardConfigQuery;
 use crate::gql::domains::leaderboards::LeaderboardQuery;
 use crate::gql::domains::notes::NotesQuery;
 use crate::gql::domains::predictions::PredictionsQuery;
@@ -37,6 +38,7 @@ pub struct QueryRoot(
     DrinksQuery,
     EntryQuery,
     IdentityQuery,
+    LeaderboardConfigQuery,
     LeaderboardQuery,
     NotesQuery,
     PredictionsQuery,

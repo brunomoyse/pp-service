@@ -285,7 +285,7 @@ impl Loader<Uuid> for TournamentLoader {
                 SELECT id, club_id, name, description, start_time, end_time,
                        buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips,
                        level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips,
-                       addon_price_cents, late_registration_level, bounty_type, bounty_amount_cents, created_at, updated_at
+                       addon_price_cents, late_registration_level, bounty_type, bounty_amount_cents, leaderboard_config_id, created_at, updated_at
                 FROM tournaments
                 WHERE id = ANY($1::uuid[])
                 "#,

@@ -219,6 +219,7 @@ pub struct Tournament {
     pub late_registration_level: Option<i32>, // Blind level until which late registration stays open
     pub bounty_type: BountyType,              // none | fixed | progressive (PKO)
     pub bounty_amount_cents: i32,             // Bounty slice of each buy-in / rebuy / re-entry
+    pub leaderboard_config_id: Option<ID>,    // Optional league tag (feeds `tagged` leagues)
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -276,6 +277,7 @@ impl From<infra::models::TournamentRow> for Tournament {
             late_registration_level: row.late_registration_level,
             bounty_type: BountyType::from(row.bounty_type),
             bounty_amount_cents: row.bounty_amount_cents,
+            leaderboard_config_id: row.leaderboard_config_id.map(|id| id.into()),
             created_at: row.created_at,
             updated_at: row.updated_at,
         }
@@ -416,6 +418,8 @@ pub struct CreateTournamentInput {
     pub late_registration_level: Option<i32>,
     pub bounty_type: Option<BountyType>,
     pub bounty_amount_cents: Option<i32>,
+    /// Optional league this tournament counts toward (feeds `tagged` leagues).
+    pub leaderboard_config_id: Option<ID>,
     /// Blind structure template ID - if provided, copies levels from template
     pub template_id: Option<ID>,
     /// Custom blind structure levels - only used if template_id is not provided
@@ -441,6 +445,8 @@ pub struct UpdateTournamentInput {
     pub late_registration_level: Option<i32>,
     pub bounty_type: Option<BountyType>,
     pub bounty_amount_cents: Option<i32>,
+    /// Optional league this tournament counts toward (feeds `tagged` leagues).
+    pub leaderboard_config_id: Option<ID>,
     /// Blind structure template ID - if provided, replaces structure with template levels
     pub template_id: Option<ID>,
     /// Custom blind structure levels - only used if template_id is not provided

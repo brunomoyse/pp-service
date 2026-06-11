@@ -12,6 +12,7 @@ pub mod devices;
 pub mod drinks;
 pub mod entries;
 pub mod identity;
+pub mod leaderboard_configs;
 pub mod leaderboards;
 pub mod notes;
 pub mod predictions;

@@ -1,7 +1,11 @@
+use std::collections::HashMap;
+
+use chrono::{DateTime, Utc};
 use sqlx::{PgExecutor, PgPool, Result, Row};
 use uuid::Uuid;
 
 use crate::models::TournamentResultRow;
+use crate::scoring::{event_points_with, ScoringFormula};
 
 const COLS: &str = "id, tournament_id, user_id, club_player_id, final_position, prize_cents, points, notes, created_at, updated_at";
 
@@ -431,4 +435,208 @@ pub async fn count_leaderboard(
 
     let count = query_builder.fetch_one(pool).await?;
     Ok(count)
+}
+
+/// Leaderboard for a configurable league: points are recomputed per result from
+/// `formula`, capped to the player's best `count_best_n` results, plus audited
+/// manual adjustments. Returns the requested page and the total number of ranked
+/// players. Stats (tournaments, winnings, ITM, …) are aggregated over the
+/// league's tournament set; points are the only thing that differs per league.
+#[allow(clippy::too_many_arguments)]
+pub async fn get_leaderboard_for_config(
+    pool: &PgPool,
+    config_id: Uuid,
+    formula: &ScoringFormula,
+    membership_mode: &str,
+    club_id: Uuid,
+    period_start: Option<DateTime<Utc>>,
+    period_end: Option<DateTime<Utc>>,
+    limit: Option<i32>,
+    offset: Option<i32>,
+) -> Result<(Vec<LeaderboardEntry>, i64)> {
+    // Tournament-set filter shared by both queries. $1 club, $2 period_start,
+    // $3 period_end, $4 config (tagged only). Bind in the same order each time.
+    let tagged = membership_mode == "tagged";
+    let mut tournament_filter = String::from(
+        "t.club_id = $1 \
+         AND ($2::timestamptz IS NULL OR t.start_time >= $2) \
+         AND ($3::timestamptz IS NULL OR t.start_time <= $3)",
+    );
+    if tagged {
+        tournament_filter.push_str(" AND t.leaderboard_config_id = $4");
+    }
+
+    // --- Query 1: per-player stats (everything except points) ---
+    let stats_sql = format!(
+        r#"
+        SELECT
+            rp.id as club_player_id,
+            rp.display_name,
+            u.id as user_id,
+            u.username, u.first_name, u.last_name, u.email, u.phone,
+            u.is_active, u.role, u.locale,
+            COUNT(DISTINCT reg.tournament_id) as total_tournaments,
+            COALESCE(SUM(t.buy_in_cents), 0) as total_buy_ins,
+            COALESCE(SUM(tr.prize_cents), 0) as total_winnings,
+            COUNT(tr.id) as total_itm,
+            COALESCE(AVG(tr.final_position::float), 0) as average_finish,
+            SUM(CASE WHEN tr.final_position = 1 THEN 1 ELSE 0 END) as first_places,
+            SUM(CASE WHEN tr.final_position <= 9 THEN 1 ELSE 0 END) as final_tables
+        FROM club_player rp
+        LEFT JOIN users u ON u.id = rp.app_user_id
+        JOIN tournament_registrations reg ON reg.club_player_id = rp.id
+        JOIN tournaments t ON reg.tournament_id = t.id
+        LEFT JOIN tournament_results tr ON tr.club_player_id = rp.id AND tr.tournament_id = t.id
+        WHERE (u.id IS NULL OR (u.role = 'player' AND u.is_active = true))
+            AND {filter}
+        GROUP BY rp.id, rp.display_name, u.id, u.username, u.first_name, u.last_name,
+                 u.email, u.phone, u.is_active, u.role, u.locale
+        HAVING COUNT(DISTINCT reg.tournament_id) > 0
+        "#,
+        filter = tournament_filter
+    );
+
+    let mut stats_q = sqlx::query(&stats_sql)
+        .bind(club_id)
+        .bind(period_start)
+        .bind(period_end);
+    if tagged {
+        stats_q = stats_q.bind(config_id);
+    }
+    let stat_rows = stats_q.fetch_all(pool).await?;
+
+    // --- Query 2: per-result inputs for the points formula ---
+    let results_sql = format!(
+        r#"
+        SELECT
+            tr.club_player_id as club_player_id,
+            tr.final_position as rank,
+            t.buy_in_cents as buy_in_cents,
+            f.field_size as field_size
+        FROM tournament_results tr
+        JOIN tournaments t ON t.id = tr.tournament_id
+        JOIN (
+            SELECT tournament_id, COUNT(*) as field_size
+            FROM tournament_registrations GROUP BY tournament_id
+        ) f ON f.tournament_id = tr.tournament_id
+        WHERE tr.final_position > 0 AND {filter}
+        "#,
+        filter = tournament_filter
+    );
+
+    let mut results_q = sqlx::query(&results_sql)
+        .bind(club_id)
+        .bind(period_start)
+        .bind(period_end);
+    if tagged {
+        results_q = results_q.bind(config_id);
+    }
+    let result_rows = results_q.fetch_all(pool).await?;
+
+    // Per-player list of per-tournament point values.
+    let mut points_by_player: HashMap<Uuid, Vec<u32>> = HashMap::new();
+    for row in &result_rows {
+        let club_player_id: Uuid = row.try_get("club_player_id")?;
+        let rank: i32 = row.try_get("rank")?;
+        let buy_in_cents: i32 = row.try_get("buy_in_cents")?;
+        let field_size: i64 = row.try_get("field_size")?;
+        let pts = event_points_with(
+            formula,
+            field_size as u32,
+            rank.max(0) as u32,
+            buy_in_cents as f64 / 100.0,
+        );
+        points_by_player
+            .entry(club_player_id)
+            .or_default()
+            .push(pts);
+    }
+
+    // Best-N aggregation: sum a player's top N results (all if None).
+    let sum_best = |mut vals: Vec<u32>| -> i64 {
+        vals.sort_unstable_by(|a, b| b.cmp(a));
+        let take = formula
+            .count_best_n
+            .map(|n| n as usize)
+            .unwrap_or(vals.len());
+        vals.iter().take(take).map(|&p| p as i64).sum()
+    };
+
+    let adjustments = crate::repos::leaderboard_adjustments::sum_by_player(pool, config_id).await?;
+
+    // --- Merge into entries ---
+    let mut entries: Vec<LeaderboardEntry> = Vec::with_capacity(stat_rows.len());
+    for row in stat_rows {
+        let club_player_id: Uuid = row.try_get("club_player_id")?;
+        let total_tournaments = row.try_get::<i64, _>("total_tournaments")? as i32;
+        let total_buy_ins = row.try_get::<i64, _>("total_buy_ins")? as i32;
+        let total_winnings = row.try_get::<i64, _>("total_winnings")? as i32;
+        let total_itm = row.try_get::<i64, _>("total_itm")? as i32;
+
+        let base_points = points_by_player
+            .remove(&club_player_id)
+            .map(sum_best)
+            .unwrap_or(0);
+        let adjustment = adjustments.get(&club_player_id).copied().unwrap_or(0);
+        let points = (base_points + adjustment) as f64;
+
+        let itm_percentage = if total_tournaments > 0 {
+            ((total_itm as f64 / total_tournaments as f64) * 100.0 * 100.0).round() / 100.0
+        } else {
+            0.0
+        };
+        let roi_percentage = if total_buy_ins > 0 {
+            (((total_winnings - total_buy_ins) as f64 / total_buy_ins as f64) * 100.0 * 100.0)
+                .round()
+                / 100.0
+        } else {
+            0.0
+        };
+        let average_finish = (row.try_get::<f64, _>("average_finish")? * 100.0).round() / 100.0;
+
+        entries.push(LeaderboardEntry {
+            club_player_id,
+            display_name: row.try_get("display_name")?,
+            user_id: row.try_get("user_id")?,
+            username: row.try_get("username")?,
+            first_name: row.try_get("first_name")?,
+            last_name: row.try_get("last_name")?,
+            email: row.try_get("email")?,
+            phone: row.try_get("phone")?,
+            is_active: row.try_get("is_active")?,
+            role: row.try_get("role")?,
+            locale: row.try_get("locale")?,
+            total_tournaments,
+            total_buy_ins,
+            total_winnings,
+            net_profit: total_winnings - total_buy_ins,
+            total_itm,
+            itm_percentage,
+            roi_percentage,
+            average_finish,
+            first_places: row.try_get::<i64, _>("first_places")? as i32,
+            final_tables: row.try_get::<i64, _>("final_tables")? as i32,
+            points,
+        });
+    }
+
+    // Sort like the legacy leaderboard, then paginate in Rust.
+    entries.sort_by(|a, b| {
+        b.points
+            .partial_cmp(&a.points)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(b.total_winnings.cmp(&a.total_winnings))
+            .then(b.total_tournaments.cmp(&a.total_tournaments))
+    });
+
+    let total_count = entries.len() as i64;
+    let offset_value = offset.unwrap_or(0).max(0) as usize;
+    let limit_value = limit.unwrap_or(100).clamp(1, 500) as usize;
+    let page = entries
+        .into_iter()
+        .skip(offset_value)
+        .take(limit_value)
+        .collect();
+
+    Ok((page, total_count))
 }

@@ -111,6 +111,12 @@ impl TournamentMutation {
             late_registration_level: input.late_registration_level,
             bounty_type: input.bounty_type.map(String::from),
             bounty_amount_cents: input.bounty_amount_cents,
+            leaderboard_config_id: input
+                .leaderboard_config_id
+                .as_ref()
+                .map(|id| Uuid::parse_str(id.as_str()))
+                .transpose()
+                .gql_err("Invalid league ID")?,
         };
 
         // Create tournament
@@ -215,6 +221,12 @@ impl TournamentMutation {
             late_registration_level: input.late_registration_level,
             bounty_type: input.bounty_type.map(String::from),
             bounty_amount_cents: input.bounty_amount_cents,
+            leaderboard_config_id: input
+                .leaderboard_config_id
+                .as_ref()
+                .map(|id| Uuid::parse_str(id.as_str()))
+                .transpose()
+                .gql_err("Invalid league ID")?,
         };
 
         let updated_row = tournaments::update(&state.db, tournament_id, data)

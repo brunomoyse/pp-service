@@ -8,6 +8,7 @@ use crate::gql::domains::devices::DeviceMutation;
 use crate::gql::domains::drinks::DrinksMutation;
 use crate::gql::domains::entries::EntryMutation;
 use crate::gql::domains::identity::IdentityMutation;
+use crate::gql::domains::leaderboard_configs::LeaderboardConfigMutation;
 use crate::gql::domains::notes::NotesMutation;
 use crate::gql::domains::predictions::PredictionsMutation;
 use crate::gql::domains::pro::ProMutation;
@@ -31,6 +32,7 @@ pub struct MutationRoot(
     DrinksMutation,
     EntryMutation,
     IdentityMutation,
+    LeaderboardConfigMutation,
     NotesMutation,
     PredictionsMutation,
     ProMutation,
