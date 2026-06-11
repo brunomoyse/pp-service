@@ -117,7 +117,7 @@ pub async fn get_stats<'e>(
     let row = sqlx::query_as::<_, (i64, i64, i64, i64, i64, i64, i64, i64, i64, i64)>(
         r#"
         SELECT
-            COUNT(*) as total_entries,
+            COUNT(*) FILTER (WHERE e.entry_type IN ('initial', 'rebuy', 're_entry')) as total_entries,
             COALESCE(SUM(e.amount_cents), 0) as total_amount_cents,
             COUNT(DISTINCT e.club_player_id) as unique_players,
             COUNT(*) FILTER (WHERE e.entry_type = 'initial') as initial_count,
