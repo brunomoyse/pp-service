@@ -22,6 +22,7 @@ use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use crate::auth::Claims;
 use crate::error::AppError;
 use crate::middleware::jwt::jwt_middleware;
+use crate::observability::{correlation_id, render_metrics, track_metrics};
 use crate::routes::{auth, oauth_server, token, unified_auth};
 use crate::state::AppState;
 
@@ -64,6 +65,12 @@ where
     Router::new()
         // Simple liveness check; also proves DB connectivity.
         .route("/health", get(health))
+        // Readiness probe for orchestrators (distinct from liveness): only OK
+        // once the DB is reachable, so traffic isn't routed before we can serve.
+        .route("/ready", get(ready))
+        // Prometheus metrics. Exposed app-wide here; restrict to the internal
+        // network / scraper at the reverse proxy in production.
+        .route("/metrics", get(metrics))
         // Unified authentication choice
         .route("/auth/choose", get(unified_auth::auth_choice))
         // External OAuth authentication routes
@@ -118,6 +125,11 @@ where
                 .allow_headers([CONTENT_TYPE, AUTHORIZATION])
                 .allow_credentials(true)
         })
+        // Count requests/responses for /metrics.
+        .layer(middleware::from_fn(track_metrics))
+        // Outermost: assign a request id and a tracing span so every log line
+        // for a request is correlated (and the id is echoed to the client).
+        .layer(middleware::from_fn(correlation_id))
 }
 
 /// Custom GraphQL handler that extracts JWT claims from request extensions
@@ -216,4 +228,20 @@ async fn health(State(state): State<AppState>) -> Result<&'static str, AppError>
     // Inexpensive round-trip; replace by `SELECT 1` if you prefer.
     let _one: i32 = sqlx::query_scalar("SELECT 1").fetch_one(&state.db).await?;
     Ok("ok")
+}
+
+/// Readiness: returns OK only when the database is reachable. Returns 503 (via
+/// AppError) otherwise so orchestrators hold traffic until the app can serve.
+async fn ready(State(state): State<AppState>) -> Result<&'static str, AppError> {
+    let _one: i32 = sqlx::query_scalar("SELECT 1").fetch_one(&state.db).await?;
+    Ok("ready")
+}
+
+/// Prometheus metrics in text exposition format.
+async fn metrics() -> Response {
+    (
+        [(CONTENT_TYPE, "text/plain; version=0.0.4")],
+        render_metrics(),
+    )
+        .into_response()
 }

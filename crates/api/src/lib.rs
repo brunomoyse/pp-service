@@ -8,6 +8,7 @@ pub mod error;
 pub mod features;
 pub mod gql;
 pub mod middleware;
+pub mod observability;
 pub mod routes;
 pub mod services;
 pub mod state;

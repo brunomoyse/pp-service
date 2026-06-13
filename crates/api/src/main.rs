@@ -5,7 +5,6 @@
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use api::app::build_router;
 use api::gql::build_schema;
@@ -14,12 +13,7 @@ use api::state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
-        ))
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    api::observability::init_tracing();
 
     dotenvy::dotenv().ok();
 
