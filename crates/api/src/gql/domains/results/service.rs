@@ -2,8 +2,8 @@ use async_graphql::ID;
 use uuid::Uuid;
 
 use infra::repos::{
-    payout_templates, player_deals, player_deals::CreatePlayerDeal, tournament_results,
-    tournament_results::CreateTournamentResult, tournaments,
+    payout_templates, player_deals, player_deals::CreatePlayerDeal, tournament_payouts,
+    tournament_results, tournament_results::CreateTournamentResult, tournaments,
 };
 
 use super::types::{DealType, PlayerDealInput, PlayerPositionInput};
@@ -38,12 +38,22 @@ pub async fn enter_tournament_results(
     params: EnterResultsParams,
 ) -> Result<EnterResultsOutput, Box<dyn std::error::Error + Send + Sync>> {
     // Verify tournament exists
-    let tournament = tournaments::get_by_id(pool, params.tournament_id)
+    let _tournament = tournaments::get_by_id(pool, params.tournament_id)
         .await?
         .ok_or("Tournament not found")?;
 
-    // Calculate payouts
-    let total_prize_pool = calculate_prize_pool(&tournament, params.player_positions.len() as i32);
+    // The prize pool is maintained by the DB trigger
+    // recalculate_prize_pool_from_entries (sum of entries minus the bounty slice,
+    // excluding voucher/bonus). Use it as the single source of truth so payouts
+    // reconcile with the cash report and PKO accounting, instead of re-deriving
+    // buy_in × players (which ignored rebuys, add-ons, and the bounty slice).
+    // No payouts row means no entries were recorded, hence no pool (0) — never
+    // fabricate money for un-recorded buy-ins.
+    let total_prize_pool = tournament_payouts::get_by_tournament(pool, params.tournament_id)
+        .await?
+        .map(|p| p.total_prize_pool)
+        .unwrap_or(0);
+
     let payouts = calculate_payouts(
         pool,
         params.payout_template_id.as_ref(),
@@ -52,6 +62,18 @@ pub async fn enter_tournament_results(
         params.deal.as_ref(),
     )
     .await?;
+
+    // Reconciliation guard: distributed payouts must sum to the prize pool.
+    // calculate_payouts already dumps any rounding remainder on the last paid
+    // position, so this mainly catches a non-zero pool with nothing paid out
+    // (e.g. a missing/empty payout template) before we persist anything.
+    let payout_total: i32 = payouts.iter().sum();
+    if payout_total != total_prize_pool {
+        return Err(format!(
+            "Payout reconciliation failed: distributed {payout_total} cents but prize pool is {total_prize_pool} cents"
+        )
+        .into());
+    }
 
     // Begin transaction
     let mut tx = pool.begin().await?;
@@ -154,10 +176,6 @@ pub async fn enter_tournament_results(
 }
 
 // --- Private helpers ---
-
-fn calculate_prize_pool(tournament: &infra::models::TournamentRow, player_count: i32) -> i32 {
-    tournament.buy_in_cents * player_count
-}
 
 async fn calculate_payouts(
     db: &sqlx::PgPool,
