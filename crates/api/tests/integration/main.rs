@@ -7,6 +7,7 @@ mod common;
 mod auth;
 mod authz_guards;
 mod check_in;
+mod clock_advance;
 mod clock_lifecycle;
 mod club;
 mod club_tables;

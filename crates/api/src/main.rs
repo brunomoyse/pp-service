@@ -10,7 +10,7 @@ use api::app::build_router;
 use api::gql::build_schema;
 use api::services::{
     data_retention_service, spawn_clock_service, spawn_data_retention_service,
-    spawn_drink_expiry_service, spawn_notification_service,
+    spawn_drink_expiry_service, spawn_notification_service, supervise,
 };
 use api::state::AppState;
 
@@ -159,43 +159,4 @@ async fn shutdown_signal() {
         _ = ctrl_c => {},
         _ = terminate => {},
     }
-}
-
-/// Spawn a long-lived background service under supervision: if its task exits or
-/// panics it is restarted (after a short backoff); when `shutdown` flips, the
-/// task is aborted and the supervisor returns.
-fn supervise(
-    name: &'static str,
-    mut shutdown: tokio::sync::watch::Receiver<bool>,
-    spawn: impl Fn() -> tokio::task::JoinHandle<()> + Send + 'static,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        loop {
-            let mut handle = spawn();
-            tokio::select! {
-                _ = shutdown.changed() => {
-                    handle.abort();
-                    tracing::info!("{name}: stopping on shutdown");
-                    return;
-                }
-                res = &mut handle => {
-                    if *shutdown.borrow() {
-                        return;
-                    }
-                    match res {
-                        Ok(()) => {
-                            tracing::error!("{name}: task exited unexpectedly; restarting in 5s")
-                        }
-                        Err(e) => {
-                            tracing::error!("{name}: task panicked ({e}); restarting in 5s")
-                        }
-                    }
-                    tokio::select! {
-                        _ = shutdown.changed() => return,
-                        _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {}
-                    }
-                }
-            }
-        }
-    })
 }
