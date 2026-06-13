@@ -1,0 +1,118 @@
+# Production-oriented Compose example for PocketPair (Postgres + backend + DB
+# backup). Adapted from the repo-root docker-compose.yml with the production
+# hardening the audit called for:
+#   - resource limits/reservations on every service
+#   - automated database backups (db-backup service -> ./backups, off-host this)
+#   - the production env the app needs (ALLOWED_ORIGINS, GQL_INTROSPECTION=false)
+#
+# This is an EXAMPLE to adapt, not a drop-in: tune the CPU/memory numbers to your
+# host, point the backup volume at off-host storage, and supply secrets via your
+# secret manager (see .env.production.example). Run from this directory:
+#   docker compose -f docker-compose.prod.example.yml --env-file .env.production up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pocketpair-postgres
+    restart: unless-stopped
+    ports:
+      - "15432:5432"
+    environment:
+      POSTGRES_DB: ${PG_DB:-pocketpair}
+      POSTGRES_USER: ${PG_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?set PG_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-postgres} -d ${PG_DB:-pocketpair}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        # Starting points — size to your host and tournament load.
+        limits:
+          cpus: "1.0"
+          memory: 1g
+        reservations:
+          cpus: "0.25"
+          memory: 256m
+    networks:
+      - pocketpair-network
+
+  backend:
+    build:
+      # From deploy/, the pp-service build context is the parent directory.
+      context: ..
+      dockerfile: Dockerfile
+    container_name: pocketpair-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://${PG_USER:-postgres}:${PG_PASSWORD:?set PG_PASSWORD}@postgres:5432/${PG_DB:-pocketpair}
+      DATABASE_MAX_CONNECTIONS: ${DATABASE_MAX_CONNECTIONS:-30}
+      PORT: 8080
+      RUST_LOG: ${RUST_LOG:-info}
+      SKIP_MIGRATIONS: ${SKIP_MIGRATIONS:-false}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      JWT_EXPIRATION_HOURS: ${JWT_EXPIRATION_HOURS:-24}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      REDIRECT_BASE_URL: ${REDIRECT_BASE_URL:?set REDIRECT_BASE_URL}
+      # Production hardening (see app changes): lock CORS to real origins and
+      # keep schema introspection disabled.
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?set ALLOWED_ORIGINS}
+      GQL_INTROSPECTION: "false"
+      SQLX_OFFLINE: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1g
+        reservations:
+          cpus: "0.5"
+          memory: 256m
+    networks:
+      - pocketpair-network
+
+  # Periodic logical backup. Loops inside the container; for a single-shot cron
+  # on the host, call deploy/backup.sh directly instead. Point ./backups at
+  # off-host storage in production.
+  db-backup:
+    image: postgres:16-alpine
+    container_name: pocketpair-db-backup
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${PG_USER:-postgres}:${PG_PASSWORD:?set PG_PASSWORD}@postgres:5432/${PG_DB:-pocketpair}
+      BACKUP_DIR: /backups
+      RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-21600} # 6h
+    volumes:
+      - ./backups:/backups
+      - ./backup.sh:/usr/local/bin/backup.sh:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'while true; do /usr/local/bin/backup.sh || echo "backup failed"; sleep "$$BACKUP_INTERVAL_SECONDS"; done'
+    networks:
+      - pocketpair-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  pocketpair-network:
+    driver: bridge
