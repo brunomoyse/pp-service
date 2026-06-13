@@ -9,7 +9,7 @@ use tokio_stream::wrappers::{errors::BroadcastStreamRecvError, BroadcastStream};
 use uuid::Uuid;
 
 use crate::auth::jwt::Claims;
-use crate::gql::error::ResultExt;
+use crate::gql::error::{auth_error, ResultExt};
 use crate::gql::types::{
     ActivityLogEntry, PlayerRegistrationEvent, SeatingChangeEvent, TournamentClock,
     UserNotification,
@@ -152,8 +152,10 @@ impl SubscriptionRoot {
     /// Subscribe to tournament clock updates for a specific tournament
     async fn tournament_clock_updates(
         &self,
+        ctx: &Context<'_>,
         tournament_id: async_graphql::ID,
     ) -> Result<impl Stream<Item = Result<TournamentClock, BroadcastStreamRecvError>>> {
+        let _claims = ctx.data::<Claims>().map_err(|_| auth_error())?;
         let tournament_uuid =
             Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
 
@@ -169,8 +171,10 @@ impl SubscriptionRoot {
     /// Subscribe to player registration events for a specific tournament
     async fn tournament_registrations(
         &self,
+        ctx: &Context<'_>,
         tournament_id: async_graphql::ID,
     ) -> Result<impl Stream<Item = Result<PlayerRegistrationEvent, BroadcastStreamRecvError>>> {
+        let _claims = ctx.data::<Claims>().map_err(|_| auth_error())?;
         let tournament_uuid =
             Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
 
@@ -186,8 +190,10 @@ impl SubscriptionRoot {
     /// Subscribe to seating changes for a specific tournament
     async fn tournament_seating_changes(
         &self,
+        ctx: &Context<'_>,
         tournament_id: async_graphql::ID,
     ) -> Result<impl Stream<Item = Result<SeatingChangeEvent, BroadcastStreamRecvError>>> {
+        let _claims = ctx.data::<Claims>().map_err(|_| auth_error())?;
         let tournament_uuid =
             Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
 
@@ -242,8 +248,10 @@ impl SubscriptionRoot {
     /// Subscribe to tournament activity log entries in real time
     async fn tournament_activity(
         &self,
+        ctx: &Context<'_>,
         tournament_id: async_graphql::ID,
     ) -> Result<impl Stream<Item = Result<ActivityLogEntry, BroadcastStreamRecvError>>> {
+        let _claims = ctx.data::<Claims>().map_err(|_| auth_error())?;
         let tournament_uuid =
             Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
 

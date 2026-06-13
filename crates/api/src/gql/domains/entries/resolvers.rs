@@ -1,7 +1,8 @@
 use async_graphql::{Context, Object, Result, ID};
 use uuid::Uuid;
 
-use crate::gql::error::ResultExt;
+use crate::auth::jwt::Claims;
+use crate::gql::error::{auth_error, ResultExt};
 use crate::state::AppState;
 use infra::repos::{
     tournament_entries, tournament_entries::CreateTournamentEntry, tournament_payouts, tournaments,
@@ -17,27 +18,38 @@ pub struct EntryQuery;
 
 #[Object]
 impl EntryQuery {
-    /// Get all entries for a tournament
+    /// Get all entries for a tournament. Manager-only: exposes per-player
+    /// buy-ins, payment methods, and amounts (sensitive financials).
     async fn tournament_entries(
         &self,
         ctx: &Context<'_>,
         tournament_id: ID,
     ) -> Result<Vec<TournamentEntry>> {
+        use crate::auth::permissions::require_club_manager;
+
         let state = ctx.data::<AppState>()?;
         let tournament_id =
             Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+
+        let tournament = tournaments::get_by_id(&state.db, tournament_id)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
+        require_club_manager(ctx, tournament.club_id).await?;
 
         let entries = tournament_entries::list_by_tournament(&state.db, tournament_id).await?;
 
         Ok(entries.into_iter().map(TournamentEntry::from).collect())
     }
 
-    /// Get entry statistics for a tournament
+    /// Get entry statistics for a tournament. Aggregate tournament state
+    /// (player counts, chips); requires an authenticated user.
     async fn tournament_entry_stats(
         &self,
         ctx: &Context<'_>,
         tournament_id: ID,
     ) -> Result<TournamentEntryStats> {
+        let _claims = ctx.data::<Claims>().map_err(|_| auth_error())?;
+
         let state = ctx.data::<AppState>()?;
         let tournament_id =
             Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;

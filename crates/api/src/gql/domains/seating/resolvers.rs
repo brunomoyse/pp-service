@@ -1,8 +1,9 @@
 use async_graphql::{Context, Object, Result, ID};
 use uuid::Uuid;
 
+use crate::auth::jwt::Claims;
 use crate::gql::common::helpers::get_club_id_for_tournament;
-use crate::gql::error::ResultExt;
+use crate::gql::error::{auth_error, ResultExt};
 use crate::gql::subscriptions::{publish_seating_event, publish_user_notification};
 use crate::gql::types::{
     AssignPlayerToSeatInput, AssignTableToTournamentInput, AssignTablesToTournamentInput,
@@ -31,6 +32,7 @@ impl SeatingQuery {
         ctx: &Context<'_>,
         tournament_id: Uuid,
     ) -> Result<TournamentSeatingChart> {
+        let _claims = ctx.data::<Claims>().map_err(|_| auth_error())?;
         let state = ctx.data::<AppState>()?;
 
         // Get tournament
@@ -98,6 +100,7 @@ impl SeatingQuery {
         ctx: &Context<'_>,
         tournament_id: Uuid,
     ) -> Result<Vec<TournamentTable>> {
+        let _claims = ctx.data::<Claims>().map_err(|_| auth_error())?;
         let state = ctx.data::<AppState>()?;
 
         let table_rows = club_tables::list_assigned_to_tournament(&state.db, tournament_id).await?;
@@ -121,6 +124,7 @@ impl SeatingQuery {
         ctx: &Context<'_>,
         club_table_id: Uuid,
     ) -> Result<Vec<SeatWithPlayer>> {
+        let _claims = ctx.data::<Claims>().map_err(|_| auth_error())?;
         let state = ctx.data::<AppState>()?;
 
         let assignments_with_players =
@@ -143,6 +147,7 @@ impl SeatingQuery {
         tournament_id: Uuid,
         limit: Option<i64>,
     ) -> Result<Vec<SeatAssignment>> {
+        let _claims = ctx.data::<Claims>().map_err(|_| auth_error())?;
         let state = ctx.data::<AppState>()?;
 
         let filter = SeatAssignmentFilter {
@@ -169,6 +174,7 @@ impl SeatingQuery {
         ctx: &Context<'_>,
         tournament_id: ID,
     ) -> Result<Vec<TournamentBounty>> {
+        let _claims = ctx.data::<Claims>().map_err(|_| auth_error())?;
         let state = ctx.data::<AppState>()?;
         let tournament_uuid =
             Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;

@@ -21,10 +21,11 @@ pub fn build_schema(state: AppState) -> Schema<QueryRoot, MutationRoot, Subscrip
     let drink_ledger_loader =
         DataLoader::new(DrinkLedgerLoader::new(state.db.clone()), tokio::spawn);
 
-    // Introspection is enabled by default in development
+    // Introspection is OFF by default (safe for production); set
+    // GQL_INTROSPECTION=true locally to explore the schema in a playground.
     let introspection_enabled = env::var("GQL_INTROSPECTION")
         .map(|v| v == "true")
-        .unwrap_or(true);
+        .unwrap_or(false);
 
     // Query depth limit (default: 30, suitable for introspection)
     let depth_limit = env::var("GQL_QUERY_DEPTH_LIMIT")

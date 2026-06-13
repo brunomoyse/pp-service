@@ -15,6 +15,7 @@ use axum::{
     Json, Router,
 };
 use tower_governor::governor::GovernorConfigBuilder;
+use tower_governor::key_extractor::SmartIpKeyExtractor;
 use tower_governor::GovernorLayer;
 use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
 
@@ -45,6 +46,21 @@ where
         .route("/oauth/register", post(oauth_server::register))
         .layer(GovernorLayer::new(Arc::new(governor_conf)));
 
+    // Coarse abuse-protection on the GraphQL endpoint. Generous limits: real-time
+    // load rides the WebSocket, so a client's HTTP request rate is low (login,
+    // occasional queries/mutations). Uses the forwarded client IP (X-Forwarded-For)
+    // so a whole venue behind one NAT isn't throttled as a single client and the
+    // limit isn't collapsed to the reverse proxy's IP. ASSUMES a trusted proxy
+    // (Caddy) overwrites X-Forwarded-For; if the service is ever exposed directly,
+    // switch back to the peer-IP extractor to prevent header spoofing.
+    let graphql_governor = GovernorConfigBuilder::default()
+        .per_millisecond(100) // ~10 req/s sustained per client IP
+        .burst_size(120)
+        .key_extractor(SmartIpKeyExtractor)
+        .finish()
+        .unwrap();
+    let graphql_governor = Arc::new(graphql_governor);
+
     Router::new()
         // Simple liveness check; also proves DB connectivity.
         .route("/health", get(health))
@@ -74,7 +90,8 @@ where
                 move |state, protocol, upgrade| {
                     graphql_ws_handler(state, protocol, upgrade, schema_clone)
                 }
-            }),
+            })
+            .layer(GovernorLayer::new(graphql_governor)),
         )
         // App state (PgPool, broadcasters, etc.)
         .with_state(state.clone())

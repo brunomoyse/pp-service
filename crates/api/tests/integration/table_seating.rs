@@ -483,7 +483,7 @@ async fn test_get_seat_assignments() {
         "queryplayer_{}@test.com",
         chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
     );
-    let (_, _) = create_test_user(&app_state, &unique_player_email, "player").await;
+    let (_, player_claims) = create_test_user(&app_state, &unique_player_email, "player").await;
     let club_id = create_test_club(&app_state, "Query Test Club").await;
     let tournament_id = create_test_tournament(&app_state, club_id, "Query Test Tournament").await;
 
@@ -534,7 +534,7 @@ async fn test_get_seat_assignments() {
         "clubTableId": club_table_id.to_string()
     }));
 
-    let response = execute_graphql(&schema, query, Some(variables), None).await;
+    let response = execute_graphql(&schema, query, Some(variables), Some(player_claims)).await;
 
     assert!(
         response.errors.is_empty(),
@@ -563,7 +563,8 @@ async fn test_seat_assignment_filtering() {
         "filterplayer_{}@test.com",
         chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
     );
-    let (player_id, _) = create_test_user(&app_state, &unique_player_email, "player").await;
+    let (player_id, player_claims) =
+        create_test_user(&app_state, &unique_player_email, "player").await;
 
     // Create club table and assign to tournament
     sqlx::query!(
@@ -619,7 +620,7 @@ async fn test_seat_assignment_filtering() {
         "clubTableId": club_table_id.to_string()
     }));
 
-    let response = execute_graphql(&schema, query, Some(variables), None).await;
+    let response = execute_graphql(&schema, query, Some(variables), Some(player_claims)).await;
 
     assert!(
         response.errors.is_empty(),
