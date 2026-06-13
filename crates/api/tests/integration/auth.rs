@@ -154,3 +154,53 @@ async fn test_me_query_unauthenticated() {
         .message
         .contains("Authentication required"));
 }
+
+#[tokio::test]
+async fn registration_enforces_password_policy() {
+    let app_state = setup_test_db().await;
+    let schema = build_schema(app_state);
+
+    let mutation = r#"
+        mutation RegisterUser($input: UserRegistrationInput!) {
+            registerUser(input: $input) { id }
+        }
+    "#;
+    let stamp = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0);
+    let register = |slug: &str, password: &str| {
+        Variables::from_json(json!({
+            "input": {
+                "email": format!("{slug}_{stamp}@test.com"),
+                "password": password,
+                "firstName": "Pw",
+                "lastName": "Policy",
+                "username": format!("{slug}_{stamp}")
+            }
+        }))
+    };
+
+    // Too short / no digit → rejected before any user row is created.
+    let weak = execute_graphql(&schema, mutation, Some(register("weak", "short")), None).await;
+    assert!(!weak.errors.is_empty(), "a weak password must be rejected");
+
+    // Over bcrypt's 72-byte limit → rejected (silent-truncation hazard).
+    let long_pw = format!("Aa1{}", "x".repeat(80));
+    let long = execute_graphql(&schema, mutation, Some(register("long", &long_pw)), None).await;
+    assert!(
+        !long.errors.is_empty(),
+        "a >72-byte password must be rejected"
+    );
+
+    // A strong password is accepted — proving the policy gates, not blocks, signup.
+    let strong = execute_graphql(
+        &schema,
+        mutation,
+        Some(register("strong", "Str0ngPassphrase")),
+        None,
+    )
+    .await;
+    assert!(
+        strong.errors.is_empty(),
+        "a strong password should be accepted: {:?}",
+        strong.errors
+    );
+}
