@@ -22,6 +22,15 @@ impl PasswordService {
             ));
         }
 
+        // bcrypt only hashes the first 72 bytes and silently ignores the rest,
+        // so a longer password is weaker than the user thinks. Reject rather
+        // than truncate, so what they typed is what protects the account.
+        if password.len() > 72 {
+            return Err(AppError::BadRequest(
+                "Password must be at most 72 characters long".to_string(),
+            ));
+        }
+
         let has_letter = password.chars().any(|c| c.is_alphabetic());
         let has_digit = password.chars().any(|c| c.is_numeric());
 
@@ -31,6 +40,43 @@ impl PasswordService {
             ));
         }
 
+        // Block the handful of passwords that pass the rules above but are the
+        // first things an attacker tries.
+        const COMMON: &[&str] = &[
+            "password",
+            "password1",
+            "password123",
+            "12345678",
+            "123456789",
+            "1234567890",
+            "qwerty123",
+            "abc12345",
+            "letmein1",
+            "iloveyou1",
+            "admin123",
+            "welcome1",
+        ];
+        if COMMON.contains(&password.to_ascii_lowercase().as_str()) {
+            return Err(AppError::BadRequest(
+                "This password is too common; please choose a less guessable one".to_string(),
+            ));
+        }
+
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_weak_and_accepts_strong() {
+        assert!(PasswordService::validate_password_strength("short1").is_err()); // too short
+        assert!(PasswordService::validate_password_strength("alphabetical").is_err()); // no digit
+        assert!(PasswordService::validate_password_strength("12345678").is_err()); // common + no letter
+        assert!(PasswordService::validate_password_strength("Password123").is_err()); // common
+        assert!(PasswordService::validate_password_strength(&"a1".repeat(40)).is_err()); // > 72 bytes
+        assert!(PasswordService::validate_password_strength("Tr0ubad0ur42").is_ok());
     }
 }

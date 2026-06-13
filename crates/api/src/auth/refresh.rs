@@ -117,14 +117,31 @@ pub async fn rotate_refresh_token(
                         .map_err(|e| AppError::Internal(format!("DB error: {}", e)))?;
 
                 if let Some(family_id) = family_id {
+                    // Identify the affected account so this is actionable in
+                    // security monitoring (and so a follow-up can email/push the
+                    // user). Any token in the family carries the same user_id.
+                    let user_id: Option<Uuid> = sqlx::query_scalar(
+                        "SELECT user_id FROM refresh_tokens WHERE family_id = $1 LIMIT 1",
+                    )
+                    .bind(family_id)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(|e| AppError::Internal(format!("DB error: {}", e)))?;
+
                     infra::repos::refresh_tokens::revoke_family(pool, family_id)
                         .await
                         .map_err(|e| {
                             AppError::Internal(format!("Failed to revoke family: {}", e))
                         })?;
+                    // Structured + targeted so an alerting pipeline can page on it.
+                    // TODO(security): also email/push the user that all sessions
+                    // were invalidated (needs the email/push service threaded in).
                     tracing::warn!(
-                        "Refresh token theft detected! Revoked token family {}",
-                        family_id
+                        target: "security",
+                        family_id = %family_id,
+                        user_id = ?user_id,
+                        "Refresh token reuse detected; revoked entire token family \
+                         (all sessions for this account invalidated)"
                     );
                 }
             }

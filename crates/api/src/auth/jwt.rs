@@ -1,18 +1,26 @@
 use chrono::{Duration, Utc};
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::auth::AuthConfig;
 use crate::error::AppError;
 
+/// Issuer / audience stamped into every access token and verified on the way in.
+/// Pinning these scopes the secret to this service+client so a token minted for
+/// (or leaked from) another system sharing the secret can't be replayed here.
+pub const TOKEN_ISSUER: &str = "pocketpair-api";
+pub const TOKEN_AUDIENCE: &str = "pocketpair-clients";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: String, // Subject (user ID)
     pub email: String,
     pub role: String,
-    pub iat: i64, // Issued at
-    pub exp: i64, // Expiration
+    pub iss: String, // Issuer
+    pub aud: String, // Audience
+    pub iat: i64,    // Issued at
+    pub exp: i64,    // Expiration
 }
 
 impl Claims {
@@ -24,6 +32,8 @@ impl Claims {
             sub: user_id.to_string(),
             email,
             role,
+            iss: TOKEN_ISSUER.to_string(),
+            aud: TOKEN_AUDIENCE.to_string(),
             iat: now.timestamp(),
             exp: exp.timestamp(),
         }
@@ -59,7 +69,11 @@ impl JwtService {
     }
 
     pub fn verify_token(&self, token: &str) -> Result<Claims, AppError> {
-        let token_data = decode::<Claims>(token, &self.decoding_key, &Validation::default())
+        let mut validation = Validation::new(Algorithm::HS256);
+        validation.set_issuer(&[TOKEN_ISSUER]);
+        validation.set_audience(&[TOKEN_AUDIENCE]);
+
+        let token_data = decode::<Claims>(token, &self.decoding_key, &validation)
             .map_err(|e| AppError::Internal(format!("Invalid token: {}", e)))?;
 
         Ok(token_data.claims)

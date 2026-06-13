@@ -14,6 +14,79 @@ use crate::auth::password::PasswordService;
 use crate::error::AppError;
 use crate::state::AppState;
 
+// ---------------------------------------------------------------------------
+// Per-account login lockout
+//
+// Defense-in-depth alongside the IP rate limit on /oauth/login: after a few
+// failed attempts for one email, lock that email out for a window so a single
+// account can't be brute-forced even from rotating IPs. In-memory and
+// per-instance (resets on restart; not shared across replicas) — a deliberate,
+// good-enough choice given the IP limiter already caps total volume. The
+// tradeoff is a possible temporary lockout DoS against a known email; the short
+// window bounds it.
+// ---------------------------------------------------------------------------
+mod lockout {
+    use std::collections::HashMap;
+    use std::sync::LazyLock;
+    use std::time::{Duration, Instant};
+
+    use parking_lot::Mutex;
+
+    const MAX_FAILED_ATTEMPTS: u32 = 5;
+    const LOCKOUT: Duration = Duration::from_secs(15 * 60);
+    /// Cap the map so a flood of distinct emails can't grow it unbounded.
+    const MAX_TRACKED: usize = 10_000;
+
+    struct AttemptState {
+        failures: u32,
+        locked_until: Option<Instant>,
+    }
+
+    static ATTEMPTS: LazyLock<Mutex<HashMap<String, AttemptState>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+
+    fn key(email: &str) -> String {
+        email.trim().to_ascii_lowercase()
+    }
+
+    /// True if this email is currently locked out.
+    pub fn is_locked(email: &str) -> bool {
+        let mut map = ATTEMPTS.lock();
+        if let Some(st) = map.get_mut(&key(email)) {
+            match st.locked_until {
+                Some(until) if Instant::now() < until => return true,
+                Some(_) => {
+                    // Window elapsed — reset so the user gets a fresh start.
+                    st.failures = 0;
+                    st.locked_until = None;
+                }
+                None => {}
+            }
+        }
+        false
+    }
+
+    pub fn record_failure(email: &str) {
+        let mut map = ATTEMPTS.lock();
+        if map.len() >= MAX_TRACKED {
+            let now = Instant::now();
+            map.retain(|_, st| st.locked_until.is_some_and(|u| u > now));
+        }
+        let st = map.entry(key(email)).or_insert(AttemptState {
+            failures: 0,
+            locked_until: None,
+        });
+        st.failures += 1;
+        if st.failures >= MAX_FAILED_ATTEMPTS {
+            st.locked_until = Some(Instant::now() + LOCKOUT);
+        }
+    }
+
+    pub fn record_success(email: &str) {
+        ATTEMPTS.lock().remove(&key(email));
+    }
+}
+
 #[derive(Deserialize)]
 pub struct LoginForm {
     pub email: String,
@@ -165,6 +238,17 @@ pub async fn login(
         }
     };
 
+    // Reject early if this account is temporarily locked from too many failures.
+    if lockout::is_locked(&form.email) {
+        return Ok(redirect_with_error(
+            &form.redirect_uri,
+            "access_denied",
+            Some("Too many failed attempts. Please try again later."),
+            form.state.as_deref(),
+        )?
+        .into_response());
+    }
+
     // Find user by email
     let user_row = sqlx::query!(
         "SELECT id, password_hash FROM users WHERE email = $1",
@@ -178,6 +262,7 @@ pub async fn login(
             // Verify password
             if let Some(ref password_hash) = row.password_hash {
                 if !PasswordService::verify_password(&form.password, password_hash)? {
+                    lockout::record_failure(&form.email);
                     return Ok(redirect_with_error(
                         &form.redirect_uri,
                         "access_denied",
@@ -198,6 +283,9 @@ pub async fn login(
             row.id
         }
         None => {
+            // Count failures for unknown emails too, so probing can't dodge the
+            // lock (and existence isn't revealed by differing behavior).
+            lockout::record_failure(&form.email);
             return Ok(redirect_with_error(
                 &form.redirect_uri,
                 "access_denied",
@@ -207,6 +295,9 @@ pub async fn login(
             .into_response());
         }
     };
+
+    // Successful auth — clear any accumulated failures for this account.
+    lockout::record_success(&form.email);
 
     // Create authorization code
     let scopes = CustomOAuthService::parse_scopes(form.scope);
