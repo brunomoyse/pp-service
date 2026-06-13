@@ -4,6 +4,7 @@
 
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
+use tokio::sync::watch;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use api::app::build_router;
@@ -63,16 +64,29 @@ async fn main() -> anyhow::Result<()> {
     // Small delay to let the connection pool warm up before starting background services
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
-    // Start the background clock service for auto-advancing tournament levels
-    let _clock_handle = spawn_clock_service(state.clone());
+    // Coordinated shutdown: flipping this watch stops the supervised services.
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+    // Background services run under a supervisor that restarts them on panic and
+    // stops them on shutdown. Previously their JoinHandles were dropped, so a
+    // panic silently killed e.g. clock auto-advance with no recovery and /health
+    // still reported OK.
+    let _clock = supervise("clock_service", shutdown_rx.clone(), {
+        let state = state.clone();
+        move || spawn_clock_service(state.clone())
+    });
     tracing::info!("Tournament clock service started");
 
-    // Start the background notification service for "tournament starting soon" alerts
-    let _notification_handle = spawn_notification_service(state.clone());
+    let _notification = supervise("notification_service", shutdown_rx.clone(), {
+        let state = state.clone();
+        move || spawn_notification_service(state.clone())
+    });
     tracing::info!("Notification service started");
 
-    // Start the background drink-credit expiry service
-    let _drink_expiry_handle = spawn_drink_expiry_service(state.clone());
+    let _drink_expiry = supervise("drink_expiry_service", shutdown_rx.clone(), {
+        let state = state.clone();
+        move || spawn_drink_expiry_service(state.clone())
+    });
     tracing::info!("Drink credit expiry service started");
 
     let app = build_router(state, schema);
@@ -84,10 +98,83 @@ async fn main() -> anyhow::Result<()> {
     let listener = TcpListener::bind(&addr).await?;
     tracing::info!("Listening on {}", addr);
 
+    // Drain in-flight requests on SIGTERM/Ctrl-C instead of dropping them.
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown_signal())
     .await?;
+
+    // Server has stopped accepting; tell background services to stop and give
+    // them a brief moment to wind down their current tick.
+    tracing::info!("Server stopped; shutting down background services");
+    let _ = shutdown_tx.send(true);
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
     Ok(())
+}
+
+/// Resolves when the process receives Ctrl-C or (on Unix) SIGTERM — the signal
+/// orchestrators send on rollout/scale-down.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl-C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+}
+
+/// Spawn a long-lived background service under supervision: if its task exits or
+/// panics it is restarted (after a short backoff); when `shutdown` flips, the
+/// task is aborted and the supervisor returns.
+fn supervise(
+    name: &'static str,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+    spawn: impl Fn() -> tokio::task::JoinHandle<()> + Send + 'static,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            let mut handle = spawn();
+            tokio::select! {
+                _ = shutdown.changed() => {
+                    handle.abort();
+                    tracing::info!("{name}: stopping on shutdown");
+                    return;
+                }
+                res = &mut handle => {
+                    if *shutdown.borrow() {
+                        return;
+                    }
+                    match res {
+                        Ok(()) => {
+                            tracing::error!("{name}: task exited unexpectedly; restarting in 5s")
+                        }
+                        Err(e) => {
+                            tracing::error!("{name}: task panicked ({e}); restarting in 5s")
+                        }
+                    }
+                    tokio::select! {
+                        _ = shutdown.changed() => return,
+                        _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {}
+                    }
+                }
+            }
+        }
+    })
 }
