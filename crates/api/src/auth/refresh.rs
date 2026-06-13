@@ -54,7 +54,18 @@ pub async fn create_refresh_token(
     .await
     .map_err(|e| AppError::Internal(format!("Failed to create refresh token: {}", e)))?;
 
+    // Activity heartbeat (issued at login). Best-effort: never block auth on it.
+    touch_last_seen(pool, user_id).await;
+
     Ok(raw_token)
+}
+
+/// Update the user's `last_seen_at` without ever failing the surrounding auth
+/// flow — a retention-signal write is not worth rejecting a login/refresh over.
+async fn touch_last_seen(pool: &PgPool, user_id: Uuid) {
+    if let Err(e) = infra::repos::users::touch_last_seen(pool, user_id).await {
+        tracing::warn!("Failed to update last_seen_at for {user_id}: {e}");
+    }
 }
 
 pub async fn rotate_refresh_token(
@@ -96,6 +107,9 @@ pub async fn rotate_refresh_token(
             )
             .await
             .map_err(|e| AppError::Internal(format!("Failed to create new token: {}", e)))?;
+
+            // Activity heartbeat (active session refresh). Best-effort.
+            touch_last_seen(pool, token_row.user_id).await;
 
             Ok(RotateResult {
                 user_id: token_row.user_id,

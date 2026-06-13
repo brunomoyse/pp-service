@@ -8,7 +8,10 @@ use tokio::sync::watch;
 
 use api::app::build_router;
 use api::gql::build_schema;
-use api::services::{spawn_clock_service, spawn_drink_expiry_service, spawn_notification_service};
+use api::services::{
+    data_retention_service, spawn_clock_service, spawn_data_retention_service,
+    spawn_drink_expiry_service, spawn_notification_service,
+};
 use api::state::AppState;
 
 #[tokio::main]
@@ -82,6 +85,22 @@ async fn main() -> anyhow::Result<()> {
         move || spawn_drink_expiry_service(state.clone())
     });
     tracing::info!("Drink credit expiry service started");
+
+    // GDPR data-retention sweep — destructive (anonymizes dormant accounts), so
+    // it only runs when explicitly enabled via ENABLE_DATA_RETENTION.
+    let _data_retention = if data_retention_service::is_enabled() {
+        let handle = supervise("data_retention_service", shutdown_rx.clone(), {
+            let state = state.clone();
+            move || spawn_data_retention_service(state.clone())
+        });
+        tracing::info!("Data-retention service started");
+        Some(handle)
+    } else {
+        tracing::info!(
+            "Data-retention service disabled (set ENABLE_DATA_RETENTION=true to enable)"
+        );
+        None
+    };
 
     // Cross-instance real-time bus: the notifier broadcasts locally-published
     // events over Postgres NOTIFY; the listener fans events from other instances

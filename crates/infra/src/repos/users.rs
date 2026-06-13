@@ -207,3 +207,43 @@ pub async fn reactivate<'e>(executor: impl PgExecutor<'e>, id: Uuid) -> Result<O
 
     Ok(row)
 }
+
+/// Record account activity. Called on login and on each token refresh so an
+/// active session keeps a fresh `last_seen_at` — the signal the data-retention
+/// job uses to tell apart dormant accounts from active-but-quiet ones. Does not
+/// touch `updated_at` (that tracks profile edits, not presence).
+pub async fn touch_last_seen<'e>(executor: impl PgExecutor<'e>, id: Uuid) -> Result<()> {
+    sqlx::query("UPDATE users SET last_seen_at = NOW() WHERE id = $1")
+        .bind(id)
+        .execute(executor)
+        .await?;
+    Ok(())
+}
+
+/// Active player accounts with no activity within `retention_days` — candidates
+/// for retention anonymization. Scoped to `role = 'player'` so manager/admin
+/// staff accounts are never swept. `last_seen_at` falls back to `created_at`
+/// for rows predating activity tracking. `limit` bounds the per-run batch.
+pub async fn find_inactive_player_ids<'e>(
+    executor: impl PgExecutor<'e>,
+    retention_days: i32,
+    limit: i64,
+) -> Result<Vec<Uuid>> {
+    let ids = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        SELECT id
+        FROM users
+        WHERE is_active = true
+          AND role = 'player'
+          AND COALESCE(last_seen_at, created_at) < NOW() - make_interval(days => $1)
+        ORDER BY COALESCE(last_seen_at, created_at) ASC
+        LIMIT $2
+        "#,
+    )
+    .bind(retention_days)
+    .bind(limit)
+    .fetch_all(executor)
+    .await?;
+
+    Ok(ids)
+}

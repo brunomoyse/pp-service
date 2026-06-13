@@ -92,6 +92,7 @@ This is a Cargo workspace with two crates:
 6. **Background Services** (`crates/api/src/services/`):
    - `clock_service.rs` - Checks every 5 seconds for tournament level advancement. Detects stale tournaments (24+ hours) every 5 minutes.
    - `notification_service.rs` - Sends "tournament starting soon" alerts.
+   - `data_retention_service.rs` - GDPR retention sweep: anonymizes `player` accounts dormant beyond the retention window (keyed off `users.last_seen_at`, touched on login/refresh), reusing the self-service deletion path. **Off unless `ENABLE_DATA_RETENTION=true`** (anonymization is destructive). Tunables: `DATA_RETENTION_DAYS` (1095), `DATA_RETENTION_BATCH_LIMIT` (200), `DATA_RETENTION_INTERVAL_HOURS` (24).
 
 7. **Real-time Features**:
    - GraphQL subscriptions over WebSocket
@@ -239,6 +240,10 @@ Set in `.env` for local development:
 | `RUST_LOG` | `info` | Log level |
 | `DATABASE_MAX_CONNECTIONS` | `30` | Connection pool max size |
 | `SKIP_MIGRATIONS` | `false` | Skip auto-migrations on startup |
+| `ENABLE_DATA_RETENTION` | `false` | Enable the GDPR retention sweep (anonymizes dormant player accounts) |
+| `DATA_RETENTION_DAYS` | `1095` | Dormancy window before a player account is anonymized |
+| `DATA_RETENTION_BATCH_LIMIT` | `200` | Max accounts anonymized per sweep |
+| `DATA_RETENTION_INTERVAL_HOURS` | `24` | Hours between retention sweeps |
 | `JWT_SECRET` | (required) | JWT signing secret |
 | `JWT_EXPIRATION_HOURS` | `24` | Token lifetime |
 | `GOOGLE_CLIENT_ID` | | Google OAuth client ID |
