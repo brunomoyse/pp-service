@@ -85,6 +85,45 @@ mod lockout {
     pub fn record_success(email: &str) {
         ATTEMPTS.lock().remove(&key(email));
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::{is_locked, record_failure, record_success, MAX_FAILED_ATTEMPTS};
+
+        // `ATTEMPTS` is a process-global; each test uses a unique address so the
+        // suite stays order- and parallelism-independent.
+
+        #[test]
+        fn locks_at_the_threshold_and_clears_on_success() {
+            let email = "lockout-unit-threshold@test.dev";
+            assert!(!is_locked(email));
+            for _ in 0..MAX_FAILED_ATTEMPTS - 1 {
+                record_failure(email);
+                assert!(!is_locked(email), "must not lock before the threshold");
+            }
+            record_failure(email); // crosses MAX_FAILED_ATTEMPTS
+            assert!(is_locked(email), "must lock once the threshold is reached");
+
+            record_success(email);
+            assert!(!is_locked(email), "a successful login clears the lock");
+        }
+
+        #[test]
+        fn tracks_addresses_independently_and_case_insensitively() {
+            let locked = "lockout-unit-locked@test.dev";
+            let other = "lockout-unit-other@test.dev";
+            for _ in 0..MAX_FAILED_ATTEMPTS {
+                record_failure(locked);
+            }
+            assert!(is_locked(locked));
+            assert!(!is_locked(other), "an unrelated address is unaffected");
+            assert!(
+                is_locked("LOCKOUT-UNIT-LOCKED@TEST.DEV"),
+                "the same address in a different case shares the bucket"
+            );
+            record_success(locked);
+        }
+    }
 }
 
 #[derive(Deserialize)]

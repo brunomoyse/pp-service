@@ -18,6 +18,7 @@ mod payouts;
 mod permission;
 mod player_management;
 mod query_coverage;
+mod refresh_token_security;
 mod system;
 mod table_seating;
 mod tournament;

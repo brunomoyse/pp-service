@@ -36,7 +36,10 @@ async fn retention_selects_only_dormant_players() {
         .await
         .expect("query failed");
 
-    assert!(ids.contains(&dormant), "dormant player should be a candidate");
+    assert!(
+        ids.contains(&dormant),
+        "dormant player should be a candidate"
+    );
     assert!(!ids.contains(&active), "active player must be excluded");
     assert!(!ids.contains(&manager), "manager (staff) must be excluded");
 }
