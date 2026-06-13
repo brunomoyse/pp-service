@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use crate::gql::domains::tournaments::types::Tournament;
 use crate::gql::domains::users::types::User;
 
-#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum SeatingEventType {
     PlayerAssigned,
     PlayerMoved,
@@ -27,7 +27,7 @@ pub struct TournamentTable {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(SimpleObject, Clone)]
+#[derive(SimpleObject, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SeatAssignment {
     pub id: ID,
     pub tournament_id: ID,
@@ -94,7 +94,7 @@ pub struct TournamentSeatingChart {
     pub unassigned_players: Vec<UnseatedPlayer>,
 }
 
-#[derive(SimpleObject, Clone)]
+#[derive(SimpleObject, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SeatingChangeEvent {
     pub event_type: SeatingEventType,
     pub tournament_id: ID,

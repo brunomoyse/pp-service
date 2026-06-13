@@ -96,7 +96,7 @@ impl From<Role> for String {
     }
 }
 
-#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum NotificationType {
     TournamentStartingSoon,
     RegistrationConfirmed,
@@ -109,7 +109,7 @@ pub enum NotificationType {
     QualifiedForDay2,
 }
 
-#[derive(SimpleObject, Clone, Debug)]
+#[derive(SimpleObject, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct UserNotification {
     pub id: ID,
     pub user_id: ID,

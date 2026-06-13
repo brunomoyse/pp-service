@@ -63,7 +63,7 @@ impl From<RegistrationStatus> for String {
     }
 }
 
-#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum RegistrationEventType {
     PlayerRegistered,
     PlayerUnregistered,
@@ -71,7 +71,7 @@ pub enum RegistrationEventType {
     PlayerPromoted,
 }
 
-#[derive(SimpleObject, Clone)]
+#[derive(SimpleObject, Clone, serde::Serialize, serde::Deserialize)]
 #[graphql(complex)]
 pub struct TournamentRegistration {
     pub id: ID,
@@ -177,7 +177,7 @@ impl TournamentRegistration {
     }
 }
 
-#[derive(SimpleObject, Clone)]
+#[derive(SimpleObject, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TournamentPlayer {
     pub registration: TournamentRegistration,
     /// Display name of the player (works for account-less players).
@@ -186,7 +186,7 @@ pub struct TournamentPlayer {
     pub user: Option<User>,
 }
 
-#[derive(SimpleObject, Clone)]
+#[derive(SimpleObject, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PlayerRegistrationEvent {
     pub tournament_id: ID,
     pub player: TournamentPlayer,

@@ -95,9 +95,11 @@ This is a Cargo workspace with two crates:
 
 7. **Real-time Features**:
    - GraphQL subscriptions over WebSocket
-   - Uses Tokio broadcast channels (per-tournament, per-user, per-club) stored in static `Lazy<Arc<Mutex<HashMap>>>`
-   - Publish functions: `publish_registration_event()`, `publish_seating_event()`, `publish_clock_update()`, `publish_user_notification()`
-   - Subscription endpoints: clock updates, registrations, seating changes (per-tournament and per-club), user notifications
+   - Per-instance fan-out uses Tokio broadcast channels (per-tournament, per-user, per-club) in a static `LazyLock<Arc<Mutex<…>>>` (`subscriptions.rs`)
+   - Cross-instance fan-out uses **Postgres LISTEN/NOTIFY** (`gql/realtime.rs`): `publish_*` enqueue to a notifier task that dispatches locally AND `pg_notify`s the event (tagged with a per-process `INSTANCE_ID`); a listener task on every instance fans remote events into the local broadcast channels (skipping its own origin). This lets the backend run >1 replica. Spawned in `main.rs`.
+   - Publish functions (signatures unchanged): `publish_registration_event()`, `publish_seating_event()`, `publish_clock_update()`, `publish_user_notification()`, `publish_activity_event()`
+   - Event payload types derive `serde::Serialize`/`Deserialize` for the NOTIFY wire format; payloads over ~7.5 KB skip the cross-instance hop (logged) but are still delivered locally
+   - Subscription endpoints: clock updates, registrations, seating changes (per-tournament and per-club), activity, user notifications
 
 ### Startup Flow (main.rs)
 

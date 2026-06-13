@@ -6,6 +6,7 @@ pub mod root;
 // Shared infrastructure
 pub mod error;
 pub mod loaders;
+pub mod realtime;
 pub mod scalars;
 pub mod schema;
 pub mod subscriptions;

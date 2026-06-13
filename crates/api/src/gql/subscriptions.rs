@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 use crate::auth::jwt::Claims;
 use crate::gql::error::{auth_error, ResultExt};
+use crate::gql::realtime::RealtimeEvent;
 use crate::gql::types::{
     ActivityLogEntry, PlayerRegistrationEvent, SeatingChangeEvent, TournamentClock,
     UserNotification,
@@ -266,50 +267,43 @@ impl SubscriptionRoot {
 }
 
 // ============================================================================
-// Publish functions - send events to specific channels
+// Publish functions
+//
+// These hand the event to the cross-instance bus (realtime::queue). The bus
+// dispatches to local subscribers (via dispatch_local below) and broadcasts to
+// other backend instances over Postgres LISTEN/NOTIFY. Signatures are unchanged
+// so existing call sites don't need to know about the bus.
 // ============================================================================
 
 /// Publish a registration event to a tournament's channel
 pub fn publish_registration_event(event: PlayerRegistrationEvent) {
-    let tournament_id = match Uuid::parse_str(event.tournament_id.as_str()) {
-        Ok(id) => id,
-        Err(_) => return,
-    };
-
-    let mut channels = CHANNELS.lock();
-    let tournament = channels.get_or_create_tournament(tournament_id);
-    // Activity is already updated by get_or_create_tournament
-    let _ = tournament.registrations.send(event);
+    crate::gql::realtime::queue(RealtimeEvent::Registration(event));
 }
 
 /// Publish a seating event to a tournament's channel and the club's channel
 pub fn publish_seating_event(event: SeatingChangeEvent) {
-    let tournament_id = match Uuid::parse_str(event.tournament_id.as_str()) {
-        Ok(id) => id,
-        Err(_) => return,
-    };
-
-    let club_id = match Uuid::parse_str(event.club_id.as_str()) {
-        Ok(id) => id,
-        Err(_) => return,
-    };
-
-    let mut channels = CHANNELS.lock();
-    // Send to tournament channel (activity is updated by get_or_create_tournament)
-    let tournament = channels.get_or_create_tournament(tournament_id);
-    let _ = tournament.seating.send(event.clone());
-
-    // Also send to club channel (activity is updated by get_or_create_club)
-    let club_sender = channels.get_or_create_club(club_id);
-    let _ = club_sender.send(event);
+    crate::gql::realtime::queue(RealtimeEvent::Seating(event));
 }
 
 /// Publish a clock update to a tournament's channel
 pub fn publish_clock_update(tournament_id: Uuid, clock: TournamentClock) {
-    let mut channels = CHANNELS.lock();
-    let tournament = channels.get_or_create_tournament(tournament_id);
-    // Activity is already updated by get_or_create_tournament
-    let _ = tournament.clock.send(clock);
+    crate::gql::realtime::queue(RealtimeEvent::Clock {
+        tournament_id,
+        clock: Box::new(clock),
+    });
+}
+
+/// Publish a notification to a specific user's channel
+pub fn publish_user_notification(notification: UserNotification) {
+    crate::gql::realtime::queue(RealtimeEvent::UserNotification(notification));
+}
+
+/// Publish an activity log entry to a tournament's activity channel
+pub fn publish_activity_event(tournament_id: Uuid, entry: ActivityLogEntry) {
+    crate::gql::realtime::queue(RealtimeEvent::Activity {
+        tournament_id,
+        entry,
+    });
 }
 
 /// Cleanup tournament channels when a tournament finishes
@@ -325,21 +319,59 @@ pub fn cleanup_inactive_channels(inactive_duration_hours: i64) {
     channels.cleanup_inactive_channels(inactive_duration_hours);
 }
 
-/// Publish a notification to a specific user's channel
-pub fn publish_user_notification(notification: UserNotification) {
-    let user_id = match Uuid::parse_str(notification.user_id.as_str()) {
-        Ok(id) => id,
-        Err(_) => return,
-    };
+// ============================================================================
+// Local dispatch — fan an event into this instance's in-process broadcast
+// channels. Called by the realtime bus (for both locally-originated events and
+// events received from other instances), and directly when no bus is running.
+// ============================================================================
 
-    let mut channels = CHANNELS.lock();
-    let user_sender = channels.get_or_create_user(user_id);
-    let _ = user_sender.send(notification);
-}
-
-/// Publish an activity log entry to a tournament's activity channel
-pub fn publish_activity_event(tournament_id: Uuid, entry: ActivityLogEntry) {
-    let mut channels = CHANNELS.lock();
-    let tournament = channels.get_or_create_tournament(tournament_id);
-    let _ = tournament.activity.send(entry);
+/// Fan a real-time event into this instance's broadcast channels.
+pub(crate) fn dispatch_local(event: RealtimeEvent) {
+    match event {
+        RealtimeEvent::Registration(event) => {
+            let Ok(tournament_id) = Uuid::parse_str(event.tournament_id.as_str()) else {
+                return;
+            };
+            let mut channels = CHANNELS.lock();
+            let tournament = channels.get_or_create_tournament(tournament_id);
+            let _ = tournament.registrations.send(event);
+        }
+        RealtimeEvent::Seating(event) => {
+            let Ok(tournament_id) = Uuid::parse_str(event.tournament_id.as_str()) else {
+                return;
+            };
+            let Ok(club_id) = Uuid::parse_str(event.club_id.as_str()) else {
+                return;
+            };
+            let mut channels = CHANNELS.lock();
+            let tournament = channels.get_or_create_tournament(tournament_id);
+            let _ = tournament.seating.send(event.clone());
+            let club_sender = channels.get_or_create_club(club_id);
+            let _ = club_sender.send(event);
+        }
+        RealtimeEvent::Clock {
+            tournament_id,
+            clock,
+        } => {
+            let mut channels = CHANNELS.lock();
+            let tournament = channels.get_or_create_tournament(tournament_id);
+            let _ = tournament.clock.send(*clock);
+        }
+        RealtimeEvent::Activity {
+            tournament_id,
+            entry,
+        } => {
+            let mut channels = CHANNELS.lock();
+            let tournament = channels.get_or_create_tournament(tournament_id);
+            let _ = tournament.activity.send(entry);
+        }
+        RealtimeEvent::UserNotification(notification) => {
+            let Ok(user_id) = Uuid::parse_str(notification.user_id.as_str()) else {
+                return;
+            };
+            let mut channels = CHANNELS.lock();
+            let user_sender = channels.get_or_create_user(user_id);
+            let _ = user_sender.send(notification);
+        }
+    }
 }

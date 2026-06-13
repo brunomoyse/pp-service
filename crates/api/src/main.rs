@@ -89,6 +89,14 @@ async fn main() -> anyhow::Result<()> {
     });
     tracing::info!("Drink credit expiry service started");
 
+    // Cross-instance real-time bus: the notifier broadcasts locally-published
+    // events over Postgres NOTIFY; the listener fans events from other instances
+    // into the local subscription channels. Both have internal error/reconnect
+    // handling. Must be spawned before any request can publish an event.
+    let _realtime_notifier = api::gql::realtime::spawn_realtime_notifier(state.db.clone());
+    let _realtime_listener = api::gql::realtime::spawn_realtime_listener(state.db.clone());
+    tracing::info!("Realtime bus (LISTEN/NOTIFY) started");
+
     let app = build_router(state, schema);
 
     let port: u16 = std::env::var("PORT")

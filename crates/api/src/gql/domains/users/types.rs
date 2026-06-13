@@ -4,7 +4,7 @@ use crate::gql::common::types::Role;
 use crate::gql::domains::clubs::types::Club;
 use crate::gql::error::ResultExt;
 
-#[derive(SimpleObject, Clone, serde::Serialize)]
+#[derive(SimpleObject, Clone, serde::Serialize, serde::Deserialize)]
 #[graphql(complex)]
 pub struct User {
     pub id: ID,

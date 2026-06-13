@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 
 use infra::models::TournamentActivityLogRow;
 
-#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum ActivityEventCategory {
     Clock,
     Registration,
@@ -40,7 +40,7 @@ impl ActivityEventCategory {
     }
 }
 
-#[derive(SimpleObject, Clone, Debug)]
+#[derive(SimpleObject, Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ActivityLogEntry {
     pub id: ID,
     pub tournament_id: ID,

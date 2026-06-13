@@ -139,7 +139,7 @@ impl From<TournamentLiveStatus> for infra::repos::tournaments::TournamentLiveSta
 
 // Clock status enum
 
-#[derive(Enum, Copy, Clone, Eq, PartialEq)]
+#[derive(Enum, Copy, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ClockStatus {
     Stopped,
     Running,
@@ -227,7 +227,7 @@ pub struct Tournament {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(SimpleObject, Clone)]
+#[derive(SimpleObject, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TournamentStructure {
     pub id: ID,
     pub tournament_id: ID,
@@ -290,7 +290,7 @@ impl From<infra::models::TournamentRow> for Tournament {
     }
 }
 
-#[derive(SimpleObject, Clone)]
+#[derive(SimpleObject, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TournamentClock {
     pub id: ID,
     pub tournament_id: ID,
