@@ -1,7 +1,7 @@
 use async_graphql::{dataloader::DataLoader, Context, Object, Result, ID};
 use std::collections::HashMap;
 
-use crate::gql::error::ResultExt;
+use crate::gql::error::{auth_error, ResultExt};
 use crate::gql::loaders::TournamentLoader;
 use crate::state::AppState;
 use infra::repos::{
@@ -27,9 +27,7 @@ impl ResultQuery {
     ) -> Result<Vec<UserTournamentResult>> {
         use crate::auth::Claims;
 
-        let claims = ctx
-            .data::<Claims>()
-            .map_err(|_| async_graphql::Error::new("Authentication required"))?;
+        let claims = ctx.data::<Claims>().map_err(|_| auth_error())?;
 
         let user_id = Uuid::parse_str(&claims.sub).gql_err("Invalid user ID")?;
 
@@ -63,9 +61,7 @@ impl ResultQuery {
     async fn my_tournament_statistics(&self, ctx: &Context<'_>) -> Result<PlayerStatsResponse> {
         use crate::auth::Claims;
 
-        let claims = ctx
-            .data::<Claims>()
-            .map_err(|_| async_graphql::Error::new("Authentication required"))?;
+        let claims = ctx.data::<Claims>().map_err(|_| auth_error())?;
 
         let user_id = Uuid::parse_str(&claims.sub).gql_err("Invalid user ID")?;
 

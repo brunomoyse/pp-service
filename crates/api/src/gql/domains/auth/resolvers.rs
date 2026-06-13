@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::auth::{
     custom_oauth::CustomOAuthService, password::PasswordService, Claims, OAuthProvider,
 };
-use crate::gql::error::ResultExt;
+use crate::gql::error::{auth_error, ResultExt};
 use crate::gql::types::User;
 use crate::state::AppState;
 
@@ -24,9 +24,7 @@ pub struct AuthQuery;
 impl AuthQuery {
     /// Get the current authenticated user's information
     async fn me(&self, ctx: &Context<'_>) -> Result<User> {
-        let claims = ctx
-            .data::<Claims>()
-            .map_err(|_| async_graphql::Error::new("Authentication required"))?;
+        let claims = ctx.data::<Claims>().map_err(|_| auth_error())?;
 
         let user_id = Uuid::parse_str(&claims.sub).gql_err("Invalid user ID")?;
 
@@ -133,7 +131,12 @@ impl AuthMutation {
         );
         ctx.insert_http_header("Set-Cookie", cookie_value);
 
-        Ok(AuthPayload { token, user })
+        // OAuth web flow uses the HttpOnly cookie; native OAuth isn't wired yet.
+        Ok(AuthPayload {
+            token,
+            user,
+            refresh_token: None,
+        })
     }
 
     /// Validate token and get current user
@@ -320,7 +323,15 @@ impl AuthMutation {
         );
         ctx.insert_http_header("Set-Cookie", cookie_value);
 
-        Ok(AuthPayload { token, user })
+        // Native clients have no cookie jar: hand them the raw refresh token to
+        // store in the keychain. Web clients get None and use the cookie above.
+        let refresh_token = input.native_client.then_some(raw_refresh);
+
+        Ok(AuthPayload {
+            token,
+            user,
+            refresh_token,
+        })
     }
 
     /// Get OAuth authorization URL for a provider

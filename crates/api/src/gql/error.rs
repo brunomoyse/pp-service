@@ -70,3 +70,13 @@ impl<T, E: std::fmt::Display> ResultExt<T> for std::result::Result<T, E> {
         self.map_err(|e| async_graphql::Error::new(format!("{context}: {e}")))
     }
 }
+
+/// Auth-guard error carrying a machine-readable `UNAUTHENTICATED` code in
+/// `extensions.code`. Clients (e.g. the player app's Apollo error link) match
+/// on this code to trigger a token refresh / sign-out instead of brittly
+/// string-matching the message. The human-readable message is preserved.
+pub fn auth_error() -> async_graphql::Error {
+    use async_graphql::ErrorExtensions;
+    async_graphql::Error::new("Authentication required")
+        .extend_with(|_, e| e.set("code", "UNAUTHENTICATED"))
+}

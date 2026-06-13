@@ -3,7 +3,7 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::gql::common::helpers::get_club_id_for_tournament;
-use crate::gql::error::ResultExt;
+use crate::gql::error::{auth_error, ResultExt};
 use crate::gql::loaders::{ClubPlayerLoader, UserLoader};
 use crate::gql::subscriptions::{
     publish_registration_event, publish_seating_event, publish_user_notification,
@@ -48,9 +48,7 @@ impl RegistrationQuery {
     ) -> Result<PaginatedResponse<TournamentPlayer>> {
         use crate::auth::Claims;
 
-        let _claims = ctx
-            .data::<Claims>()
-            .map_err(|_| async_graphql::Error::new("Authentication required"))?;
+        let _claims = ctx.data::<Claims>().map_err(|_| auth_error())?;
 
         let state = ctx.data::<AppState>()?;
 
@@ -118,9 +116,7 @@ impl RegistrationQuery {
         use crate::auth::Claims;
 
         // Get authenticated user from JWT token
-        let claims = ctx
-            .data::<Claims>()
-            .map_err(|_| async_graphql::Error::new("Authentication required"))?;
+        let claims = ctx.data::<Claims>().map_err(|_| auth_error())?;
 
         let user_id = Uuid::parse_str(&claims.sub).gql_err("Invalid user ID")?;
 
@@ -477,7 +473,7 @@ impl RegistrationMutation {
         // Get the current user's claims
         let claims = ctx
             .data::<crate::auth::Claims>()
-            .map_err(|_| async_graphql::Error::new("Authentication required"))?;
+            .map_err(|_| auth_error())?;
         let authenticated_user_id =
             Uuid::parse_str(&claims.sub).gql_err("Invalid authenticated user ID")?;
 
@@ -693,9 +689,7 @@ impl RegistrationMutation {
 
         let state = ctx.data::<AppState>()?;
 
-        let claims = ctx
-            .data::<Claims>()
-            .map_err(|_| async_graphql::Error::new("Authentication required"))?;
+        let claims = ctx.data::<Claims>().map_err(|_| auth_error())?;
         let user_id = Uuid::parse_str(&claims.sub).gql_err("Invalid user ID")?;
         let tournament_id =
             Uuid::parse_str(input.tournament_id.as_str()).gql_err("Invalid tournament ID")?;
