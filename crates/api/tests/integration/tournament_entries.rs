@@ -677,3 +677,76 @@ async fn test_delete_tournament_entry() {
     let data = response.data.into_json().unwrap();
     assert_eq!(data["deleteTournamentEntry"], true);
 }
+
+#[tokio::test]
+async fn test_duplicate_initial_entry_rejected() {
+    let app_state = setup_test_db().await;
+    let schema = build_schema(app_state.clone());
+
+    let (manager_id, manager_claims) =
+        create_test_user(&app_state, "dup_init_manager@test.com", "manager").await;
+    let club_id = create_test_club(&app_state, "Dup Initial Club").await;
+    create_club_manager(&app_state, manager_id, club_id).await;
+    let tournament_id = create_test_tournament(&app_state, club_id, "Dup Initial Tournament").await;
+    let (player_id, _) = create_test_user(&app_state, "dup_init_player@test.com", "player").await;
+
+    let mutation = r#"
+        mutation AddEntry($input: AddTournamentEntryInput!) {
+            addTournamentEntry(input: $input) { id entryType }
+        }
+    "#;
+    let entry = |entry_type: &str| {
+        Variables::from_json(json!({
+            "input": {
+                "tournamentId": tournament_id.to_string(),
+                "userId": player_id.to_string(),
+                "entryType": entry_type,
+                "amountCents": 5000,
+                "chipsReceived": 10000
+            }
+        }))
+    };
+
+    // First initial buy-in: allowed.
+    let r1 = execute_graphql(
+        &schema,
+        mutation,
+        Some(entry("INITIAL")),
+        Some(manager_claims.clone()),
+    )
+    .await;
+    assert!(
+        r1.errors.is_empty(),
+        "first initial entry should succeed: {:?}",
+        r1.errors
+    );
+
+    // Second initial for the SAME player: rejected by the partial unique index
+    // (a duplicate initial would silently inflate the prize pool).
+    let r2 = execute_graphql(
+        &schema,
+        mutation,
+        Some(entry("INITIAL")),
+        Some(manager_claims.clone()),
+    )
+    .await;
+    assert!(
+        !r2.errors.is_empty(),
+        "a second initial entry for the same player must be rejected"
+    );
+
+    // A rebuy for the same player is still allowed — multiple funding rows of
+    // non-initial types are legitimate.
+    let r3 = execute_graphql(
+        &schema,
+        mutation,
+        Some(entry("REBUY")),
+        Some(manager_claims),
+    )
+    .await;
+    assert!(
+        r3.errors.is_empty(),
+        "a rebuy for the same player should still succeed: {:?}",
+        r3.errors
+    );
+}
