@@ -60,6 +60,14 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       REDIRECT_BASE_URL: ${REDIRECT_BASE_URL:?set REDIRECT_BASE_URL}
+      # Refresh-cookie scoping. Behind a reverse proxy that serves the API under
+      # `/api` (Caddy strips it before the backend), the browser calls
+      # `/api/auth/refresh`, so the cookie MUST be Path=/api/auth or it is never
+      # sent back and refresh returns 401. Without this the backend defaults to
+      # `/auth` and web sessions silently drop on access-token expiry.
+      COOKIE_PATH: ${COOKIE_PATH:-/api/auth}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
       # Production hardening (see app changes): lock CORS to real origins and
       # keep schema introspection disabled.
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?set ALLOWED_ORIGINS}
