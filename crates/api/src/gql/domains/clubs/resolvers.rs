@@ -2,6 +2,9 @@ use async_graphql::{Context, Object, Result};
 use uuid::Uuid;
 
 use super::service;
+use super::types::{CreateClubTableInput, UpdateClubTableInput};
+use crate::auth::permissions::require_club_manager;
+use crate::gql::error::ResultExt;
 use crate::gql::types::{Club, ClubTable, CompanyLookup, OnboardClubInput, OnboardClubPayload};
 use crate::services::vies;
 use crate::state::AppState;
@@ -87,11 +90,29 @@ impl ClubQuery {
                 table_number: table_row.table_number,
                 max_seats: table_row.max_seats,
                 is_active: table_row.is_active,
+                is_default: table_row.is_default,
                 is_assigned: assigned_table_ids.contains(&table_row.id),
                 created_at: table_row.created_at,
                 updated_at: table_row.updated_at,
             })
             .collect())
+    }
+}
+
+/// Map a freshly fetched/created `ClubTableRow` to the GraphQL type. New or
+/// just-mutated tables are not yet assigned to a tournament, so `is_assigned`
+/// is false; the `club_tables` query computes the live value.
+fn club_table_from_row(row: infra::models::ClubTableRow) -> ClubTable {
+    ClubTable {
+        id: row.id.into(),
+        club_id: row.club_id.into(),
+        table_number: row.table_number,
+        max_seats: row.max_seats,
+        is_active: row.is_active,
+        is_default: row.is_default,
+        is_assigned: false,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
     }
 }
 
@@ -110,5 +131,106 @@ impl ClubMutation {
     ) -> Result<OnboardClubPayload> {
         let state = ctx.data::<AppState>()?;
         service::onboard_club(state, input).await
+    }
+
+    /// Predefine a physical table for a club. Managers of the club only.
+    async fn create_club_table(
+        &self,
+        ctx: &Context<'_>,
+        input: CreateClubTableInput,
+    ) -> Result<ClubTable> {
+        let state = ctx.data::<AppState>()?;
+        let club_id = Uuid::parse_str(input.club_id.as_str()).gql_err("Invalid club ID")?;
+        require_club_manager(ctx, club_id).await?;
+
+        if input.table_number < 1 {
+            return Err(async_graphql::Error::new("Table number must be positive"));
+        }
+        if input.max_seats < 2 {
+            return Err(async_graphql::Error::new("A table needs at least 2 seats"));
+        }
+
+        let row = club_tables::create(
+            &state.db,
+            club_id,
+            input.table_number,
+            input.max_seats,
+            input.is_default,
+        )
+        .await
+        .map_err(|e| {
+            if let sqlx::Error::Database(db) = &e {
+                if db.is_unique_violation() {
+                    return async_graphql::Error::new(format!(
+                        "Table {} already exists for this club",
+                        input.table_number
+                    ));
+                }
+            }
+            async_graphql::Error::new("Failed to create table")
+        })?;
+
+        Ok(club_table_from_row(row))
+    }
+
+    /// Update a club table (seats, default-set membership, active flag).
+    /// Managers of the table's club only.
+    async fn update_club_table(
+        &self,
+        ctx: &Context<'_>,
+        input: UpdateClubTableInput,
+    ) -> Result<ClubTable> {
+        let state = ctx.data::<AppState>()?;
+        let table_id = Uuid::parse_str(input.id.as_str()).gql_err("Invalid table ID")?;
+
+        let existing = club_tables::get_by_id(&state.db, table_id)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Table not found"))?;
+        require_club_manager(ctx, existing.club_id).await?;
+
+        if let Some(seats) = input.max_seats {
+            if seats < 2 {
+                return Err(async_graphql::Error::new("A table needs at least 2 seats"));
+            }
+        }
+
+        let row = club_tables::update(
+            &state.db,
+            table_id,
+            club_tables::UpdateClubTable {
+                max_seats: input.max_seats,
+                is_active: input.is_active,
+                is_default: input.is_default,
+            },
+        )
+        .await?
+        .ok_or_else(|| async_graphql::Error::new("Table not found"))?;
+
+        Ok(club_table_from_row(row))
+    }
+
+    /// Delete a club table. Managers of the table's club only. Refuses while the
+    /// table is booked by a live (non-finished) tournament.
+    async fn delete_club_table(&self, ctx: &Context<'_>, id: async_graphql::ID) -> Result<bool> {
+        let state = ctx.data::<AppState>()?;
+        let table_id = Uuid::parse_str(id.as_str()).gql_err("Invalid table ID")?;
+
+        let existing = club_tables::get_by_id(&state.db, table_id)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Table not found"))?;
+        require_club_manager(ctx, existing.club_id).await?;
+
+        let conflicts =
+            club_tables::active_table_conflicts(&state.db, &[table_id], Uuid::nil()).await?;
+        if let Some(conflict) = conflicts.first() {
+            return Err(async_graphql::Error::new(format!(
+                "Table {} is in use by an active tournament ({}) and cannot be deleted",
+                conflict.table_number, conflict.tournament_name
+            )));
+        }
+
+        club_tables::delete(&state.db, table_id)
+            .await
+            .gql_err("Failed to delete table")
     }
 }

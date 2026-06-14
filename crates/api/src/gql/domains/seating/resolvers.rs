@@ -254,6 +254,17 @@ impl SeatingMutation {
             ));
         }
 
+        // Guard against double-booking a physical table that another live
+        // tournament is already using.
+        let conflicts =
+            club_tables::active_table_conflicts(&state.db, &[club_table_id], tournament_id).await?;
+        if let Some(conflict) = conflicts.first() {
+            return Err(async_graphql::Error::new(format!(
+                "Table {} is already in use by an active tournament ({})",
+                conflict.table_number, conflict.tournament_name
+            )));
+        }
+
         // Assign the table to the tournament
         let _assignment = club_tables::assign_to_tournament(
             &state.db,
@@ -330,6 +341,18 @@ impl SeatingMutation {
             let club_table_id =
                 Uuid::parse_str(entry.club_table_id.as_str()).gql_err("Invalid club table ID")?;
             parsed.push((club_table_id, entry.max_seats));
+        }
+
+        // Reject the whole batch if any table is already booked by another live
+        // tournament — physical tables can't be double-booked.
+        let all_ids: Vec<Uuid> = parsed.iter().map(|(id, _)| *id).collect();
+        let conflicts =
+            club_tables::active_table_conflicts(&state.db, &all_ids, tournament_id).await?;
+        if let Some(conflict) = conflicts.first() {
+            return Err(async_graphql::Error::new(format!(
+                "Table {} is already in use by an active tournament ({})",
+                conflict.table_number, conflict.tournament_name
+            )));
         }
 
         // Run all inserts in a single transaction.

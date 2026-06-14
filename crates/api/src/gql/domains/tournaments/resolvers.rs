@@ -187,6 +187,40 @@ impl TournamentMutation {
             }
         }
 
+        // Auto-link the club's default table set. Tables already booked by
+        // another live tournament are skipped (no double-booking). Best-effort:
+        // a table-linking hiccup must not fail tournament creation.
+        if let Ok(default_tables) =
+            infra::repos::club_tables::list_default_active_by_club(&state.db, club_id).await
+        {
+            if !default_tables.is_empty() {
+                let ids: Vec<Uuid> = default_tables.iter().map(|t| t.id).collect();
+                let conflicting: std::collections::HashSet<Uuid> =
+                    infra::repos::club_tables::active_table_conflicts(
+                        &state.db,
+                        &ids,
+                        tournament_row.id,
+                    )
+                    .await
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|c| c.club_table_id)
+                    .collect();
+                for table in default_tables {
+                    if conflicting.contains(&table.id) {
+                        continue;
+                    }
+                    let _ = infra::repos::club_tables::assign_to_tournament(
+                        &state.db,
+                        tournament_row.id,
+                        table.id,
+                        None,
+                    )
+                    .await;
+                }
+            }
+        }
+
         Ok(Tournament::from(tournament_row))
     }
 

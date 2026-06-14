@@ -97,7 +97,31 @@ pub struct ClubTable {
     pub table_number: i32,
     pub max_seats: i32,
     pub is_active: bool,
+    /// Whether this table is part of the club's default set, auto-linked to
+    /// every newly created tournament.
+    pub is_default: bool,
     pub is_assigned: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// Manager input to add a physical table to a club.
+#[derive(InputObject)]
+pub struct CreateClubTableInput {
+    pub club_id: ID,
+    pub table_number: i32,
+    #[graphql(default = 9)]
+    pub max_seats: i32,
+    /// Whether the table joins the default set auto-linked to new tournaments.
+    #[graphql(default = true)]
+    pub is_default: bool,
+}
+
+/// Manager input to update a club table's seats / default membership / status.
+#[derive(InputObject)]
+pub struct UpdateClubTableInput {
+    pub id: ID,
+    pub max_seats: Option<i32>,
+    pub is_default: Option<bool>,
+    pub is_active: Option<bool>,
 }

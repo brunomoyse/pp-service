@@ -156,6 +156,9 @@ pub struct ClubTableRow {
     pub table_number: i32,
     pub max_seats: i32,
     pub is_active: bool,
+    /// Whether this table belongs to the club's default set, auto-linked to
+    /// every newly created tournament.
+    pub is_default: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
