@@ -88,6 +88,7 @@ pub async fn refresh_handler(
         max_age_secs,
         &auth_config.cookie_domain,
         auth_config.cookie_secure,
+        &auth_config.cookie_path,
     );
 
     // Native callers persist the rotated token from the body; web callers use
@@ -121,7 +122,11 @@ pub async fn logout_handler(
 
     // Clear the cookie
     let auth_config = state.auth_config();
-    let cookie_value = build_clear_cookie(&auth_config.cookie_domain, auth_config.cookie_secure);
+    let cookie_value = build_clear_cookie(
+        &auth_config.cookie_domain,
+        auth_config.cookie_secure,
+        &auth_config.cookie_path,
+    );
 
     let mut response = axum::http::StatusCode::OK.into_response();
     response.headers_mut().insert(

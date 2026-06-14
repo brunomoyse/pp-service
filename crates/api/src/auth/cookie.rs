@@ -3,13 +3,14 @@ pub fn build_refresh_cookie(
     max_age_secs: Option<u64>,
     cookie_domain: &Option<String>,
     secure: bool,
+    path: &str,
 ) -> String {
     let secure_flag = if secure { "; Secure" } else { "" };
     let same_site = if secure { "Strict" } else { "Lax" };
 
     let mut cookie = format!(
-        "refresh_token={}; HttpOnly{}; SameSite={}; Path=/auth",
-        raw_token, secure_flag, same_site
+        "refresh_token={}; HttpOnly{}; SameSite={}; Path={}",
+        raw_token, secure_flag, same_site, path
     );
 
     // When max_age is Some, the cookie persists across browser sessions ("remember me").
@@ -25,13 +26,14 @@ pub fn build_refresh_cookie(
     cookie
 }
 
-pub fn build_clear_cookie(cookie_domain: &Option<String>, secure: bool) -> String {
+pub fn build_clear_cookie(cookie_domain: &Option<String>, secure: bool, path: &str) -> String {
     let secure_flag = if secure { "; Secure" } else { "" };
     let same_site = if secure { "Strict" } else { "Lax" };
 
+    // Path must match the set-cookie path or the browser won't clear it.
     let mut cookie = format!(
-        "refresh_token=; HttpOnly{}; SameSite={}; Path=/auth; Max-Age=0",
-        secure_flag, same_site
+        "refresh_token=; HttpOnly{}; SameSite={}; Path={}; Max-Age=0",
+        secure_flag, same_site, path
     );
 
     if let Some(domain) = cookie_domain {

@@ -102,6 +102,7 @@ pub async fn callback(
         max_age_secs,
         &auth_config.cookie_domain,
         auth_config.cookie_secure,
+        &auth_config.cookie_path,
     );
 
     let mut response = Json(AuthResponse { token, user }).into_response();

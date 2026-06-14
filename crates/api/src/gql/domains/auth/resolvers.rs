@@ -128,6 +128,7 @@ impl AuthMutation {
             max_age_secs,
             &auth_config.cookie_domain,
             auth_config.cookie_secure,
+            &auth_config.cookie_path,
         );
         ctx.insert_http_header("Set-Cookie", cookie_value);
 
@@ -320,6 +321,7 @@ impl AuthMutation {
             max_age_secs,
             &auth_config.cookie_domain,
             auth_config.cookie_secure,
+            &auth_config.cookie_path,
         );
         ctx.insert_http_header("Set-Cookie", cookie_value);
 

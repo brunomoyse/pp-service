@@ -8,6 +8,11 @@ pub struct AuthConfig {
     pub refresh_token_expiration_days: u64,
     pub cookie_domain: Option<String>,
     pub cookie_secure: bool,
+    /// Path attribute for the refresh-token cookie. Must match the public URL
+    /// the browser uses to reach `/auth/*`. Defaults to `/auth`; set to
+    /// `/api/auth` when a reverse proxy serves the API under an `/api` prefix
+    /// (the prefix is in the browser's URL but stripped before the backend).
+    pub cookie_path: String,
     pub google_client_id: String,
     pub google_client_secret: String,
     pub redirect_base_url: String,
@@ -30,6 +35,7 @@ impl AuthConfig {
                 .unwrap_or_else(|_| "true".to_string())
                 .parse()
                 .unwrap_or(true),
+            cookie_path: env::var("COOKIE_PATH").unwrap_or_else(|_| "/auth".to_string()),
             google_client_id: env::var("GOOGLE_CLIENT_ID").unwrap_or_default(),
             google_client_secret: env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default(),
             redirect_base_url: env::var("REDIRECT_BASE_URL")
