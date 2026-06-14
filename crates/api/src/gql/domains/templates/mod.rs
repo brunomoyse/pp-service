@@ -1,3 +1,4 @@
+pub mod payout_curve;
 pub mod resolvers;
 pub mod types;
 

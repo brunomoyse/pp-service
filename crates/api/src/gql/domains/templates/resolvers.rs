@@ -98,6 +98,30 @@ impl TemplateQuery {
             })
             .collect()
     }
+
+    /// Preview a decaying "pay the top N%" payout structure for a field size,
+    /// without saving anything. `percent_paid` defaults to 15%. The result drops
+    /// straight into a payout template's structure (Auto mode in the editor).
+    async fn auto_payout_preview(
+        &self,
+        _ctx: &Context<'_>,
+        num_players: i32,
+        percent_paid: Option<f64>,
+    ) -> Result<Vec<PayoutStructureEntry>> {
+        if num_players < 1 {
+            return Err(async_graphql::Error::new("num_players must be at least 1"));
+        }
+        let percent = percent_paid.unwrap_or(super::payout_curve::DEFAULT_PERCENT_PAID);
+        if percent <= 0.0 || percent > 100.0 {
+            return Err(async_graphql::Error::new(
+                "percent_paid must be between 0 and 100",
+            ));
+        }
+        Ok(super::payout_curve::auto_payout_structure(
+            num_players,
+            percent,
+        ))
+    }
 }
 
 // ── Mutations ──
