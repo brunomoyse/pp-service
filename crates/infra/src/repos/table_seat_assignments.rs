@@ -388,7 +388,7 @@ pub async fn list_unassigned_players<'e>(
 ) -> SqlxResult<Vec<crate::models::ClubPlayerRow>> {
     sqlx::query_as::<_, crate::models::ClubPlayerRow>(
         r#"
-        SELECT rp.id, rp.club_id, rp.display_name, rp.app_user_id, rp.is_active, rp.created_at, rp.updated_at
+        SELECT rp.id, rp.club_id, rp.display_name, rp.first_name, rp.last_name, rp.app_user_id, rp.is_active, rp.created_at, rp.updated_at
         FROM tournament_registrations tr
         JOIN club_player rp ON rp.id = tr.club_player_id
         LEFT JOIN table_seat_assignments tsa ON tsa.club_player_id = rp.id

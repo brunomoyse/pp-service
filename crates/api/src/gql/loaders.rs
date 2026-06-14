@@ -38,7 +38,7 @@ impl Loader<Uuid> for ClubPlayerLoader {
 
             let rows: Vec<ClubPlayerRow> = sqlx::query_as::<_, ClubPlayerRow>(
                 r#"
-                SELECT id, club_id, display_name, app_user_id, is_active, created_at, updated_at
+                SELECT id, club_id, display_name, first_name, last_name, app_user_id, is_active, created_at, updated_at
                 FROM club_player
                 WHERE id = ANY($1::uuid[])
                 "#,
