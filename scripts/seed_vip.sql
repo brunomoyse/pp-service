@@ -77,10 +77,12 @@ INSERT INTO users (id, email, username, first_name, last_name, role, locale, pas
 
 -- Roster entries for the app users (app_user_id links the account to the roster).
 -- The roster id mirrors the user id with a 'b' prefix instead of 'a'.
-INSERT INTO club_player (id, club_id, display_name, app_user_id)
+INSERT INTO club_player (id, club_id, display_name, first_name, last_name, app_user_id)
 SELECT ('b' || substr(u.id::text, 2))::uuid,
        '11111111-1111-1111-1111-111111111111',
        u.first_name || ' ' || u.last_name,
+       u.first_name,
+       u.last_name,
        u.id
 FROM users u;
 
@@ -91,18 +93,22 @@ INSERT INTO club_managers (club_id, user_id) VALUES
 -- ---------------------------------------------------------------------------
 -- 4. Account-less roster players (31) — real club members without an app account
 -- ---------------------------------------------------------------------------
-INSERT INTO club_player (id, club_id, display_name, app_user_id)
+INSERT INTO club_player (id, club_id, display_name, first_name, last_name, app_user_id)
 SELECT ('b0000000-0000-0000-0000-0000000001' || lpad(n::text, 2, '0'))::uuid,
        '11111111-1111-1111-1111-111111111111',
-       (ARRAY['Marc','Sophie','Thomas','Julie','Nicolas','Laura','Pierre','Emma','Olivier','Chloé',
-              'Maxime','Sarah','Benoît','Léa','Vincent','Manon','Damien','Marie','Sébastien','Audrey',
-              'Cédric','Justine','Quentin','Charlotte','Romain','Aurélie','Florian','Céline','Loïc','Élodie','Grégory'])[n]
-         || ' ' ||
-       (ARRAY['Dubois','Lambert','Martin','Lefèvre','Leroy','Moreau','Simon','Laurent','Michel','Garcia',
-              'Dupont','Renard','Lemaire','Fontaine','Henry','Rousseau','Blanc','Girard','Bonnet','Dumont',
-              'Robert','Mercier','Boyer','Noël','Petit','Roux','Body','Faure','Gauthier','Marchal','Collin'])[n],
+       names.fn || ' ' || names.ln,
+       names.fn,
+       names.ln,
        NULL
-FROM generate_series(1, 31) AS n;
+FROM generate_series(1, 31) AS n
+CROSS JOIN LATERAL (
+    SELECT (ARRAY['Marc','Sophie','Thomas','Julie','Nicolas','Laura','Pierre','Emma','Olivier','Chloé',
+                  'Maxime','Sarah','Benoît','Léa','Vincent','Manon','Damien','Marie','Sébastien','Audrey',
+                  'Cédric','Justine','Quentin','Charlotte','Romain','Aurélie','Florian','Céline','Loïc','Élodie','Grégory'])[n] AS fn,
+           (ARRAY['Dubois','Lambert','Martin','Lefèvre','Leroy','Moreau','Simon','Laurent','Michel','Garcia',
+                  'Dupont','Renard','Lemaire','Fontaine','Henry','Rousseau','Blanc','Girard','Bonnet','Dumont',
+                  'Robert','Mercier','Boyer','Noël','Petit','Roux','Body','Faure','Gauthier','Marchal','Collin'])[n] AS ln
+) AS names;
 
 -- ---------------------------------------------------------------------------
 -- 5. Club tables (6 tables of 9 seats)
