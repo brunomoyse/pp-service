@@ -215,6 +215,9 @@ impl UserMutation {
         if let Some(v) = input.achievements {
             prefs.achievements = v;
         }
+        if let Some(v) = input.announcements {
+            prefs.announcements = v;
+        }
         notification_preferences::upsert(&state.db, user_id, prefs).await?;
 
         Ok(prefs.into())

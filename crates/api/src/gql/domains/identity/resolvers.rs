@@ -56,7 +56,9 @@ impl IdentityMutation {
         require_club_manager(ctx, club_uuid).await?;
 
         let state = ctx.data::<AppState>()?;
-        let row = service::create_roster_entry(&state.db, club_uuid, &input.display_name).await?;
+        let row =
+            service::create_roster_entry(&state.db, club_uuid, &input.first_name, &input.last_name)
+                .await?;
         Ok(ClubPlayer::from(row))
     }
 
@@ -87,8 +89,14 @@ impl IdentityMutation {
         let club_id = roster_entry_club(state, rp_id).await?;
         require_club_manager(ctx, club_id).await?;
 
-        let row =
-            service::rename_roster_entry(&state.db, rp_id, club_id, &input.display_name).await?;
+        let row = service::rename_roster_entry(
+            &state.db,
+            rp_id,
+            club_id,
+            &input.first_name,
+            &input.last_name,
+        )
+        .await?;
         Ok(ClubPlayer::from(row))
     }
 
@@ -107,6 +115,19 @@ impl IdentityMutation {
 
         let row =
             service::set_roster_entry_active(&state.db, rp_id, club_id, input.is_active).await?;
+        Ok(ClubPlayer::from(row))
+    }
+
+    /// Anonymise an unclaimed roster entry: scrub the name and deactivate it
+    /// while keeping its historical results. Managers of the entry's club only.
+    /// Refuses entries linked to an app account (those are managed by the user).
+    async fn anonymize_club_player(&self, ctx: &Context<'_>, id: ID) -> Result<ClubPlayer> {
+        let state = ctx.data::<AppState>()?;
+        let rp_id = Uuid::parse_str(id.as_str()).gql_err("Invalid club player ID")?;
+        let club_id = roster_entry_club(state, rp_id).await?;
+        require_club_manager(ctx, club_id).await?;
+
+        let row = service::anonymize_roster_entry(&state.db, rp_id, club_id).await?;
         Ok(ClubPlayer::from(row))
     }
 

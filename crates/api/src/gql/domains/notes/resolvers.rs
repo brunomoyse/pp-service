@@ -73,6 +73,9 @@ impl NotesQuery {
                     id: r.rp_id,
                     club_id: r.rp_club_id,
                     display_name: r.rp_display_name,
+                    // Scouting projection doesn't select the structured name parts.
+                    first_name: None,
+                    last_name: None,
                     app_user_id: r.rp_app_user_id,
                     // These rows are players currently in a tournament field, so
                     // they are active by construction; the scouting query does

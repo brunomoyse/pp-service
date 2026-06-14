@@ -5,17 +5,37 @@ use crate::gql::error::GqlError;
 use infra::models::ClubPlayerRow;
 use infra::repos::club_players;
 
-/// Create a roster entry for a non-app-user. Validates the display name.
+/// Compose the canonical display name from a structured first/last name.
+/// "first last", trimmed; collapses to whichever part is present.
+pub fn compose_display_name(first_name: &str, last_name: &str) -> String {
+    format!("{} {}", first_name.trim(), last_name.trim())
+        .trim()
+        .to_string()
+}
+
+/// Create a roster entry for a non-app-user from a structured name. Requires at
+/// least one of first/last to be non-empty; `display_name` is derived from them.
 pub async fn create_roster_entry(
     db: &PgPool,
     club_id: Uuid,
-    display_name: &str,
+    first_name: &str,
+    last_name: &str,
 ) -> Result<ClubPlayerRow, GqlError> {
-    let name = display_name.trim();
-    if name.is_empty() {
-        return Err(GqlError::new("Display name cannot be empty"));
+    let first = first_name.trim();
+    let last = last_name.trim();
+    let display = compose_display_name(first, last);
+    if display.is_empty() {
+        return Err(GqlError::new("Player name cannot be empty"));
     }
-    Ok(club_players::create(db, club_id, name, None).await?)
+    Ok(club_players::create(
+        db,
+        club_id,
+        &display,
+        if first.is_empty() { None } else { Some(first) },
+        if last.is_empty() { None } else { Some(last) },
+        None,
+    )
+    .await?)
 }
 
 /// Claim an unclaimed roster entry for an app user.
@@ -55,18 +75,42 @@ pub async fn claim_roster_entry(
         .ok_or_else(|| GqlError::new("Roster entry could not be claimed"))
 }
 
-/// Rename a roster entry within its club. Validates the new display name.
+/// Rename a roster entry within its club from a structured first/last name,
+/// keeping `display_name` in sync. Requires a non-empty composed name.
 pub async fn rename_roster_entry(
     db: &PgPool,
     id: Uuid,
     club_id: Uuid,
-    display_name: &str,
+    first_name: &str,
+    last_name: &str,
 ) -> Result<ClubPlayerRow, GqlError> {
-    let name = display_name.trim();
-    if name.is_empty() {
-        return Err(GqlError::new("Display name cannot be empty"));
+    let first = first_name.trim();
+    let last = last_name.trim();
+    let display = compose_display_name(first, last);
+    if display.is_empty() {
+        return Err(GqlError::new("Player name cannot be empty"));
     }
-    club_players::update_display_name(db, id, club_id, name)
+    club_players::update_name(db, id, club_id, first, last, &display)
+        .await?
+        .ok_or_else(|| GqlError::new("Roster entry not found"))
+}
+
+/// Anonymise an unclaimed roster entry (scrub name, deactivate, keep history).
+/// Refuses claimed entries — those belong to an app user.
+pub async fn anonymize_roster_entry(
+    db: &PgPool,
+    id: Uuid,
+    club_id: Uuid,
+) -> Result<ClubPlayerRow, GqlError> {
+    // Guard with a clear message: a claimed entry can't be anonymised here.
+    if let Some(existing) = club_players::get_by_id(db, id).await? {
+        if existing.app_user_id.is_some() {
+            return Err(GqlError::new(
+                "This player has an app account and cannot be anonymised here",
+            ));
+        }
+    }
+    club_players::anonymize(db, id, club_id, "Anonymous Player")
         .await?
         .ok_or_else(|| GqlError::new("Roster entry not found"))
 }
@@ -127,7 +171,7 @@ pub async fn create_roster_entries_bulk(
             });
             continue;
         }
-        let row = club_players::create(&mut *tx, club_id, name, None)
+        let row = club_players::create(&mut *tx, club_id, name, None, None, None)
             .await
             .map_err(|e| GqlError::new(e.to_string()))?;
         created.push(row);

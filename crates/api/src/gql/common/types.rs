@@ -46,6 +46,10 @@ impl PaginationInput {
     name = "PaginatedActivityLog",
     params(crate::gql::types::ActivityLogEntry)
 ))]
+#[graphql(concrete(
+    name = "PaginatedAnnouncements",
+    params(crate::gql::types::Announcement)
+))]
 pub struct PaginatedResponse<T: async_graphql::OutputType> {
     /// List of items for the current page
     pub items: Vec<T>,

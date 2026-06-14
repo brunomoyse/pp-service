@@ -94,6 +94,8 @@ pub struct NotificationPreferences {
     pub registration_updates: bool,
     pub seating_updates: bool,
     pub achievements: bool,
+    /// Club / tournament / platform announcements written by managers and admins.
+    pub announcements: bool,
 }
 
 impl From<infra::repos::notification_preferences::NotificationPreferences>
@@ -105,6 +107,7 @@ impl From<infra::repos::notification_preferences::NotificationPreferences>
             registration_updates: p.registration_updates,
             seating_updates: p.seating_updates,
             achievements: p.achievements,
+            announcements: p.announcements,
         }
     }
 }
@@ -116,4 +119,5 @@ pub struct UpdateNotificationPreferencesInput {
     pub registration_updates: Option<bool>,
     pub seating_updates: Option<bool>,
     pub achievements: Option<bool>,
+    pub announcements: Option<bool>,
 }

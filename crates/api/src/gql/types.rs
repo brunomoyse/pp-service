@@ -12,6 +12,11 @@ pub use crate::gql::common::types::{
 // Activity log types
 pub use crate::gql::domains::activity_log::types::{ActivityEventCategory, ActivityLogEntry};
 
+// Announcement types
+pub use crate::gql::domains::announcements::types::{
+    Announcement, AnnouncementScope, CreateAnnouncementInput,
+};
+
 // Club types
 pub use crate::gql::domains::clubs::types::{
     Club, ClubTable, CompanyLookup, OnboardClubInput, OnboardClubPayload,

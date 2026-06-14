@@ -4,12 +4,14 @@
 
 mod common;
 
+mod announcements;
 mod auth;
 mod authz_guards;
 mod check_in;
 mod clock_advance;
 mod clock_lifecycle;
 mod club;
+mod club_roster;
 mod club_tables;
 mod data_retention;
 mod drinks;

@@ -4,6 +4,7 @@
 pub mod achievements;
 pub mod activity_log;
 pub mod analytics;
+pub mod announcements;
 pub mod attendance;
 pub mod auth;
 pub mod clubs;

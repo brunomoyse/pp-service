@@ -3,6 +3,7 @@ use async_graphql::MergedObject;
 use crate::gql::domains::achievements::AchievementQuery;
 use crate::gql::domains::activity_log::ActivityLogQuery;
 use crate::gql::domains::analytics::AnalyticsQuery;
+use crate::gql::domains::announcements::AnnouncementQuery;
 use crate::gql::domains::attendance::AttendanceQuery;
 use crate::gql::domains::auth::AuthQuery;
 use crate::gql::domains::clubs::ClubQuery;
@@ -32,6 +33,7 @@ pub struct QueryRoot(
     AchievementQuery,
     ActivityLogQuery,
     AnalyticsQuery,
+    AnnouncementQuery,
     AttendanceQuery,
     AuthQuery,
     ClubQuery,

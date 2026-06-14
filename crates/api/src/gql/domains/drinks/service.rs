@@ -302,7 +302,7 @@ pub async fn activate_printed_card(
     // Optionally create a roster person to make this a named wallet.
     let club_player_id = match params.display_name.as_deref().map(str::trim) {
         Some(name) if !name.is_empty() => Some(
-            club_players::create(&mut *tx, params.club_id, name, None)
+            club_players::create(&mut *tx, params.club_id, name, None, None, None)
                 .await?
                 .id,
         ),
@@ -413,6 +413,8 @@ pub async fn claim_card(
                         &mut *tx,
                         wallet.club_id,
                         &params.display_name,
+                        None,
+                        None,
                         Some(params.app_user_id),
                     )
                     .await?

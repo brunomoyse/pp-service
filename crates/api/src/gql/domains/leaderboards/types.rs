@@ -5,6 +5,7 @@ use crate::gql::types::User;
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
 pub enum LeaderboardPeriod {
     AllTime,
+    CurrentYear,
     LastYear,
     Last6Months,
     Last30Days,
@@ -16,6 +17,9 @@ impl From<LeaderboardPeriod> for infra::repos::tournament_results::LeaderboardPe
         match period {
             LeaderboardPeriod::AllTime => {
                 infra::repos::tournament_results::LeaderboardPeriod::AllTime
+            }
+            LeaderboardPeriod::CurrentYear => {
+                infra::repos::tournament_results::LeaderboardPeriod::CurrentYear
             }
             LeaderboardPeriod::LastYear => {
                 infra::repos::tournament_results::LeaderboardPeriod::LastYear

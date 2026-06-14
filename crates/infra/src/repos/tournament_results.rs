@@ -51,6 +51,7 @@ pub struct LeaderboardEntry {
 #[derive(Debug, Clone, Copy)]
 pub enum LeaderboardPeriod {
     AllTime,
+    CurrentYear,
     LastYear,
     Last6Months,
     Last30Days,
@@ -248,6 +249,7 @@ pub async fn delete<'e>(executor: impl PgExecutor<'e>, id: Uuid) -> Result<bool>
 fn period_filter(period: LeaderboardPeriod) -> &'static str {
     match period {
         LeaderboardPeriod::AllTime => "",
+        LeaderboardPeriod::CurrentYear => "AND t.start_time >= date_trunc('year', NOW())",
         LeaderboardPeriod::LastYear => "AND t.start_time >= NOW() - INTERVAL '1 year'",
         LeaderboardPeriod::Last6Months => "AND t.start_time >= NOW() - INTERVAL '6 months'",
         LeaderboardPeriod::Last30Days => "AND t.start_time >= NOW() - INTERVAL '30 days'",

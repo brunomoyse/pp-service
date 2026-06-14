@@ -131,6 +131,24 @@ pub async fn evaluate_for_player<'a>(
     .await?;
     let distinct_clubs = distinct_clubs as i32;
 
+    // Has the player ever been part of a deal/chop? A deal is one player_deals
+    // row per tournament; `affected_positions` lists the finishing places it
+    // covers, so the player is in the deal when their result position is among
+    // them (works for even-split / ICM / custom deals alike).
+    let deals_made: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM player_deals pd
+        JOIN tournament_results tr ON tr.tournament_id = pd.tournament_id
+        WHERE tr.user_id = $1
+          AND tr.final_position = ANY(pd.affected_positions)
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    let deals_made = deals_made as i32;
+
     // Evaluate each achievement
     let catalog = achievements::list_catalog(&mut **tx).await?;
 
@@ -203,6 +221,10 @@ pub async fn evaluate_for_player<'a>(
                 distinct_clubs,
                 threshold.map(|t| distinct_clubs >= t).unwrap_or(false),
             ),
+            "final_table_deal" => {
+                // Boolean: has been part of at least one deal.
+                (0, deals_made > 0)
+            }
             _ => (0, false),
         };
 

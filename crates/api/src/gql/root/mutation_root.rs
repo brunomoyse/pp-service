@@ -1,5 +1,6 @@
 use async_graphql::MergedObject;
 
+use crate::gql::domains::announcements::AnnouncementMutation;
 use crate::gql::domains::attendance::AttendanceMutation;
 use crate::gql::domains::auth::AuthMutation;
 use crate::gql::domains::clubs::ClubMutation;
@@ -25,6 +26,7 @@ use crate::gql::domains::users::UserMutation;
 
 #[derive(MergedObject, Default)]
 pub struct MutationRoot(
+    AnnouncementMutation,
     AttendanceMutation,
     AuthMutation,
     ClubMutation,

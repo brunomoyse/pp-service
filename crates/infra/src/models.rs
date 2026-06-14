@@ -497,8 +497,29 @@ pub struct ClubPlayerRow {
     pub id: Uuid,
     pub club_id: Uuid,
     pub display_name: String,
+    /// Given name(s). Nullable for legacy / bulk-imported single-field entries.
+    pub first_name: Option<String>,
+    /// Family name. Nullable for legacy / bulk-imported single-field entries.
+    pub last_name: Option<String>,
     pub app_user_id: Option<Uuid>,
     pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct AnnouncementRow {
+    pub id: Uuid,
+    /// One of `tournament` | `club` | `platform`.
+    pub scope: String,
+    /// Set for `tournament`/`club` scopes, NULL for `platform`.
+    pub club_id: Option<Uuid>,
+    /// Set for the `tournament` scope only.
+    pub tournament_id: Option<Uuid>,
+    pub title: String,
+    pub body: String,
+    /// The manager/admin who authored it (NULL if that account was later removed).
+    pub created_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

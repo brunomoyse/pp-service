@@ -213,14 +213,68 @@ pub async fn send_qualified_for_day2(
     deliver(db, user_id, messages, tokens).await;
 }
 
-/// POST a batch of Expo messages and prune any tokens reported as dead.
-/// `tokens` is parallel to `messages` so error receipts map back to a token.
+/// Broadcast an announcement push to a resolved audience. `audience` is the
+/// `(user_id, token, locale)` rows from `announcements::audience_device_tokens`
+/// (already preference-filtered in SQL). The authored title/body are sent
+/// verbatim to every device — announcements are single-language free text, so
+/// there is no per-locale copy. `data` lets the app deep-link to the
+/// announcements feed (or the tournament screen when `tournament_id` is set).
+pub async fn send_announcement(
+    db: &PgPool,
+    audience: Vec<(Uuid, String, Option<String>)>,
+    announcement_id: Uuid,
+    tournament_id: Option<Uuid>,
+    title: &str,
+    body: &str,
+) {
+    if audience.is_empty() {
+        return;
+    }
+
+    let mut data = json!({
+        "type": "CLUB_ANNOUNCEMENT",
+        "announcement_id": announcement_id,
+    });
+    if let Some(tid) = tournament_id {
+        data["tournament_id"] = json!(tid);
+    }
+
+    // Expo accepts up to 100 messages per request; chunk so a club/platform
+    // broadcast goes out in a handful of requests rather than one per user.
+    for chunk in audience.chunks(100) {
+        let tokens: Vec<String> = chunk.iter().map(|(_, token, _)| token.clone()).collect();
+        let messages: Vec<serde_json::Value> = chunk
+            .iter()
+            .map(|(_, token, _locale)| {
+                json!({
+                    "to": token,
+                    "title": title,
+                    "body": body,
+                    "data": data,
+                    "sound": "default",
+                    "channelId": "default",
+                    "priority": "high",
+                })
+            })
+            .collect();
+        deliver_batch(db, messages, tokens).await;
+    }
+}
+
+/// POST a batch of Expo messages for a single user and prune dead tokens.
 async fn deliver(
     db: &PgPool,
     user_id: Uuid,
     messages: Vec<serde_json::Value>,
     tokens: Vec<String>,
 ) {
+    tracing::trace!(%user_id, "push: delivering to user devices");
+    deliver_batch(db, messages, tokens).await;
+}
+
+/// POST a batch of Expo messages and prune any tokens reported as dead.
+/// `tokens` is parallel to `messages` so error receipts map back to a token.
+async fn deliver_batch(db: &PgPool, messages: Vec<serde_json::Value>, tokens: Vec<String>) {
     let client = reqwest::Client::new();
     let mut req = client
         .post(EXPO_PUSH_URL)
@@ -236,7 +290,7 @@ async fn deliver(
     let resp = match req.json(&messages).send().await {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!(%user_id, error = %e, "push: Expo request failed");
+            tracing::warn!(error = %e, "push: Expo request failed");
             return;
         }
     };
@@ -244,7 +298,7 @@ async fn deliver(
     let payload: serde_json::Value = match resp.json().await {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!(%user_id, error = %e, "push: invalid Expo response");
+            tracing::warn!(error = %e, "push: invalid Expo response");
             return;
         }
     };
@@ -263,7 +317,7 @@ async fn deliver(
                 if reason == Some("DeviceNotRegistered") {
                     dead.push(token.clone());
                 }
-                tracing::warn!(%user_id, ?reason, "push: Expo rejected a message");
+                tracing::warn!(?reason, "push: Expo rejected a message");
             }
         }
     }

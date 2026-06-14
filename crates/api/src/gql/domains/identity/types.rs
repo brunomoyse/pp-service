@@ -12,6 +12,10 @@ pub struct ClubPlayer {
     pub id: ID,
     pub club_id: ID,
     pub display_name: String,
+    /// Given name(s). Null for legacy / bulk-imported single-field entries.
+    pub first_name: Option<String>,
+    /// Family name. Null for legacy / bulk-imported single-field entries.
+    pub last_name: Option<String>,
     /// The linked app user, set once the roster entry has been claimed.
     pub app_user_id: Option<ID>,
     /// Whether this roster entry is linked to an onboarded app user.
@@ -28,6 +32,8 @@ impl From<infra::models::ClubPlayerRow> for ClubPlayer {
             id: row.id.into(),
             club_id: row.club_id.into(),
             display_name: row.display_name,
+            first_name: row.first_name,
+            last_name: row.last_name,
             app_user_id: row.app_user_id.map(Into::into),
             is_claimed,
             is_active: row.is_active,
@@ -50,7 +56,9 @@ impl ClubPlayer {
 #[derive(InputObject)]
 pub struct CreateClubPlayerInput {
     pub club_id: ID,
-    pub display_name: String,
+    pub first_name: String,
+    #[graphql(default)]
+    pub last_name: String,
 }
 
 /// Player input to claim an unclaimed roster entry as their own.
@@ -59,11 +67,13 @@ pub struct ClaimClubPlayerInput {
     pub club_player_id: ID,
 }
 
-/// Manager input to rename a roster entry.
+/// Manager input to rename a roster entry (structured first/last name).
 #[derive(InputObject)]
 pub struct UpdateClubPlayerInput {
     pub id: ID,
-    pub display_name: String,
+    pub first_name: String,
+    #[graphql(default)]
+    pub last_name: String,
 }
 
 /// Manager input to archive (soft-delete) or restore a roster entry.

@@ -9,6 +9,7 @@ pub struct NotificationPreferences {
     pub registration_updates: bool,
     pub seating_updates: bool,
     pub achievements: bool,
+    pub announcements: bool,
 }
 
 impl Default for NotificationPreferences {
@@ -18,6 +19,7 @@ impl Default for NotificationPreferences {
             registration_updates: true,
             seating_updates: true,
             achievements: true,
+            announcements: true,
         }
     }
 }
@@ -28,7 +30,8 @@ pub async fn get_for_user(
     user_id: Uuid,
 ) -> Result<NotificationPreferences, sqlx::Error> {
     let row = sqlx::query(
-        "SELECT tournament_reminders, registration_updates, seating_updates, achievements \
+        "SELECT tournament_reminders, registration_updates, seating_updates, achievements, \
+                announcements \
          FROM notification_preferences WHERE user_id = $1",
     )
     .bind(user_id)
@@ -41,6 +44,7 @@ pub async fn get_for_user(
             registration_updates: r.get("registration_updates"),
             seating_updates: r.get("seating_updates"),
             achievements: r.get("achievements"),
+            announcements: r.get("announcements"),
         })
         .unwrap_or_default())
 }
@@ -53,19 +57,22 @@ pub async fn upsert(
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO notification_preferences \
-             (user_id, tournament_reminders, registration_updates, seating_updates, achievements) \
-         VALUES ($1, $2, $3, $4, $5) \
+             (user_id, tournament_reminders, registration_updates, seating_updates, achievements, \
+              announcements) \
+         VALUES ($1, $2, $3, $4, $5, $6) \
          ON CONFLICT (user_id) DO UPDATE SET \
              tournament_reminders = EXCLUDED.tournament_reminders, \
              registration_updates = EXCLUDED.registration_updates, \
              seating_updates = EXCLUDED.seating_updates, \
-             achievements = EXCLUDED.achievements",
+             achievements = EXCLUDED.achievements, \
+             announcements = EXCLUDED.announcements",
     )
     .bind(user_id)
     .bind(prefs.tournament_reminders)
     .bind(prefs.registration_updates)
     .bind(prefs.seating_updates)
     .bind(prefs.achievements)
+    .bind(prefs.announcements)
     .execute(pool)
     .await?;
 
