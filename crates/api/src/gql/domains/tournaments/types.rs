@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 
 use crate::gql::domains::clubs::types::Club;
 use crate::gql::domains::registrations::types::TournamentRegistration;
+use crate::gql::domains::tournaments::recurrence::RecurrenceFrequency;
 use crate::gql::error::ResultExt;
 use crate::gql::loaders::ClubLoader;
 
@@ -430,6 +431,13 @@ pub struct CreateTournamentInput {
     pub template_id: Option<ID>,
     /// Custom blind structure levels - only used if template_id is not provided
     pub structure: Option<Vec<TournamentStructureInput>>,
+    /// If set, this tournament repeats on the given cadence and an occurrence is
+    /// created up front for each interval up to `recurrence_end_date`. Each
+    /// occurrence is an independent tournament. Absent ⇒ a single tournament.
+    pub recurrence_frequency: Option<RecurrenceFrequency>,
+    /// Last date (inclusive) to generate occurrences for. Required when
+    /// `recurrence_frequency` is set; ignored otherwise.
+    pub recurrence_end_date: Option<DateTime<Utc>>,
 }
 
 #[derive(InputObject)]

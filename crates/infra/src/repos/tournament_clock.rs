@@ -1,6 +1,6 @@
 use crate::models::{TournamentClockRow, TournamentStructureRow};
 use chrono::{Duration, Utc};
-use sqlx::{PgPool, Result as SqlxResult};
+use sqlx::{PgExecutor, PgPool, Result as SqlxResult};
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -378,8 +378,8 @@ pub async fn get_next_structure(
 }
 
 /// Add structure level
-pub async fn add_structure(
-    pool: &PgPool,
+pub async fn add_structure<'e>(
+    executor: impl PgExecutor<'e>,
     tournament_id: Uuid,
     level: TournamentStructureLevel,
 ) -> SqlxResult<TournamentStructureRow> {
@@ -398,7 +398,7 @@ pub async fn add_structure(
     .bind(level.duration_minutes)
     .bind(level.is_break)
     .bind(level.break_duration_minutes)
-    .fetch_one(pool)
+    .fetch_one(executor)
     .await
 }
 

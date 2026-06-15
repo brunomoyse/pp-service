@@ -1,4 +1,5 @@
 pub mod clock;
+pub mod recurrence;
 pub mod resolvers;
 pub mod types;
 
