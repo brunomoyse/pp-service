@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use sqlx::{PgExecutor, PgPool, Result};
 use uuid::Uuid;
 
@@ -218,6 +219,22 @@ pub async fn touch_last_seen<'e>(executor: impl PgExecutor<'e>, id: Uuid) -> Res
         .execute(executor)
         .await?;
     Ok(())
+}
+
+/// The user's last activity timestamp (login / token refresh). `None` when the
+/// user predates activity tracking. Used by the manager roster to show when a
+/// claimed player was last seen.
+pub async fn get_last_seen_at<'e>(
+    executor: impl PgExecutor<'e>,
+    id: Uuid,
+) -> Result<Option<DateTime<Utc>>> {
+    let row = sqlx::query_scalar::<_, Option<DateTime<Utc>>>(
+        "SELECT last_seen_at FROM users WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(executor)
+    .await?;
+    Ok(row.flatten())
 }
 
 /// Active player accounts with no activity within `retention_days` — candidates

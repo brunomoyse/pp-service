@@ -1,4 +1,5 @@
 use async_graphql::{ComplexObject, Context, InputObject, SimpleObject, ID};
+use chrono::{DateTime, Utc};
 
 use crate::gql::domains::clubs::types::Club;
 use crate::gql::error::ResultExt;
@@ -49,6 +50,22 @@ impl ClubPlayer {
         let club_id = uuid::Uuid::parse_str(self.club_id.as_str()).gql_err("Invalid club ID")?;
         let row = infra::repos::clubs::get_by_id(&state.db, club_id).await?;
         Ok(row.map(Club::from))
+    }
+
+    /// When the linked app user was last active (login / token refresh). Null for
+    /// roster-only entries (never claimed) and for users predating activity
+    /// tracking.
+    async fn last_seen_at(
+        &self,
+        ctx: &Context<'_>,
+    ) -> async_graphql::Result<Option<DateTime<Utc>>> {
+        let Some(app_user_id) = self.app_user_id.as_ref() else {
+            return Ok(None);
+        };
+        let state = ctx.data::<AppState>()?;
+        let user_id = uuid::Uuid::parse_str(app_user_id.as_str()).gql_err("Invalid user ID")?;
+        let last_seen = infra::repos::users::get_last_seen_at(&state.db, user_id).await?;
+        Ok(last_seen)
     }
 }
 
