@@ -2,7 +2,10 @@ use async_graphql::{Context, Object, Result};
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::auth::permissions::require_club_manager;
+use crate::auth::permissions::{
+    is_free_plan, require_club_manager, viewer_is_admin, viewer_manages_club,
+};
+use crate::gql::common::helpers::tournament_hidden_from_viewer;
 use crate::gql::error::ResultExt;
 use crate::gql::types::{PaginatedResponse, PaginationInput, Tournament, TournamentStatus};
 use crate::state::AppState;
@@ -104,11 +107,20 @@ impl TournamentQuery {
     ) -> Result<PaginatedResponse<Tournament>> {
         let state = ctx.data::<AppState>()?;
 
+        // Hide free ("Home Game") clubs from the player app / public. A club-
+        // scoped request from that club's own manager (or an admin) still sees
+        // them; global discovery only excludes them unless the viewer is admin.
+        let exclude_free_clubs = match club_id {
+            Some(cid) => !viewer_manages_club(ctx, cid).await,
+            None => !viewer_is_admin(ctx),
+        };
+
         let filter = TournamentFilter {
             club_id,
             from,
             to,
             status: status.map(|s| s.into()),
+            exclude_free_clubs,
         };
 
         let page_params = pagination.unwrap_or(PaginationInput {
@@ -142,6 +154,12 @@ impl TournamentQuery {
     async fn tournament(&self, ctx: &Context<'_>, id: Uuid) -> Result<Option<Tournament>> {
         let state = ctx.data::<AppState>()?;
 
+        // A free-club tournament is invisible to the player app / public — only
+        // its own managers and admins can open it directly.
+        if tournament_hidden_from_viewer(ctx, id).await? {
+            return Ok(None);
+        }
+
         let row = tournaments::get_by_id(&state.db, id)
             .await
             .gql_err("Database operation failed")?;
@@ -166,6 +184,28 @@ impl TournamentMutation {
 
         // Check permissions
         let _user = require_club_manager(ctx, club_id).await?;
+
+        // Free ("Home Game") tier: one-off tournaments only, and just one live
+        // at a time. Recurring scheduling and concurrency are Club features.
+        if is_free_plan(ctx, club_id).await? {
+            if input.recurrence_frequency.is_some() {
+                return Err(async_graphql::Error::new(
+                    "Recurring tournaments require the Club plan. Upgrade to schedule a series.",
+                ));
+            }
+            let active: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM tournaments WHERE club_id = $1 AND live_status <> 'finished'",
+            )
+            .bind(club_id)
+            .fetch_one(&state.db)
+            .await
+            .gql_err("Database operation failed")?;
+            if active > 0 {
+                return Err(async_graphql::Error::new(
+                    "The Home Game (free) plan allows 1 active tournament at a time. Finish the current one or upgrade to Club.",
+                ));
+            }
+        }
 
         let leaderboard_config_id = input
             .leaderboard_config_id

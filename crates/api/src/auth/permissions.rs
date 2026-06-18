@@ -100,6 +100,59 @@ pub async fn require_admin(ctx: &Context<'_>) -> Result<User> {
     require_role(ctx, Role::Admin).await
 }
 
+/// Fetch a club's billing plan ("free" | "club" | "casino"). Used by create
+/// mutations to enforce free-tier limits.
+pub async fn club_plan(ctx: &Context<'_>, club_id: Uuid) -> Result<String> {
+    let state = ctx.data::<AppState>()?;
+    let club = infra::repos::clubs::get_by_id(&state.db, club_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to load club {}: {}", club_id, e);
+            Error::new("Failed to load club")
+        })?
+        .ok_or_else(|| Error::new("Club not found"))?;
+    Ok(club.plan)
+}
+
+/// True when the club is on the gated free ("Home Game") tier.
+pub async fn is_free_plan(ctx: &Context<'_>, club_id: Uuid) -> Result<bool> {
+    Ok(club_plan(ctx, club_id).await? == "free")
+}
+
+/// Soft admin check — never errors. Unauthenticated / non-admin viewers get
+/// `false`. Used to decide whether free ("Home Game") clubs are visible.
+pub fn viewer_is_admin(ctx: &Context<'_>) -> bool {
+    ctx.data::<Claims>()
+        .map(|c| Role::from(c.role.clone()) == Role::Admin)
+        .unwrap_or(false)
+}
+
+/// Soft check: is the viewer an admin, or an active manager of `club_id`? Never
+/// errors — unauthenticated/unknown viewers get `false`. Free ("Home Game")
+/// clubs stay visible to their own managers and admins, hidden from everyone
+/// else (the player app + public).
+pub async fn viewer_manages_club(ctx: &Context<'_>, club_id: Uuid) -> bool {
+    let Ok(claims) = ctx.data::<Claims>() else {
+        return false;
+    };
+    let role = Role::from(claims.role.clone());
+    if role == Role::Admin {
+        return true;
+    }
+    if role != Role::Manager {
+        return false;
+    }
+    let Ok(user_id) = Uuid::parse_str(&claims.sub) else {
+        return false;
+    };
+    let Ok(state) = ctx.data::<AppState>() else {
+        return false;
+    };
+    infra::repos::club_managers::is_club_manager(&state.db, user_id, club_id)
+        .await
+        .unwrap_or(false)
+}
+
 /// Require that the authenticated user holds an active Pro entitlement.
 pub async fn require_pro(ctx: &Context<'_>) -> Result<User> {
     let user = require_role(ctx, Role::Player).await?;

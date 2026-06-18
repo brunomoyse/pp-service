@@ -129,6 +129,7 @@ pub async fn list_user_recent<'e>(
          FROM tournament_results tr \
          JOIN tournaments t ON tr.tournament_id = t.id \
          WHERE tr.user_id = $1 \
+           AND t.club_id NOT IN (SELECT id FROM clubs WHERE plan = 'free') \
          ORDER BY tr.created_at DESC LIMIT $2",
     )
     .bind(user_id)
@@ -158,6 +159,7 @@ pub async fn get_user_statistics(
         WHERE tr.user_id = $1
             AND tr.prize_cents > 0
             AND tr.created_at >= $2
+            AND t.club_id NOT IN (SELECT id FROM clubs WHERE plan = 'free')
         "#,
     )
     .bind(user_id)
@@ -175,6 +177,7 @@ pub async fn get_user_statistics(
         JOIN tournaments t ON reg.tournament_id = t.id
         WHERE reg.user_id = $1
             AND reg.created_at >= $2
+            AND t.club_id NOT IN (SELECT id FROM clubs WHERE plan = 'free')
         "#,
     )
     .bind(user_id)
@@ -266,8 +269,15 @@ pub async fn get_leaderboard(
     offset: Option<i32>,
     club_id: Option<Uuid>,
     province: Option<String>,
+    exclude_free: bool,
 ) -> Result<Vec<LeaderboardEntry>> {
     let date_filter = period_filter(period);
+    // Free ("Home Game") clubs never contribute to player-facing leaderboards.
+    let free_filter = if exclude_free {
+        "AND t.club_id NOT IN (SELECT id FROM clubs WHERE plan = 'free')"
+    } else {
+        ""
+    };
     // Optional filters bind in declaration order; track the next placeholder.
     let mut next_param = 0;
     let club_filter = if club_id.is_some() {
@@ -312,7 +322,7 @@ pub async fn get_leaderboard(
             JOIN tournaments t ON reg.tournament_id = t.id
             LEFT JOIN tournament_results tr ON tr.club_player_id = rp.id AND tr.tournament_id = t.id
             WHERE (u.id IS NULL OR (u.role = 'player' AND u.is_active = true))
-                {} {} {}
+                {} {} {} {}
             GROUP BY rp.id, rp.display_name, u.id, u.username, u.first_name, u.last_name,
                      u.email, u.phone, u.is_active, u.role, u.locale
             HAVING COUNT(DISTINCT reg.tournament_id) > 0
@@ -343,7 +353,7 @@ pub async fn get_leaderboard(
         ORDER BY points DESC, total_winnings DESC, total_tournaments DESC
         {}
         "#,
-        date_filter, club_filter, province_filter, limit_clause
+        date_filter, club_filter, province_filter, free_filter, limit_clause
     );
 
     let mut query_builder = sqlx::query(&query);
@@ -394,8 +404,14 @@ pub async fn count_leaderboard(
     period: LeaderboardPeriod,
     club_id: Option<Uuid>,
     province: Option<String>,
+    exclude_free: bool,
 ) -> Result<i64> {
     let date_filter = period_filter(period);
+    let free_filter = if exclude_free {
+        "AND t.club_id NOT IN (SELECT id FROM clubs WHERE plan = 'free')"
+    } else {
+        ""
+    };
     let mut next_param = 0;
     let club_filter = if club_id.is_some() {
         next_param += 1;
@@ -419,12 +435,12 @@ pub async fn count_leaderboard(
             JOIN tournament_registrations reg ON reg.club_player_id = rp.id
             JOIN tournaments t ON reg.tournament_id = t.id
             WHERE (u.id IS NULL OR (u.role = 'player' AND u.is_active = true))
-                {} {} {}
+                {} {} {} {}
             GROUP BY rp.id
             HAVING COUNT(DISTINCT reg.tournament_id) > 0
         ) c
         "#,
-        date_filter, club_filter, province_filter
+        date_filter, club_filter, province_filter, free_filter
     );
 
     let mut query_builder = sqlx::query_scalar::<_, i64>(&query);
@@ -455,6 +471,7 @@ pub async fn get_leaderboard_for_config(
     period_end: Option<DateTime<Utc>>,
     limit: Option<i32>,
     offset: Option<i32>,
+    exclude_free: bool,
 ) -> Result<(Vec<LeaderboardEntry>, i64)> {
     // Tournament-set filter shared by both queries. $1 club, $2 period_start,
     // $3 period_end, $4 config (tagged only). Bind in the same order each time.
@@ -466,6 +483,11 @@ pub async fn get_leaderboard_for_config(
     );
     if tagged {
         tournament_filter.push_str(" AND t.leaderboard_config_id = $4");
+    }
+    // Free ("Home Game") clubs are never shown in player-facing leaderboards.
+    if exclude_free {
+        tournament_filter
+            .push_str(" AND t.club_id NOT IN (SELECT id FROM clubs WHERE plan = 'free')");
     }
 
     // --- Query 1: per-player stats (everything except points) ---

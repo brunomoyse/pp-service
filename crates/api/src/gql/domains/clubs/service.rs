@@ -7,7 +7,7 @@
 
 use async_graphql::Result;
 
-use super::types::{Club, OnboardClubInput, OnboardClubPayload};
+use super::types::{Club, ClubPlan, OnboardClubInput, OnboardClubPayload};
 use crate::auth::password::PasswordService;
 use crate::gql::error::ResultExt;
 use crate::gql::types::User;
@@ -70,28 +70,45 @@ pub async fn onboard_club(state: &AppState, input: OnboardClubInput) -> Result<O
         return Err(async_graphql::Error::new("Unsupported country"));
     }
 
-    // 1. VAT format (cheap, before any network or DB work)
-    let vat_number = normalize_vat(&country, &input.vat_number);
-    if !vat_format_ok(&country, &vat_number) {
+    // Free is the default self-serve tier. Casino is sales-led — not creatable
+    // through public onboarding.
+    let plan = input.plan.unwrap_or(ClubPlan::Free);
+    if plan == ClubPlan::Casino {
         return Err(async_graphql::Error::new(
-            "Invalid VAT number for the selected country",
-        ));
-    }
-    let stored_vat = format!("{country}{vat_number}");
-
-    // 2. VIES registry check. Unreachable VIES (available == false) never blocks;
-    //    a definitive "not found" blocks only when the hard-block flag is on.
-    let lookup = vies::lookup(&country, &vat_number).await;
-    if lookup.available && !lookup.valid && vies_hard_block() {
-        return Err(async_graphql::Error::new(
-            "No company found for this VAT number",
+            "The Casino plan is set up with our team — please contact us",
         ));
     }
 
-    // Non-profits (ASBL/VZW) verified via VIES are auto-approved; anything we
-    // couldn't confirm as a non-profit (other legal form, or VIES unreachable)
-    // is still created but flagged for manual review.
-    let needs_review = !(lookup.available && lookup.valid && lookup.non_profit);
+    // VAT/VIES gating only applies to the paid Club (business) path. The free
+    // home-game path skips it entirely: no VAT stored, never flagged for review.
+    let (stored_vat, needs_review) = if plan == ClubPlan::Club {
+        // 1. VAT format (cheap, before any network or DB work)
+        let raw_vat = input.vat_number.as_deref().unwrap_or("");
+        let vat_number = normalize_vat(&country, raw_vat);
+        if !vat_format_ok(&country, &vat_number) {
+            return Err(async_graphql::Error::new(
+                "Invalid VAT number for the selected country",
+            ));
+        }
+
+        // 2. VIES registry check. Unreachable VIES (available == false) never
+        //    blocks; a definitive "not found" blocks only when the hard-block
+        //    flag is on.
+        let lookup = vies::lookup(&country, &vat_number).await;
+        if lookup.available && !lookup.valid && vies_hard_block() {
+            return Err(async_graphql::Error::new(
+                "No company found for this VAT number",
+            ));
+        }
+
+        // Non-profits (ASBL/VZW) verified via VIES are auto-approved; anything we
+        // couldn't confirm as a non-profit (other legal form, or VIES
+        // unreachable) is still created but flagged for manual review.
+        let needs_review = !(lookup.available && lookup.valid && lookup.non_profit);
+        (Some(format!("{country}{vat_number}")), needs_review)
+    } else {
+        (None, false)
+    };
 
     // 3. Password strength
     PasswordService::validate_password_strength(&input.password)
@@ -141,8 +158,9 @@ pub async fn onboard_club(state: &AppState, input: OnboardClubInput) -> Result<O
             city: input.city,
             postal_code: input.postal_code,
             country,
-            vat_number: Some(stored_vat),
+            vat_number: stored_vat,
             needs_review,
+            plan: plan.as_db().to_string(),
         },
     )
     .await

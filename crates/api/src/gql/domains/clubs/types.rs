@@ -1,7 +1,36 @@
-use async_graphql::{InputObject, SimpleObject, ID};
+use async_graphql::{Enum, InputObject, SimpleObject, ID};
 use chrono::{DateTime, Utc};
 
 use crate::gql::types::User;
+
+/// Billing tier a club is on. Only `Free` is feature-gated (single table, one
+/// active tournament, no recurring); `Club`/`Casino` are unlimited.
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
+pub enum ClubPlan {
+    Free,
+    Club,
+    Casino,
+}
+
+impl ClubPlan {
+    /// The value stored in `clubs.plan`.
+    pub fn as_db(self) -> &'static str {
+        match self {
+            ClubPlan::Free => "free",
+            ClubPlan::Club => "club",
+            ClubPlan::Casino => "casino",
+        }
+    }
+
+    /// Parse the stored `clubs.plan` value; unknown values fall back to `Free`.
+    pub fn from_db(s: &str) -> Self {
+        match s {
+            "club" => ClubPlan::Club,
+            "casino" => ClubPlan::Casino,
+            _ => ClubPlan::Free,
+        }
+    }
+}
 
 #[derive(SimpleObject, Clone)]
 pub struct Club {
@@ -17,6 +46,10 @@ pub struct Club {
     /// True when onboarding couldn't confirm the club as a non-profit; the club
     /// is active but awaiting manual review.
     pub needs_review: bool,
+    /// Current billing tier; drives feature gating in the apps.
+    pub plan: ClubPlan,
+    /// When the current paid subscription lapses (null on free / no expiry).
+    pub subscription_expires_at: Option<DateTime<Utc>>,
 }
 
 impl From<infra::models::ClubRow> for Club {
@@ -30,6 +63,8 @@ impl From<infra::models::ClubRow> for Club {
             address: row.address,
             vat_number: row.vat_number,
             needs_review: row.needs_review,
+            plan: ClubPlan::from_db(&row.plan),
+            subscription_expires_at: row.subscription_expires_at,
         }
     }
 }
@@ -45,10 +80,15 @@ pub struct OnboardClubInput {
     pub club_name: String,
     /// 2-letter ISO country code (BE/FR/LU/NL).
     pub country: String,
+    /// Chosen tier. Omitted/`Free` takes the lightweight home-game path (no VAT);
+    /// `Club` keeps the VAT + VIES business path. `Casino` is sales-led, not
+    /// self-serve here.
+    pub plan: Option<ClubPlan>,
     pub address: Option<String>,
     pub city: Option<String>,
     pub postal_code: Option<String>,
-    pub vat_number: String,
+    /// Required for the `Club` (paid) path; ignored on the free home-game path.
+    pub vat_number: Option<String>,
 }
 
 #[derive(SimpleObject, Clone)]

@@ -184,6 +184,16 @@ pub async fn create_test_club(app_state: &AppState, name: &str) -> Uuid {
     .await
     .expect("Failed to create test club");
 
+    // Test clubs stand in for real clubs (unrestricted), so put them on the
+    // paid `club` plan — otherwise the free-tier limits (single table, one
+    // active tournament) would trip tests that create several. Runtime query so
+    // it needs no SQLx offline metadata.
+    sqlx::query("UPDATE clubs SET plan = 'club' WHERE id = $1")
+        .bind(club_id)
+        .execute(&app_state.db)
+        .await
+        .expect("Failed to set test club plan");
+
     club_id
 }
 

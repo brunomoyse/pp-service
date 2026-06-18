@@ -1,6 +1,7 @@
 use async_graphql::{Context, Object, Result};
 use infra::repos::tournament_results;
 
+use crate::auth::permissions::{viewer_is_admin, viewer_manages_club};
 use crate::gql::types::{PaginatedResponse, PaginationInput, Role, User};
 use crate::state::AppState;
 
@@ -40,8 +41,17 @@ impl LeaderboardQuery {
 
         // League path: recompute points on read from the league's formula.
         if let Some(config_uuid) = config_id {
-            return league_leaderboard(state, config_uuid, &limit_offset).await;
+            return league_leaderboard(ctx, state, config_uuid, &limit_offset).await;
         }
+
+        // Free ("Home Game") clubs never appear in player-facing leaderboards.
+        // A club-scoped request from that club's own manager (or an admin) is
+        // the only way to include them; global/province scope excludes them
+        // unless the viewer is admin.
+        let exclude_free = match club_id {
+            Some(cid) => !viewer_manages_club(ctx, cid).await,
+            None => !viewer_is_admin(ctx),
+        };
 
         // Fetch leaderboard and total count in parallel
         let (leaderboard_entries, total_count) = tokio::try_join!(
@@ -52,12 +62,14 @@ impl LeaderboardQuery {
                 Some(limit_offset.offset as i32),
                 club_id,
                 province.clone(),
+                exclude_free,
             ),
             tournament_results::count_leaderboard(
                 &state.db,
                 infra_period,
                 club_id,
-                province.clone()
+                province.clone(),
+                exclude_free,
             )
         )?;
 
@@ -119,6 +131,7 @@ fn to_gql_entry(
 
 /// League leaderboard: recompute points on read from the league's formula.
 async fn league_leaderboard(
+    ctx: &Context<'_>,
     state: &AppState,
     config_id: uuid::Uuid,
     limit_offset: &infra::pagination::LimitOffset,
@@ -128,6 +141,10 @@ async fn league_leaderboard(
         .ok_or_else(|| async_graphql::Error::new("League not found"))?;
     let formula: infra::scoring::ScoringFormula =
         serde_json::from_value(config.formula_params).unwrap_or_default();
+
+    // A free club's league is hidden from the player app; only its own managers
+    // and admins can read it.
+    let exclude_free = !viewer_manages_club(ctx, config.club_id).await;
 
     let (rows, total_count) = tournament_results::get_leaderboard_for_config(
         &state.db,
@@ -139,6 +156,7 @@ async fn league_leaderboard(
         config.period_end,
         Some(limit_offset.limit as i32),
         Some(limit_offset.offset as i32),
+        exclude_free,
     )
     .await?;
 

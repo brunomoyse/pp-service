@@ -171,6 +171,7 @@ pub async fn list_user_current<'e>(
          FROM tournament_registrations tr \
          JOIN tournaments t ON tr.tournament_id = t.id \
          WHERE tr.user_id = $1 AND (t.end_time IS NULL OR t.end_time > NOW()) \
+           AND t.club_id NOT IN (SELECT id FROM clubs WHERE plan = 'free') \
          ORDER BY tr.created_at DESC",
     )
     .bind(user_id)

@@ -10,6 +10,9 @@ pub struct TournamentFilter {
     pub from: Option<DateTime<Utc>>,
     pub to: Option<DateTime<Utc>>,
     pub status: Option<TournamentStatus>,
+    /// When true, hide tournaments belonging to free ("Home Game") clubs — set
+    /// for player-app / public callers who don't manage the club in question.
+    pub exclude_free_clubs: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -148,6 +151,7 @@ pub async fn list<'e>(
             OR ($4 = 'ongoing' AND start_time <= NOW() AND (end_time IS NULL OR end_time > NOW()))
             OR ($4 = 'ended' AND end_time IS NOT NULL AND end_time <= NOW())
           )
+          AND ($7 = FALSE OR club_id NOT IN (SELECT id FROM clubs WHERE plan = 'free'))
         ORDER BY created_at DESC
         LIMIT $5 OFFSET $6
         "#,
@@ -162,6 +166,7 @@ pub async fn list<'e>(
     }))
     .bind(p.limit)
     .bind(p.offset)
+    .bind(filter.exclude_free_clubs)
     .fetch_all(executor)
     .await
 }
@@ -180,6 +185,7 @@ pub async fn count<'e>(executor: impl PgExecutor<'e>, filter: TournamentFilter) 
             OR ($4 = 'ongoing' AND start_time <= NOW() AND (end_time IS NULL OR end_time > NOW()))
             OR ($4 = 'ended' AND end_time IS NOT NULL AND end_time <= NOW())
           )
+          AND ($5 = FALSE OR club_id NOT IN (SELECT id FROM clubs WHERE plan = 'free'))
         "#,
     )
     .bind(filter.club_id)
@@ -190,6 +196,7 @@ pub async fn count<'e>(executor: impl PgExecutor<'e>, filter: TournamentFilter) 
         TournamentStatus::InProgress => "in_progress",
         TournamentStatus::Completed => "completed",
     }))
+    .bind(filter.exclude_free_clubs)
     .fetch_one(executor)
     .await
 }

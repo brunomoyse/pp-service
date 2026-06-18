@@ -1,6 +1,7 @@
 use async_graphql::{dataloader::DataLoader, Context, Object, Result, ID};
 use std::collections::HashMap;
 
+use crate::gql::common::helpers::tournament_hidden_from_viewer;
 use crate::gql::error::{auth_error, ResultExt};
 use crate::gql::loaders::TournamentLoader;
 use crate::state::AppState;
@@ -100,6 +101,11 @@ impl ResultQuery {
         let tournament_id =
             Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
 
+        // Free-club tournaments are private — hide their payout from the app.
+        if tournament_hidden_from_viewer(ctx, tournament_id).await? {
+            return Ok(None);
+        }
+
         if let Some(payout_row) =
             tournament_payouts::get_by_tournament(&state.db, tournament_id).await?
         {
@@ -165,6 +171,11 @@ impl ResultQuery {
 
         let tournament_id =
             Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+
+        // Free-club tournaments are private — hide their results from the app.
+        if tournament_hidden_from_viewer(ctx, tournament_id).await? {
+            return Ok(vec![]);
+        }
 
         let rows = tournament_results::list_by_tournament(&state.db, tournament_id).await?;
         Ok(rows.into_iter().map(Into::into).collect())

@@ -2,7 +2,7 @@ use async_graphql::{Context, Object, Result, ID};
 use uuid::Uuid;
 
 use crate::auth::jwt::Claims;
-use crate::auth::permissions::{require_admin, require_club_manager};
+use crate::auth::permissions::{is_free_plan, require_admin, require_club_manager};
 use crate::gql::common::helpers::get_club_id_for_tournament;
 use crate::gql::error::ResultExt;
 use crate::gql::types::{PaginatedResponse, PaginationInput};
@@ -131,6 +131,16 @@ impl AnnouncementMutation {
                 (None, None)
             }
         };
+
+        // Announcing to players is a paid interaction feature — free ("Home
+        // Game") clubs can't broadcast (they're off the player app entirely).
+        if let Some(cid) = club_id {
+            if is_free_plan(ctx, cid).await? {
+                return Err(async_graphql::Error::new(
+                    "Announcements require the Club plan. Upgrade to reach your players.",
+                ));
+            }
+        }
 
         let row = service::create_announcement(
             &state.db,

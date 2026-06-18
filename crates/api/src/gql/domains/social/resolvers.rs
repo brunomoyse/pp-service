@@ -3,6 +3,7 @@ use chrono::{Datelike, Utc};
 use uuid::Uuid;
 
 use crate::auth::jwt::Claims;
+use crate::gql::common::helpers::tournament_hidden_from_viewer;
 use crate::gql::error::ResultExt;
 use crate::state::AppState;
 use infra::repos::{attendance, friendships, rivalries, wrapped};
@@ -203,6 +204,14 @@ impl SocialMutation {
         let friend_id = Uuid::parse_str(friend_user_id.as_str()).gql_err("Invalid user ID")?;
         let tournament_uuid =
             Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+
+        // Free ("Home Game") clubs are off the player app — can't register a
+        // friend into one of their tournaments.
+        if tournament_hidden_from_viewer(ctx, tournament_uuid).await? {
+            return Err(async_graphql::Error::new(
+                "This tournament isn't available in the app",
+            ));
+        }
 
         if !friendships::can_register(&state.db, me, friend_id).await? {
             return Err(async_graphql::Error::new(

@@ -1,9 +1,12 @@
 use async_graphql::{Context, Object, Result};
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use super::service;
-use super::types::{CreateClubTableInput, UpdateClubTableInput};
-use crate::auth::permissions::require_club_manager;
+use super::types::{ClubPlan, CreateClubTableInput, UpdateClubTableInput};
+use crate::auth::permissions::{
+    is_free_plan, require_admin, require_club_manager, viewer_is_admin,
+};
 use crate::gql::error::ResultExt;
 use crate::gql::types::{Club, ClubTable, CompanyLookup, OnboardClubInput, OnboardClubPayload};
 use crate::services::vies;
@@ -18,7 +21,14 @@ impl ClubQuery {
     async fn clubs(&self, ctx: &Context<'_>) -> Result<Vec<Club>> {
         let state = ctx.data::<AppState>()?;
         let rows = clubs::list(&state.db).await?;
-        Ok(rows.into_iter().map(Club::from).collect())
+        // Free ("Home Game") clubs are private — keep them out of the public
+        // club directory the player app browses. Admins still see everything.
+        let admin = viewer_is_admin(ctx);
+        Ok(rows
+            .into_iter()
+            .filter(|c| admin || c.plan != "free")
+            .map(Club::from)
+            .collect())
     }
 
     /// Distinct province slugs clubs resolve to — for a province leaderboard
@@ -55,6 +65,9 @@ impl ClubQuery {
                 from: None,
                 to: None,
                 status: None,
+                // Internal table-assignment lookup for a club the caller is
+                // already viewing; no player-facing free filter needed.
+                exclude_free_clubs: false,
             },
             None,
         )
@@ -142,6 +155,17 @@ impl ClubMutation {
         let state = ctx.data::<AppState>()?;
         let club_id = Uuid::parse_str(input.club_id.as_str()).gql_err("Invalid club ID")?;
         require_club_manager(ctx, club_id).await?;
+
+        // Free ("Home Game") tier is single-table. The moment a second table is
+        // needed, the club has outgrown free — point them at the upgrade.
+        if is_free_plan(ctx, club_id).await? {
+            let existing = club_tables::list_by_club(&state.db, club_id).await?;
+            if !existing.is_empty() {
+                return Err(async_graphql::Error::new(
+                    "The Home Game (free) plan is limited to 1 table. Upgrade to Club to add more.",
+                ));
+            }
+        }
 
         if input.table_number < 1 {
             return Err(async_graphql::Error::new("Table number must be positive"));
@@ -232,5 +256,35 @@ impl ClubMutation {
         club_tables::delete(&state.db, table_id)
             .await
             .gql_err("Failed to delete table")
+    }
+
+    /// Set a club's billing plan + subscription lifecycle. Admin-only: this is
+    /// the service-to-service entry point the payments microservice calls (with
+    /// a service/admin token) after a confirmed Mollie checkout, and on
+    /// downgrade when a subscription lapses.
+    async fn set_club_plan(
+        &self,
+        ctx: &Context<'_>,
+        club_id: async_graphql::ID,
+        plan: ClubPlan,
+        subscription_status: Option<String>,
+        subscription_expires_at: Option<DateTime<Utc>>,
+    ) -> Result<Club> {
+        require_admin(ctx).await?;
+        let state = ctx.data::<AppState>()?;
+        let club_id = Uuid::parse_str(club_id.as_str()).gql_err("Invalid club ID")?;
+
+        let row = clubs::set_plan(
+            &state.db,
+            club_id,
+            plan.as_db(),
+            subscription_status.as_deref(),
+            subscription_expires_at,
+        )
+        .await
+        .gql_err("Failed to update club plan")?
+        .ok_or_else(|| async_graphql::Error::new("Club not found"))?;
+
+        Ok(Club::from(row))
     }
 }

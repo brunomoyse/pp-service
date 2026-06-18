@@ -46,7 +46,8 @@ const FEED_PREDICATE: &str = "(\
         LEFT JOIN club_player cp ON cp.id = tr.club_player_id \
         WHERE tr.status NOT IN ('cancelled', 'no_show') \
           AND (tr.user_id = $1 OR cp.app_user_id = $1))) \
-)";
+) \
+AND (a.club_id IS NULL OR a.club_id NOT IN (SELECT id FROM clubs WHERE plan = 'free'))";
 
 /// One page of the announcements feed visible to `user_id`, newest first.
 pub async fn list_for_user<'e>(

@@ -2,7 +2,7 @@ use async_graphql::{dataloader::DataLoader, Context, Object, Result, ID};
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::gql::common::helpers::get_club_id_for_tournament;
+use crate::gql::common::helpers::{get_club_id_for_tournament, tournament_hidden_from_viewer};
 use crate::gql::error::{auth_error, ResultExt};
 use crate::gql::loaders::{ClubPlayerLoader, UserLoader};
 use crate::gql::subscriptions::{
@@ -51,6 +51,17 @@ impl RegistrationQuery {
         let _claims = ctx.data::<Claims>().map_err(|_| auth_error())?;
 
         let state = ctx.data::<AppState>()?;
+
+        // Free-club tournaments are private — players can't browse their field.
+        if tournament_hidden_from_viewer(ctx, tournament_id).await? {
+            return Ok(PaginatedResponse {
+                items: vec![],
+                total_count: 0,
+                page_size: 0,
+                offset: 0,
+                has_next_page: false,
+            });
+        }
 
         let page_params = pagination.unwrap_or(PaginationInput {
             limit: Some(50),
@@ -159,6 +170,15 @@ impl RegistrationMutation {
             require_manager_if(ctx, false, "user_id").await?
         }
         .ok_or_else(|| async_graphql::Error::new("You must be logged in to perform this action"))?;
+
+        // Players can't self-register into a free ("Home Game") club's
+        // tournament — those clubs are private and off the player app. The host
+        // adds their own players via the manager path / registerRosterPlayer.
+        if !is_manager_registration && tournament_hidden_from_viewer(ctx, tournament_id).await? {
+            return Err(async_graphql::Error::new(
+                "This tournament isn't available in the app",
+            ));
+        }
 
         // Determine which user to register
         let user_id = match input.user_id {
@@ -693,6 +713,13 @@ impl RegistrationMutation {
         let user_id = Uuid::parse_str(&claims.sub).gql_err("Invalid user ID")?;
         let tournament_id =
             Uuid::parse_str(input.tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+
+        // Free ("Home Game") clubs are off the player app — no self check-in.
+        if tournament_hidden_from_viewer(ctx, tournament_id).await? {
+            return Err(async_graphql::Error::new(
+                "This tournament isn't available in the app",
+            ));
+        }
 
         let params = super::service::SelfCheckInParams {
             tournament_id,

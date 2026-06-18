@@ -15,6 +15,11 @@ pub struct ClubRow {
     pub address: Option<String>,
     pub vat_number: Option<String>,
     pub needs_review: bool,
+    /// Billing tier: "free" | "club" | "casino". Only "free" is feature-gated.
+    pub plan: String,
+    /// Subscription lifecycle state set by the payments service (nullable on free).
+    pub subscription_status: Option<String>,
+    pub subscription_expires_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
