@@ -28,6 +28,7 @@ pub mod predictions;
 pub mod privacy;
 pub mod pro_entitlements;
 pub mod quests;
+pub mod redemption_codes;
 pub mod refresh_tokens;
 pub mod rivalries;
 pub mod scouting;

@@ -5,6 +5,7 @@ pub mod email_service;
 pub mod notification_service;
 pub mod openrouter_service;
 pub mod push_service;
+pub mod subscription_expiry_service;
 pub mod supervisor;
 pub mod vies;
 
@@ -14,4 +15,7 @@ pub use drink_expiry_service::{spawn_drink_expiry_service, DrinkExpiryService};
 pub use email_service::{EmailConfig, EmailService};
 pub use notification_service::{spawn_notification_service, NotificationService};
 pub use openrouter_service::{OpenRouterConfig, OpenRouterService};
+pub use subscription_expiry_service::{
+    spawn_subscription_expiry_service, SubscriptionExpiryService,
+};
 pub use supervisor::supervise;

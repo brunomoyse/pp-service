@@ -19,7 +19,8 @@ pub use crate::gql::domains::announcements::types::{
 
 // Club types
 pub use crate::gql::domains::clubs::types::{
-    Club, ClubTable, CompanyLookup, OnboardClubInput, OnboardClubPayload,
+    Club, ClubTable, CompanyLookup, CreateRedemptionCodeInput, OnboardClubInput,
+    OnboardClubPayload, RedemptionCode,
 };
 
 // Identity / roster types

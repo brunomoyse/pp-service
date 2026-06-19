@@ -3,7 +3,9 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use super::service;
-use super::types::{ClubPlan, CreateClubTableInput, UpdateClubTableInput};
+use super::types::{
+    ClubPlan, CreateClubTableInput, CreateRedemptionCodeInput, RedemptionCode, UpdateClubTableInput,
+};
 use crate::auth::permissions::{
     is_free_plan, require_admin, require_club_manager, viewer_is_admin,
 };
@@ -11,7 +13,7 @@ use crate::gql::error::ResultExt;
 use crate::gql::types::{Club, ClubTable, CompanyLookup, OnboardClubInput, OnboardClubPayload};
 use crate::services::vies;
 use crate::state::AppState;
-use infra::repos::{club_tables, clubs, table_seat_assignments, tournaments};
+use infra::repos::{club_tables, clubs, redemption_codes, table_seat_assignments, tournaments};
 
 #[derive(Default)]
 pub struct ClubQuery;
@@ -49,6 +51,16 @@ impl ClubQuery {
         vat_number: String,
     ) -> Result<CompanyLookup> {
         Ok(vies::lookup(&country, &vat_number).await.into())
+    }
+
+    /// List recently minted redemption codes (admin overview). Admin-only.
+    async fn redemption_codes(&self, ctx: &Context<'_>) -> Result<Vec<RedemptionCode>> {
+        require_admin(ctx).await?;
+        let state = ctx.data::<AppState>()?;
+        let rows = redemption_codes::list_recent(&state.db, 100)
+            .await
+            .gql_err("Failed to load codes")?;
+        Ok(rows.into_iter().map(RedemptionCode::from).collect())
     }
 
     /// Get all tables for a club
@@ -287,4 +299,161 @@ impl ClubMutation {
 
         Ok(Club::from(row))
     }
+
+    /// Redeem a code to put the manager's club onto a paid plan for a free trial
+    /// window (the manual / promo counterpart to a Mollie checkout). Managers of
+    /// the club only. One redemption per club; the subscription-expiry sweep
+    /// downgrades the club back to free when the trial lapses.
+    async fn redeem_code(
+        &self,
+        ctx: &Context<'_>,
+        club_id: async_graphql::ID,
+        code: String,
+    ) -> Result<Club> {
+        let state = ctx.data::<AppState>()?;
+        let club_id = Uuid::parse_str(club_id.as_str()).gql_err("Invalid club ID")?;
+        let user = require_club_manager(ctx, club_id).await?;
+        let user_id = Uuid::parse_str(user.id.as_str()).gql_err("Invalid user ID")?;
+
+        let normalized = normalize_code(&code);
+        if normalized.is_empty() {
+            return Err(async_graphql::Error::new("Enter a code to redeem."));
+        }
+
+        // Hold a row lock on the code for the whole grant so concurrent
+        // redemptions of a capped code can't oversell its last use.
+        let mut tx = state
+            .db
+            .begin()
+            .await
+            .gql_err("Failed to start redemption")?;
+
+        let code_row = redemption_codes::lock_by_code(&mut *tx, &normalized)
+            .await
+            .gql_err("Failed to look up code")?
+            .ok_or_else(|| async_graphql::Error::new("That code isn't valid."))?;
+
+        let now = Utc::now();
+        if code_row.expires_at.is_some_and(|exp| exp < now) {
+            return Err(async_graphql::Error::new("This code has expired."));
+        }
+        if code_row
+            .max_uses
+            .is_some_and(|max| code_row.used_count >= max)
+        {
+            return Err(async_graphql::Error::new(
+                "This code has reached its redemption limit.",
+            ));
+        }
+        if redemption_codes::has_used(&mut *tx, code_row.id, club_id)
+            .await
+            .gql_err("Failed to check redemption")?
+        {
+            return Err(async_graphql::Error::new(
+                "This club has already redeemed this code.",
+            ));
+        }
+
+        let expires_at = now + chrono::Duration::days(code_row.trial_days as i64);
+        let club_row = clubs::set_plan(
+            &mut *tx,
+            club_id,
+            &code_row.plan,
+            Some("trial"),
+            Some(expires_at),
+        )
+        .await
+        .gql_err("Failed to apply plan")?
+        .ok_or_else(|| async_graphql::Error::new("Club not found"))?;
+
+        redemption_codes::insert_use(&mut *tx, code_row.id, club_id, user_id)
+            .await
+            .gql_err("Failed to record redemption")?;
+        redemption_codes::increment_used(&mut *tx, code_row.id)
+            .await
+            .gql_err("Failed to record redemption")?;
+
+        tx.commit().await.gql_err("Failed to finalize redemption")?;
+
+        Ok(Club::from(club_row))
+    }
+
+    /// Mint a redemption code. Admin-only — used to hand out free-trial codes to
+    /// pilot clubs.
+    async fn create_redemption_code(
+        &self,
+        ctx: &Context<'_>,
+        input: CreateRedemptionCodeInput,
+    ) -> Result<RedemptionCode> {
+        require_admin(ctx).await?;
+        let state = ctx.data::<AppState>()?;
+
+        if input.trial_days < 1 {
+            return Err(async_graphql::Error::new("Trial length must be positive"));
+        }
+        if input.max_uses < 1 {
+            return Err(async_graphql::Error::new("Max uses must be at least 1"));
+        }
+        let plan = input.plan.unwrap_or(ClubPlan::Club);
+        if plan == ClubPlan::Free {
+            return Err(async_graphql::Error::new(
+                "A code can only grant a paid plan",
+            ));
+        }
+
+        // An explicit code is used verbatim; otherwise generate a unique
+        // OTP-style one, retrying on the unlikely collision.
+        let explicit = input
+            .code
+            .as_deref()
+            .map(normalize_code)
+            .filter(|c| !c.is_empty());
+
+        let mut attempts = 0;
+        let row = loop {
+            let candidate = match &explicit {
+                Some(c) => c.clone(),
+                None => redemption_codes::generate_code(),
+            };
+            match redemption_codes::create(
+                &state.db,
+                &candidate,
+                plan.as_db(),
+                input.trial_days,
+                Some(input.max_uses),
+                input.expires_at,
+                input.note.as_deref(),
+            )
+            .await
+            {
+                Ok(row) => break row,
+                Err(e) => {
+                    let is_dup =
+                        matches!(&e, sqlx::Error::Database(db) if db.is_unique_violation());
+                    if is_dup && explicit.is_some() {
+                        return Err(async_graphql::Error::new(
+                            "A code with that value already exists",
+                        ));
+                    }
+                    if is_dup && attempts < 5 {
+                        attempts += 1;
+                        continue;
+                    }
+                    return Err(async_graphql::Error::new("Failed to create code"));
+                }
+            }
+        };
+
+        Ok(RedemptionCode::from(row))
+    }
+}
+
+/// Normalize a redemption code for storage and lookup: keep only letters and
+/// digits (so `PP-XXXX-XXXX`, `pp xxxx xxxx`, etc. all resolve to the same
+/// value) and upper-case it.
+fn normalize_code(raw: &str) -> String {
+    raw.chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .flat_map(|c| c.to_uppercase())
+        .collect()
 }

@@ -10,15 +10,27 @@ use api::app::build_router;
 use api::gql::build_schema;
 use api::services::{
     data_retention_service, spawn_clock_service, spawn_data_retention_service,
-    spawn_drink_expiry_service, spawn_notification_service, supervise,
+    spawn_drink_expiry_service, spawn_notification_service, spawn_subscription_expiry_service,
+    supervise,
 };
 use api::state::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    dotenvy::dotenv().ok();
+
+    // Error reporting (opt-in via SENTRY_DSN). Must be initialized before the
+    // tracing subscriber so the Sentry layer has a client; the guard is held for
+    // the whole process so reports flush until shutdown.
+    let _sentry_guard = api::observability::init_sentry();
+
     api::observability::init_tracing();
 
-    dotenvy::dotenv().ok();
+    if _sentry_guard.is_some() {
+        tracing::info!("Sentry error reporting enabled");
+    } else {
+        tracing::info!("Sentry disabled (set SENTRY_DSN to enable)");
+    }
 
     // Configure connection pool with appropriate limits
     let max_connections: u32 = std::env::var("DATABASE_MAX_CONNECTIONS")
@@ -85,6 +97,12 @@ async fn main() -> anyhow::Result<()> {
         move || spawn_drink_expiry_service(state.clone())
     });
     tracing::info!("Drink credit expiry service started");
+
+    let _subscription_expiry = supervise("subscription_expiry_service", shutdown_rx.clone(), {
+        let state = state.clone();
+        move || spawn_subscription_expiry_service(state.clone())
+    });
+    tracing::info!("Subscription expiry service started");
 
     // GDPR data-retention sweep — destructive (anonymizes dormant accounts), so
     // it only runs when explicitly enabled via ENABLE_DATA_RETENTION.

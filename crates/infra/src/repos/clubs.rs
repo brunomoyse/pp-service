@@ -120,3 +120,27 @@ pub async fn set_plan<'e>(
     .fetch_optional(executor)
     .await
 }
+
+/// Downgrade every paid club whose subscription has lapsed back to free, marking
+/// it `expired`. Idempotent: once a club is on `free` it's no longer matched, and
+/// clubs with no expiry (NULL — e.g. grandfathered) are never touched. Returns
+/// the number of clubs downgraded.
+pub async fn downgrade_expired<'e>(
+    executor: impl PgExecutor<'e>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> SqlxResult<u64> {
+    let result = sqlx::query(
+        r#"
+        UPDATE clubs
+        SET plan = 'free',
+            subscription_status = 'expired'
+        WHERE plan <> 'free'
+          AND subscription_expires_at IS NOT NULL
+          AND subscription_expires_at < $1
+        "#,
+    )
+    .bind(now)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
+}

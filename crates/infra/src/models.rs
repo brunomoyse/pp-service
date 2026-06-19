@@ -24,6 +24,25 @@ pub struct ClubRow {
     pub updated_at: DateTime<Utc>,
 }
 
+/// A code that grants a club a fixed-length free trial on a paid plan when
+/// redeemed in the manager app. Minted by an admin; redeemed once per club.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct RedemptionCodeRow {
+    pub id: Uuid,
+    pub code: String,
+    /// Target tier granted on redemption ("club" | "casino").
+    pub plan: String,
+    pub trial_days: i32,
+    /// Total redemptions allowed across all clubs; `None` = unlimited.
+    pub max_uses: Option<i32>,
+    pub used_count: i32,
+    /// When the code stops being redeemable; `None` = never expires.
+    pub expires_at: Option<DateTime<Utc>>,
+    pub note: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct TournamentRow {
     pub id: Uuid,

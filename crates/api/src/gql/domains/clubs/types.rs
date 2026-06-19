@@ -165,3 +165,56 @@ pub struct UpdateClubTableInput {
     pub is_default: Option<bool>,
     pub is_active: Option<bool>,
 }
+
+/// A redemption code that grants a club a fixed-length free trial on a paid
+/// plan. Returned by the admin-only `createRedemptionCode` mutation.
+#[derive(SimpleObject, Clone)]
+pub struct RedemptionCode {
+    pub id: ID,
+    pub code: String,
+    /// Tier this code upgrades a club to.
+    pub plan: ClubPlan,
+    /// Length of the free trial granted on redemption.
+    pub trial_days: i32,
+    /// Total redemptions allowed across all clubs; null = unlimited.
+    pub max_uses: Option<i32>,
+    pub used_count: i32,
+    /// When the code stops being redeemable; null = never.
+    pub expires_at: Option<DateTime<Utc>>,
+    pub note: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+impl From<infra::models::RedemptionCodeRow> for RedemptionCode {
+    fn from(row: infra::models::RedemptionCodeRow) -> Self {
+        Self {
+            id: row.id.into(),
+            code: row.code,
+            plan: ClubPlan::from_db(&row.plan),
+            trial_days: row.trial_days,
+            max_uses: row.max_uses,
+            used_count: row.used_count,
+            expires_at: row.expires_at,
+            note: row.note,
+            created_at: row.created_at,
+        }
+    }
+}
+
+/// Admin input to mint a redemption code. Omit `code` to auto-generate a unique
+/// OTP-style code (`PP……`); any supplied code is normalized (separators
+/// stripped, upper-cased) server-side.
+#[derive(InputObject)]
+pub struct CreateRedemptionCodeInput {
+    pub code: Option<String>,
+    /// Tier to grant. Defaults to `Club`; `Free` is rejected.
+    pub plan: Option<ClubPlan>,
+    #[graphql(default = 90)]
+    pub trial_days: i32,
+    /// Total redemptions allowed; defaults to 1 (single-use, OTP-style). Pass a
+    /// higher number for a shared code, or 0 is rejected.
+    #[graphql(default = 1)]
+    pub max_uses: i32,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub note: Option<String>,
+}

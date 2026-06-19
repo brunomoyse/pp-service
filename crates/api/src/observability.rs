@@ -29,9 +29,40 @@ static START: OnceLock<Instant> = OnceLock::new();
 
 const REQUEST_ID_HEADER: &str = "x-request-id";
 
+/// Initialize Sentry error reporting when `SENTRY_DSN` is set; otherwise a no-op
+/// returning `None` (opt-in, mirroring the data-retention sweep). The returned
+/// guard MUST be held for the process lifetime — dropping it flushes and
+/// disables reporting. Call this before [`init_tracing`] so the Sentry tracing
+/// layer has a client to send `error!`/`warn!` events and panics to.
+///
+/// Tunables: `SENTRY_ENVIRONMENT` (default `production`),
+/// `SENTRY_TRACES_SAMPLE_RATE` (default `0.0` — errors only, no perf tracing).
+#[must_use]
+pub fn init_sentry() -> Option<sentry::ClientInitGuard> {
+    let dsn = std::env::var("SENTRY_DSN").ok().filter(|s| !s.is_empty())?;
+    let environment = std::env::var("SENTRY_ENVIRONMENT").unwrap_or_else(|_| "production".into());
+    let traces_sample_rate = std::env::var("SENTRY_TRACES_SAMPLE_RATE")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+        .unwrap_or(0.0);
+
+    Some(sentry::init((
+        dsn,
+        sentry::ClientOptions {
+            release: sentry::release_name!(),
+            environment: Some(environment.into()),
+            traces_sample_rate,
+            // Player/manager PII (emails, names) must not ride along with events.
+            send_default_pii: false,
+            ..Default::default()
+        },
+    )))
+}
+
 /// Initialize tracing. `LOG_FORMAT=json` emits structured JSON lines (for log
 /// aggregation in production); anything else keeps the human-readable format.
-/// Also stamps the process start instant for the uptime metric.
+/// Also stamps the process start instant for the uptime metric. A Sentry layer
+/// is always attached but is inert unless [`init_sentry`] installed a client.
 pub fn init_tracing() {
     let _ = START.set(Instant::now());
 
@@ -40,7 +71,9 @@ pub fn init_tracing() {
         .map(|v| v == "json")
         .unwrap_or(false);
 
-    let registry = tracing_subscriber::registry().with(filter);
+    let registry = tracing_subscriber::registry()
+        .with(filter)
+        .with(sentry_tracing::layer());
     if json {
         registry
             .with(tracing_subscriber::fmt::layer().json())
