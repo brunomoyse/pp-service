@@ -6,6 +6,14 @@ use crate::models::BlindStructureTemplateRow;
 
 #[derive(Debug, Clone)]
 pub struct CreateBlindStructureTemplate {
+    pub club_id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub levels: JsonValue,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateBlindStructureTemplate {
     pub name: String,
     pub description: Option<String>,
     pub levels: JsonValue,
@@ -17,11 +25,12 @@ pub async fn create<'e>(
 ) -> Result<BlindStructureTemplateRow> {
     let row = sqlx::query_as::<_, BlindStructureTemplateRow>(
         r#"
-        INSERT INTO blind_structure_templates (name, description, levels)
-        VALUES ($1, $2, $3)
-        RETURNING id, name, description, levels, created_at, updated_at
+        INSERT INTO blind_structure_templates (club_id, name, description, levels)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, club_id, name, description, levels, created_at, updated_at
         "#,
     )
+    .bind(data.club_id)
     .bind(data.name)
     .bind(data.description)
     .bind(data.levels)
@@ -37,7 +46,7 @@ pub async fn get_by_id<'e>(
 ) -> Result<Option<BlindStructureTemplateRow>> {
     let row = sqlx::query_as::<_, BlindStructureTemplateRow>(
         r#"
-        SELECT id, name, description, levels, created_at, updated_at
+        SELECT id, club_id, name, description, levels, created_at, updated_at
         FROM blind_structure_templates
         WHERE id = $1
         "#,
@@ -49,14 +58,20 @@ pub async fn get_by_id<'e>(
     Ok(row)
 }
 
-pub async fn list<'e>(executor: impl PgExecutor<'e>) -> Result<Vec<BlindStructureTemplateRow>> {
+/// All blind structure templates owned by a club.
+pub async fn list_by_club<'e>(
+    executor: impl PgExecutor<'e>,
+    club_id: Uuid,
+) -> Result<Vec<BlindStructureTemplateRow>> {
     let rows = sqlx::query_as::<_, BlindStructureTemplateRow>(
         r#"
-        SELECT id, name, description, levels, created_at, updated_at
+        SELECT id, club_id, name, description, levels, created_at, updated_at
         FROM blind_structure_templates
+        WHERE club_id = $1
         ORDER BY name ASC
         "#,
     )
+    .bind(club_id)
     .fetch_all(executor)
     .await?;
 
@@ -66,14 +81,14 @@ pub async fn list<'e>(executor: impl PgExecutor<'e>) -> Result<Vec<BlindStructur
 pub async fn update<'e>(
     executor: impl PgExecutor<'e>,
     id: Uuid,
-    data: CreateBlindStructureTemplate,
+    data: UpdateBlindStructureTemplate,
 ) -> Result<BlindStructureTemplateRow> {
     let row = sqlx::query_as::<_, BlindStructureTemplateRow>(
         r#"
         UPDATE blind_structure_templates
         SET name = $2, description = $3, levels = $4, updated_at = NOW()
         WHERE id = $1
-        RETURNING id, name, description, levels, created_at, updated_at
+        RETURNING id, club_id, name, description, levels, created_at, updated_at
         "#,
     )
     .bind(id)

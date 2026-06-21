@@ -336,18 +336,21 @@ async fn test_blind_structure_templates() {
     let unique = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0);
     let (_, claims) =
         create_test_user(&app_state, &format!("bst_user_{unique}@test.com"), "admin").await;
+    let club_id = create_test_club(&app_state, "Blind Templates Club").await;
 
     let query = r#"
-        query BlindStructureTemplates {
-            blindStructureTemplates {
+        query BlindStructureTemplates($clubId: ID!) {
+            blindStructureTemplates(clubId: $clubId) {
                 id
+                clubId
                 name
                 description
             }
         }
     "#;
 
-    let response = execute_graphql(&schema, query, None, Some(claims)).await;
+    let variables = Variables::from_json(json!({ "clubId": club_id.to_string() }));
+    let response = execute_graphql(&schema, query, Some(variables), Some(claims)).await;
 
     assert!(
         response.errors.is_empty(),
@@ -356,8 +359,12 @@ async fn test_blind_structure_templates() {
     );
 
     let data = response.data.into_json().unwrap();
-    let _templates = data["blindStructureTemplates"].as_array().unwrap();
-    // May be empty if no templates seeded, but should not error
+    let templates = data["blindStructureTemplates"].as_array().unwrap();
+    // Every new club is auto-seeded with the default blind structures.
+    assert!(
+        !templates.is_empty(),
+        "a new club should have default blind templates seeded"
+    );
 }
 
 #[tokio::test]

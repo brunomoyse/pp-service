@@ -6,6 +6,16 @@ use crate::models::PayoutTemplateRow;
 
 #[derive(Debug, Clone)]
 pub struct CreatePayoutTemplate {
+    pub club_id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub min_players: i32,
+    pub max_players: Option<i32>,
+    pub payout_structure: JsonValue,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdatePayoutTemplate {
     pub name: String,
     pub description: Option<String>,
     pub min_players: i32,
@@ -19,11 +29,12 @@ pub async fn create<'e>(
 ) -> Result<PayoutTemplateRow> {
     let row = sqlx::query_as::<_, PayoutTemplateRow>(
         r#"
-        INSERT INTO payout_templates (name, description, min_players, max_players, payout_structure)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, name, description, min_players, max_players, payout_structure, created_at, updated_at
+        INSERT INTO payout_templates (club_id, name, description, min_players, max_players, payout_structure)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, club_id, name, description, min_players, max_players, payout_structure, created_at, updated_at
         "#
     )
+    .bind(data.club_id)
     .bind(data.name)
     .bind(data.description)
     .bind(data.min_players)
@@ -41,7 +52,7 @@ pub async fn get_by_id<'e>(
 ) -> Result<Option<PayoutTemplateRow>> {
     let row = sqlx::query_as::<_, PayoutTemplateRow>(
         r#"
-        SELECT id, name, description, min_players, max_players, payout_structure, created_at, updated_at
+        SELECT id, club_id, name, description, min_players, max_players, payout_structure, created_at, updated_at
         FROM payout_templates
         WHERE id = $1
         "#
@@ -53,32 +64,41 @@ pub async fn get_by_id<'e>(
     Ok(row)
 }
 
-pub async fn list<'e>(executor: impl PgExecutor<'e>) -> Result<Vec<PayoutTemplateRow>> {
+/// All payout templates owned by a club.
+pub async fn list_by_club<'e>(
+    executor: impl PgExecutor<'e>,
+    club_id: Uuid,
+) -> Result<Vec<PayoutTemplateRow>> {
     let rows = sqlx::query_as::<_, PayoutTemplateRow>(
         r#"
-        SELECT id, name, description, min_players, max_players, payout_structure, created_at, updated_at
+        SELECT id, club_id, name, description, min_players, max_players, payout_structure, created_at, updated_at
         FROM payout_templates
-        ORDER BY name ASC
+        WHERE club_id = $1
+        ORDER BY min_players ASC, name ASC
         "#
     )
+    .bind(club_id)
     .fetch_all(executor)
     .await?;
 
     Ok(rows)
 }
 
+/// Club-owned payout templates that fit a given player count.
 pub async fn find_suitable_templates<'e>(
     executor: impl PgExecutor<'e>,
+    club_id: Uuid,
     player_count: i32,
 ) -> Result<Vec<PayoutTemplateRow>> {
     let rows = sqlx::query_as::<_, PayoutTemplateRow>(
         r#"
-        SELECT id, name, description, min_players, max_players, payout_structure, created_at, updated_at
+        SELECT id, club_id, name, description, min_players, max_players, payout_structure, created_at, updated_at
         FROM payout_templates
-        WHERE min_players <= $1 AND (max_players IS NULL OR max_players >= $1)
+        WHERE club_id = $1 AND min_players <= $2 AND (max_players IS NULL OR max_players >= $2)
         ORDER BY min_players ASC, name ASC
         "#
     )
+    .bind(club_id)
     .bind(player_count)
     .fetch_all(executor)
     .await?;
@@ -89,14 +109,14 @@ pub async fn find_suitable_templates<'e>(
 pub async fn update<'e>(
     executor: impl PgExecutor<'e>,
     id: Uuid,
-    data: CreatePayoutTemplate,
+    data: UpdatePayoutTemplate,
 ) -> Result<PayoutTemplateRow> {
     let row = sqlx::query_as::<_, PayoutTemplateRow>(
         r#"
         UPDATE payout_templates
         SET name = $2, description = $3, min_players = $4, max_players = $5, payout_structure = $6, updated_at = NOW()
         WHERE id = $1
-        RETURNING id, name, description, min_players, max_players, payout_structure, created_at, updated_at
+        RETURNING id, club_id, name, description, min_players, max_players, payout_structure, created_at, updated_at
         "#
     )
     .bind(id)

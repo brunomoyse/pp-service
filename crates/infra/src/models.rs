@@ -152,6 +152,7 @@ pub struct TournamentResultRow {
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct PayoutTemplateRow {
     pub id: Uuid,
+    pub club_id: Uuid,
     pub name: String,
     pub description: Option<String>,
     pub min_players: i32,
@@ -612,6 +613,7 @@ pub struct TournamentEntryRow {
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct BlindStructureTemplateRow {
     pub id: Uuid,
+    pub club_id: Uuid,
     pub name: String,
     pub description: Option<String>,
     pub levels: serde_json::Value,

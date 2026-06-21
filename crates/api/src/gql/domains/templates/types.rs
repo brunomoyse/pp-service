@@ -14,6 +14,7 @@ pub struct PayoutStructureEntry {
 #[derive(SimpleObject, Clone)]
 pub struct PayoutTemplate {
     pub id: ID,
+    pub club_id: ID,
     pub name: String,
     pub description: Option<String>,
     pub min_players: i32,
@@ -44,6 +45,7 @@ pub struct BlindStructureLevel {
 #[derive(SimpleObject, Clone)]
 pub struct BlindStructureTemplate {
     pub id: ID,
+    pub club_id: ID,
     pub name: String,
     pub description: Option<String>,
     pub levels: Vec<BlindStructureLevel>,
@@ -61,6 +63,7 @@ pub struct PayoutStructureEntryInput {
 
 #[derive(InputObject)]
 pub struct CreatePayoutTemplateInput {
+    pub club_id: ID,
     pub name: String,
     pub description: Option<String>,
     pub min_players: i32,
@@ -91,6 +94,7 @@ pub struct BlindStructureLevelInput {
 
 #[derive(InputObject)]
 pub struct CreateBlindStructureTemplateInput {
+    pub club_id: ID,
     pub name: String,
     pub description: Option<String>,
     pub levels: Vec<BlindStructureLevelInput>,
