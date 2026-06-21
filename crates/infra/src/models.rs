@@ -54,6 +54,8 @@ pub struct TournamentRow {
     pub buy_in_cents: i32,
     pub rake_cents: i32,
     pub seat_cap: Option<i32>,
+    /// Default chips a player receives on their initial buy-in (NULL = not set).
+    pub starting_stack: Option<i32>,
     pub live_status: TournamentLiveStatus,
     pub early_bird_bonus_chips: Option<i32>,
     /// Second early-bird bonus, granted to players still seated at the end of L2.

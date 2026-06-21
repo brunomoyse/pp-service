@@ -209,7 +209,8 @@ pub struct Tournament {
     pub buy_in_cents: i32,
     pub rake_cents: i32,
     pub seat_cap: Option<i32>,
-    pub status: TournamentStatus, // Calculated: UPCOMING, LIVE, COMPLETED
+    pub starting_stack: Option<i32>, // Default chips granted on the initial buy-in
+    pub status: TournamentStatus,    // Calculated: UPCOMING, LIVE, COMPLETED
     pub live_status: TournamentLiveStatus, // Direct from DB: NOT_STARTED, IN_PROGRESS, FINISHED, etc.
     pub early_bird_bonus_chips: Option<i32>, // Extra chips for players present at tournament start
     pub level_two_bonus_chips: Option<i32>, // Extra chips for players still seated at end of L2
@@ -270,6 +271,7 @@ impl From<infra::models::TournamentRow> for Tournament {
             buy_in_cents: row.buy_in_cents,
             rake_cents: row.rake_cents,
             seat_cap: row.seat_cap,
+            starting_stack: row.starting_stack,
             status,
             live_status: row.live_status.into(),
             early_bird_bonus_chips: row.early_bird_bonus_chips,
@@ -416,6 +418,8 @@ pub struct CreateTournamentInput {
     pub buy_in_cents: i32,
     pub rake_cents: Option<i32>,
     pub seat_cap: Option<i32>,
+    /// Default chips a player receives on their initial buy-in.
+    pub starting_stack: Option<i32>,
     pub early_bird_bonus_chips: Option<i32>,
     pub level_two_bonus_chips: Option<i32>,
     pub voucher_value_cents: Option<i32>,
@@ -450,6 +454,8 @@ pub struct UpdateTournamentInput {
     pub buy_in_cents: Option<i32>,
     pub rake_cents: Option<i32>,
     pub seat_cap: Option<i32>,
+    /// Default chips a player receives on their initial buy-in.
+    pub starting_stack: Option<i32>,
     pub early_bird_bonus_chips: Option<i32>,
     pub level_two_bonus_chips: Option<i32>,
     pub voucher_value_cents: Option<i32>,

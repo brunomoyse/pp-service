@@ -102,6 +102,7 @@ impl SeriesMutation {
                 buy_in_cents: input.buy_in_cents,
                 rake_cents: input.rake_cents,
                 seat_cap: input.seat_cap,
+                starting_stack: None,
                 early_bird_bonus_chips: None,
                 level_two_bonus_chips: None,
                 voucher_value_cents: None,

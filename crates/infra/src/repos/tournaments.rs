@@ -75,6 +75,7 @@ pub struct CreateTournamentData {
     pub buy_in_cents: i32,
     pub rake_cents: Option<i32>,
     pub seat_cap: Option<i32>,
+    pub starting_stack: Option<i32>,
     pub early_bird_bonus_chips: Option<i32>,
     pub level_two_bonus_chips: Option<i32>,
     pub voucher_value_cents: Option<i32>,
@@ -99,6 +100,7 @@ pub struct UpdateTournamentData {
     pub buy_in_cents: Option<i32>,
     pub rake_cents: Option<i32>,
     pub seat_cap: Option<i32>,
+    pub starting_stack: Option<i32>,
     pub early_bird_bonus_chips: Option<i32>,
     pub level_two_bonus_chips: Option<i32>,
     pub voucher_value_cents: Option<i32>,
@@ -118,7 +120,7 @@ pub async fn get_by_id<'e>(
     sqlx::query_as::<_, TournamentRow>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
-               buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
+               buy_in_cents, rake_cents, seat_cap, starting_stack, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
                late_registration_level, bounty_type, bounty_amount_cents, leaderboard_config_id, series_id, flight_label, is_final_day, created_at, updated_at
         FROM tournaments
         WHERE id = $1
@@ -139,7 +141,7 @@ pub async fn list<'e>(
     sqlx::query_as::<_, TournamentRow>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
-               buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
+               buy_in_cents, rake_cents, seat_cap, starting_stack, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
                late_registration_level, bounty_type, bounty_amount_cents, leaderboard_config_id, series_id, flight_label, is_final_day, created_at, updated_at
         FROM tournaments
         WHERE ($1::uuid IS NULL OR club_id = $1)
@@ -213,7 +215,7 @@ pub async fn update_live_status<'e>(
             updated_at = NOW()
         WHERE id = $1
         RETURNING id, club_id, name, description, start_time, end_time,
-                 buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
+                 buy_in_cents, rake_cents, seat_cap, starting_stack, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
                  late_registration_level, bounty_type, bounty_amount_cents, leaderboard_config_id, series_id, flight_label, is_final_day, created_at, updated_at
         "#,
     )
@@ -230,7 +232,7 @@ pub async fn list_by_live_status<'e>(
     sqlx::query_as::<_, TournamentRow>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
-               buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
+               buy_in_cents, rake_cents, seat_cap, starting_stack, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
                late_registration_level, bounty_type, bounty_amount_cents, leaderboard_config_id, series_id, flight_label, is_final_day, created_at, updated_at
         FROM tournaments
         WHERE live_status = $1
@@ -246,7 +248,7 @@ pub async fn list_live<'e>(executor: impl PgExecutor<'e>) -> SqlxResult<Vec<Tour
     sqlx::query_as::<_, TournamentRow>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
-               buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
+               buy_in_cents, rake_cents, seat_cap, starting_stack, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
                late_registration_level, bounty_type, bounty_amount_cents, leaderboard_config_id, series_id, flight_label, is_final_day, created_at, updated_at
         FROM tournaments
         WHERE live_status IN ('in_progress', 'break', 'final_table')
@@ -264,7 +266,7 @@ pub async fn list_starting_soon<'e>(
     sqlx::query_as::<_, TournamentRow>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
-               buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
+               buy_in_cents, rake_cents, seat_cap, starting_stack, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
                late_registration_level, bounty_type, bounty_amount_cents, leaderboard_config_id, series_id, flight_label, is_final_day, created_at, updated_at
         FROM tournaments
         WHERE live_status IN ('not_started', 'registration_open')
@@ -285,7 +287,7 @@ pub async fn list_by_series<'e>(
     sqlx::query_as::<_, TournamentRow>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
-               buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
+               buy_in_cents, rake_cents, seat_cap, starting_stack, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
                late_registration_level, bounty_type, bounty_amount_cents, leaderboard_config_id, series_id, flight_label, is_final_day, created_at, updated_at
         FROM tournaments
         WHERE series_id = $1
@@ -308,7 +310,7 @@ pub async fn get_by_ids<'e>(
     sqlx::query_as::<_, TournamentRow>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
-               buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
+               buy_in_cents, rake_cents, seat_cap, starting_stack, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
                late_registration_level, bounty_type, bounty_amount_cents, leaderboard_config_id, series_id, flight_label, is_final_day, created_at, updated_at
         FROM tournaments
         WHERE id = ANY($1::uuid[])
@@ -330,13 +332,13 @@ pub async fn create<'e>(
                                  late_registration_level, level_two_bonus_chips,
                                  voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
                                  bounty_type, bounty_amount_cents, leaderboard_config_id,
-                                 series_id, flight_label, is_final_day)
+                                 series_id, flight_label, is_final_day, starting_stack)
         VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 0), $8, $9, $10,
                 $11, COALESCE($12, 0), $13, $14, $15,
                 COALESCE($16, 'none'), COALESCE($17, 0), $18,
-                $19, $20, $21)
+                $19, $20, $21, $22)
         RETURNING id, club_id, name, description, start_time, end_time,
-                  buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
+                  buy_in_cents, rake_cents, seat_cap, starting_stack, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
                   late_registration_level, bounty_type, bounty_amount_cents, leaderboard_config_id, series_id, flight_label, is_final_day, created_at, updated_at
         "#,
     )
@@ -361,6 +363,7 @@ pub async fn create<'e>(
     .bind(data.series_id)
     .bind(data.flight_label)
     .bind(data.is_final_day)
+    .bind(data.starting_stack)
     .fetch_one(executor)
     .await
 }
@@ -390,10 +393,11 @@ pub async fn update<'e>(
             bounty_type = COALESCE($16, bounty_type),
             bounty_amount_cents = COALESCE($17, bounty_amount_cents),
             leaderboard_config_id = COALESCE($18, leaderboard_config_id),
+            starting_stack = COALESCE($19, starting_stack),
             updated_at = NOW()
         WHERE id = $1 AND live_status != 'finished'
         RETURNING id, club_id, name, description, start_time, end_time,
-                  buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
+                  buy_in_cents, rake_cents, seat_cap, starting_stack, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
                   late_registration_level, bounty_type, bounty_amount_cents, leaderboard_config_id, series_id, flight_label, is_final_day, created_at, updated_at
         "#,
     )
@@ -415,6 +419,7 @@ pub async fn update<'e>(
     .bind(data.bounty_type)
     .bind(data.bounty_amount_cents)
     .bind(data.leaderboard_config_id)
+    .bind(data.starting_stack)
     .fetch_optional(executor)
     .await
 }
@@ -426,7 +431,7 @@ pub async fn list_stale<'e>(
     sqlx::query_as::<_, TournamentRow>(
         r#"
         SELECT id, club_id, name, description, start_time, end_time,
-               buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
+               buy_in_cents, rake_cents, seat_cap, starting_stack, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
                late_registration_level, bounty_type, bounty_amount_cents, leaderboard_config_id, series_id, flight_label, is_final_day, created_at, updated_at
         FROM tournaments
         WHERE live_status IN ('in_progress', 'late_registration', 'break', 'final_table')
@@ -451,7 +456,7 @@ pub async fn auto_finish<'e>(
             updated_at = NOW()
         WHERE id = $1 AND live_status != 'finished'
         RETURNING id, club_id, name, description, start_time, end_time,
-                  buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
+                  buy_in_cents, rake_cents, seat_cap, starting_stack, live_status, early_bird_bonus_chips, level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips, addon_price_cents,
                   late_registration_level, bounty_type, bounty_amount_cents, leaderboard_config_id, series_id, flight_label, is_final_day, created_at, updated_at
         "#,
     )

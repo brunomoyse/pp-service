@@ -156,13 +156,21 @@ impl EntryMutation {
                 .unwrap_or(super::types::PaymentMethod::Cash),
         );
 
+        // Default the chip count of an initial buy-in to the tournament's configured
+        // starting stack when the manager didn't override it explicitly.
+        let chips_received = input.chips_received.or(if is_initial {
+            tournament.starting_stack
+        } else {
+            None
+        });
+
         let create_data = CreateTournamentEntry {
             tournament_id,
             user_id: Some(user_id),
             club_player_id: None,
             entry_type: String::from(input.entry_type),
             amount_cents,
-            chips_received: input.chips_received,
+            chips_received,
             recorded_by: Some(manager_id),
             notes: input.notes,
             payment_method: payment_method.clone(),

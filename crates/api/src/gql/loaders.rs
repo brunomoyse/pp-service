@@ -283,7 +283,7 @@ impl Loader<Uuid> for TournamentLoader {
             let rows: Vec<TournamentRow> = sqlx::query_as::<_, TournamentRow>(
                 r#"
                 SELECT id, club_id, name, description, start_time, end_time,
-                       buy_in_cents, rake_cents, seat_cap, live_status, early_bird_bonus_chips,
+                       buy_in_cents, rake_cents, seat_cap, starting_stack, live_status, early_bird_bonus_chips,
                        level_two_bonus_chips, voucher_value_cents, rebuy_max, addon_chips,
                        addon_price_cents, late_registration_level, bounty_type, bounty_amount_cents, leaderboard_config_id, series_id, flight_label, is_final_day, created_at, updated_at
                 FROM tournaments
