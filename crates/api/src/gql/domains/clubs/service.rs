@@ -81,31 +81,43 @@ pub async fn onboard_club(state: &AppState, input: OnboardClubInput) -> Result<O
 
     // VAT/VIES gating only applies to the paid Club (business) path. The free
     // home-game path skips it entirely: no VAT stored, never flagged for review.
+    //
+    // BETA: during the free public beta the VAT number is OPTIONAL for the Club
+    // plan — we accept everyone and only verify when a number is supplied. To
+    // restore the mandatory paid-club gate after beta, drop the `raw_vat.is_empty()`
+    // early branch so a missing/blank VAT errors again (the onboarding form's VAT
+    // field + review warning are correspondingly commented out for the beta).
     let (stored_vat, needs_review) = if plan == ClubPlan::Club {
-        // 1. VAT format (cheap, before any network or DB work)
-        let raw_vat = input.vat_number.as_deref().unwrap_or("");
-        let vat_number = normalize_vat(&country, raw_vat);
-        if !vat_format_ok(&country, &vat_number) {
-            return Err(async_graphql::Error::new(
-                "Invalid VAT number for the selected country",
-            ));
-        }
+        let raw_vat = input.vat_number.as_deref().unwrap_or("").trim();
 
-        // 2. VIES registry check. Unreachable VIES (available == false) never
-        //    blocks; a definitive "not found" blocks only when the hard-block
-        //    flag is on.
-        let lookup = vies::lookup(&country, &vat_number).await;
-        if lookup.available && !lookup.valid && vies_hard_block() {
-            return Err(async_graphql::Error::new(
-                "No company found for this VAT number",
-            ));
-        }
+        if raw_vat.is_empty() {
+            // BETA: no VAT provided → create the club without one, not flagged.
+            (None, false)
+        } else {
+            // 1. VAT format (cheap, before any network or DB work)
+            let vat_number = normalize_vat(&country, raw_vat);
+            if !vat_format_ok(&country, &vat_number) {
+                return Err(async_graphql::Error::new(
+                    "Invalid VAT number for the selected country",
+                ));
+            }
 
-        // Non-profits (ASBL/VZW) verified via VIES are auto-approved; anything we
-        // couldn't confirm as a non-profit (other legal form, or VIES
-        // unreachable) is still created but flagged for manual review.
-        let needs_review = !(lookup.available && lookup.valid && lookup.non_profit);
-        (Some(format!("{country}{vat_number}")), needs_review)
+            // 2. VIES registry check. Unreachable VIES (available == false) never
+            //    blocks; a definitive "not found" blocks only when the hard-block
+            //    flag is on.
+            let lookup = vies::lookup(&country, &vat_number).await;
+            if lookup.available && !lookup.valid && vies_hard_block() {
+                return Err(async_graphql::Error::new(
+                    "No company found for this VAT number",
+                ));
+            }
+
+            // Non-profits (ASBL/VZW) verified via VIES are auto-approved; anything we
+            // couldn't confirm as a non-profit (other legal form, or VIES
+            // unreachable) is still created but flagged for manual review.
+            let needs_review = !(lookup.available && lookup.valid && lookup.non_profit);
+            (Some(format!("{country}{vat_number}")), needs_review)
+        }
     } else {
         (None, false)
     };
