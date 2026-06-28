@@ -1,7 +1,12 @@
+use std::collections::{HashMap, HashSet};
+
+use rand::seq::SliceRandom;
+use rand::RngExt;
 use uuid::Uuid;
 
 use infra::repos::{
     club_tables, table_seat_assignments, table_seat_assignments::CreateSeatAssignment,
+    tournament_registrations,
 };
 
 /// Parameters for table balancing (parsed by the resolver).
@@ -14,6 +19,147 @@ pub struct BalanceParams {
 /// Result of a balance operation.
 pub struct BalanceResult {
     pub moves: Vec<infra::models::TableSeatAssignmentRow>,
+}
+
+/// Result of an auto-seat operation.
+pub struct AutoSeatResult {
+    pub assignments: Vec<infra::models::TableSeatAssignmentRow>,
+}
+
+/// Working state for one table while filling free seats.
+struct TableFill {
+    id: Uuid,
+    max_seats: i32,
+    occupied: HashSet<i32>,
+}
+
+/// One decided seat placement, produced by the (synchronous) draw before any
+/// database writes.
+struct SeatPlan {
+    club_player_id: Uuid,
+    user_id: Option<Uuid>,
+    club_table_id: Uuid,
+    seat_number: i32,
+    stack_size: Option<i32>,
+}
+
+/// Randomly seat every CHECKED_IN player who has no current seat across the
+/// tournament's linked tables, keeping the tables balanced. Intended for the
+/// registration-open -> late-registration transition (the "seat draw").
+///
+/// Players are shuffled, then each is placed on the least-filled table with a
+/// free seat, taking a random free seat there; their registration moves to
+/// SEATED. Returns the created assignments so the caller can publish events.
+/// A no-op (empty result) when there are no linked tables, no checked-in
+/// players, or no free seats left.
+pub async fn auto_seat_checked_in(
+    pool: &sqlx::PgPool,
+    tournament_id: Uuid,
+    manager_id: Uuid,
+) -> Result<AutoSeatResult, Box<dyn std::error::Error + Send + Sync>> {
+    let tables = club_tables::list_assigned_to_tournament(pool, tournament_id).await?;
+    if tables.is_empty() {
+        return Ok(AutoSeatResult {
+            assignments: Vec::new(),
+        });
+    }
+
+    let mut tx = pool.begin().await?;
+
+    // Current seating: which roster players already have a seat, and which seats
+    // are taken on each table.
+    let current =
+        table_seat_assignments::list_current_for_tournament(&mut *tx, tournament_id).await?;
+    let seated: HashSet<Uuid> = current.iter().map(|a| a.club_player_id).collect();
+    let mut occupied: HashMap<Uuid, HashSet<i32>> = HashMap::new();
+    for a in &current {
+        occupied
+            .entry(a.club_table_id)
+            .or_default()
+            .insert(a.seat_number);
+    }
+
+    // Eligible = checked-in registrations with a roster identity and no seat yet.
+    let mut eligible: Vec<_> =
+        tournament_registrations::list_by_tournament(&mut *tx, tournament_id)
+            .await?
+            .into_iter()
+            .filter(|r| r.status == "checked_in")
+            .filter(|r| !seated.contains(&r.club_player_id))
+            .collect();
+
+    let mut fills: Vec<TableFill> = tables
+        .iter()
+        .map(|t| TableFill {
+            id: t.id,
+            max_seats: t.max_seats,
+            occupied: occupied.remove(&t.id).unwrap_or_default(),
+        })
+        .collect();
+
+    // Decide the whole draw synchronously so the (non-Send) RNG never crosses an
+    // await point. Each player lands on the least-filled table with room, taking
+    // a random free seat there.
+    let mut plan: Vec<SeatPlan> = Vec::new();
+    {
+        let mut rng = rand::rng();
+        eligible.shuffle(&mut rng);
+        for reg in &eligible {
+            let Some(table) = fills
+                .iter_mut()
+                .filter(|f| (f.occupied.len() as i32) < f.max_seats)
+                .min_by_key(|f| f.occupied.len())
+            else {
+                break; // every table is full
+            };
+
+            let free: Vec<i32> = (1..=table.max_seats)
+                .filter(|n| !table.occupied.contains(n))
+                .collect();
+            let seat_number = free[rng.random_range(0..free.len())];
+            table.occupied.insert(seat_number);
+
+            plan.push(SeatPlan {
+                club_player_id: reg.club_player_id,
+                user_id: reg.user_id,
+                club_table_id: table.id,
+                seat_number,
+                stack_size: reg.starting_stack,
+            });
+        }
+    }
+
+    let mut assignments = Vec::new();
+    for seat in plan {
+        let assignment = table_seat_assignments::create(
+            &mut *tx,
+            CreateSeatAssignment {
+                tournament_id,
+                club_table_id: seat.club_table_id,
+                user_id: seat.user_id,
+                club_player_id: Some(seat.club_player_id),
+                seat_number: seat.seat_number,
+                stack_size: seat.stack_size,
+                assigned_by: Some(manager_id),
+                notes: Some("Auto-seated at late registration".to_string()),
+            },
+        )
+        .await?;
+
+        tournament_registrations::update_status_by_club_player(
+            &mut *tx,
+            tournament_id,
+            seat.club_player_id,
+            "seated",
+        )
+        .await?;
+
+        assignments.push(assignment);
+    }
+
+    tx.commit().await?;
+
+    Ok(AutoSeatResult { assignments })
 }
 
 /// Check if tables need rebalancing based on player counts.

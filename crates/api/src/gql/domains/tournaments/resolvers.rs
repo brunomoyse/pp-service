@@ -12,8 +12,11 @@ use crate::state::AppState;
 use infra::models::TournamentRow;
 use infra::repos::tournament_clock::TournamentStructureLevel;
 use infra::repos::tournaments::{
-    self, CreateTournamentData, TournamentFilter, UpdateTournamentData,
+    self, CreateTournamentData, TournamentFilter, TournamentLiveStatus, UpdateTournamentData,
 };
+
+use crate::gql::domains::seating::types::{SeatingChangeEvent, SeatingEventType};
+use crate::gql::subscriptions::publish_seating_event;
 
 use super::recurrence::{occurrence_starts, MAX_OCCURRENCES};
 use super::types::{CreateTournamentInput, UpdateTournamentInput, UpdateTournamentStatusInput};
@@ -470,12 +473,13 @@ impl TournamentMutation {
             .gql_err("Failed to update tournament status")?
             .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
 
+        let manager_id = Uuid::parse_str(_user.id.as_str()).ok();
+
         // Log activity
         {
             let db = state.db.clone();
             let from_status = format!("{:?}", existing.live_status);
             let to_status = format!("{:?}", updated_row.live_status);
-            let manager_id = Uuid::parse_str(_user.id.as_str()).ok();
             tokio::spawn(async move {
                 crate::gql::domains::activity_log::log_and_publish(
                     &db,
@@ -488,6 +492,58 @@ impl TournamentMutation {
                 )
                 .await;
             });
+        }
+
+        // Seat draw: when registration-open flips to late-registration, randomly
+        // seat every checked-in player who still has no seat. Best-effort - a
+        // seating failure must not fail the status change itself.
+        if existing.live_status == TournamentLiveStatus::RegistrationOpen
+            && updated_row.live_status == TournamentLiveStatus::LateRegistration
+        {
+            if let Some(manager_uuid) = manager_id {
+                match crate::gql::domains::seating::service::auto_seat_checked_in(
+                    &state.db,
+                    tournament_id,
+                    manager_uuid,
+                )
+                .await
+                {
+                    Ok(result) if !result.assignments.is_empty() => {
+                        let count = result.assignments.len();
+                        publish_seating_event(SeatingChangeEvent {
+                            event_type: SeatingEventType::TablesBalanced,
+                            tournament_id: tournament_id.into(),
+                            club_id: existing.club_id.into(),
+                            affected_assignment: None,
+                            affected_player: None,
+                            message: format!("{count} players auto-seated for late registration"),
+                            timestamp: chrono::Utc::now(),
+                        });
+
+                        let db = state.db.clone();
+                        tokio::spawn(async move {
+                            crate::gql::domains::activity_log::log_and_publish(
+                                &db,
+                                tournament_id,
+                                "seating",
+                                "auto_seated",
+                                manager_id,
+                                None,
+                                serde_json::json!({ "player_count": count }),
+                            )
+                            .await;
+                        });
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::error!(
+                            tournament_id = %tournament_id,
+                            error = %e,
+                            "Auto-seat at late registration failed",
+                        );
+                    }
+                }
+            }
         }
 
         Ok(Tournament::from(updated_row))
