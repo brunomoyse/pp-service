@@ -10,6 +10,31 @@ use crate::gql::types::{ClockStatus, TournamentClock, TournamentStructure};
 use crate::AppState;
 use infra::repos::tournament_clock::{self, ClockStatus as InfraClockStatus};
 
+/// Fire-and-forget: record a clock state change in the tournament activity log.
+/// Mirrors the logging used by the other domains; failures are swallowed inside
+/// `log_and_publish` so they never fail the originating mutation.
+fn log_clock_event(
+    db: &sqlx::PgPool,
+    tournament_id: Uuid,
+    action: &'static str,
+    actor_id: Option<Uuid>,
+    metadata: serde_json::Value,
+) {
+    let db = db.clone();
+    tokio::spawn(async move {
+        crate::gql::domains::activity_log::log_and_publish(
+            &db,
+            tournament_id,
+            "clock",
+            action,
+            actor_id,
+            None,
+            metadata,
+        )
+        .await;
+    });
+}
+
 /// Helper function to get next structure for a tournament
 async fn get_next_structure(
     pool: &sqlx::PgPool,
@@ -242,6 +267,13 @@ impl TournamentClockMutation {
         let clock_row =
             tournament_clock::start_clock(&state.db, tournament_id, Some(manager.id.parse()?))
                 .await?;
+        log_clock_event(
+            &state.db,
+            tournament_id,
+            "start",
+            manager.id.parse().ok(),
+            serde_json::json!({}),
+        );
         let structure = tournament_clock::get_current_structure(&state.db, tournament_id)
             .await
             .ok();
@@ -286,6 +318,13 @@ impl TournamentClockMutation {
         let clock_row =
             tournament_clock::pause_clock(&state.db, tournament_id, Some(manager.id.parse()?))
                 .await?;
+        log_clock_event(
+            &state.db,
+            tournament_id,
+            "pause",
+            manager.id.parse().ok(),
+            serde_json::json!({}),
+        );
         let structure = tournament_clock::get_current_structure(&state.db, tournament_id)
             .await
             .ok();
@@ -334,6 +373,13 @@ impl TournamentClockMutation {
         let clock_row =
             tournament_clock::resume_clock(&state.db, tournament_id, Some(manager.id.parse()?))
                 .await?;
+        log_clock_event(
+            &state.db,
+            tournament_id,
+            "resume",
+            manager.id.parse().ok(),
+            serde_json::json!({}),
+        );
         let structure = tournament_clock::get_current_structure(&state.db, tournament_id)
             .await
             .ok();
@@ -390,6 +436,13 @@ impl TournamentClockMutation {
             Some(manager.id.parse()?),
         )
         .await?;
+        log_clock_event(
+            &state.db,
+            tournament_id,
+            "manual_advance",
+            manager.id.parse().ok(),
+            serde_json::json!({ "level_number": clock_row.current_level }),
+        );
         let structure = tournament_clock::get_current_structure(&state.db, tournament_id)
             .await
             .ok();
@@ -448,6 +501,13 @@ impl TournamentClockMutation {
                     ),
                     other => async_graphql::Error::new(format!("Reverting level failed: {other}")),
                 })?;
+        log_clock_event(
+            &state.db,
+            tournament_id,
+            "manual_revert",
+            manager.id.parse().ok(),
+            serde_json::json!({ "level_number": clock_row.current_level }),
+        );
         let structure = tournament_clock::get_current_structure(&state.db, tournament_id)
             .await
             .ok();
