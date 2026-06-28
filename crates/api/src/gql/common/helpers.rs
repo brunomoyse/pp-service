@@ -4,6 +4,19 @@ use uuid::Uuid;
 use crate::auth::permissions::viewer_manages_club;
 use crate::state::AppState;
 
+/// Derive a human-readable display name for an app user: "First Last", trimmed,
+/// falling back to the username and then the email when no name is set.
+pub fn display_name_from_user(u: &infra::models::UserRow) -> String {
+    let last = u.last_name.clone().unwrap_or_default();
+    let name = format!("{} {}", u.first_name, last);
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        u.username.clone().unwrap_or_else(|| u.email.clone())
+    } else {
+        name
+    }
+}
+
 pub async fn get_club_id_for_tournament(
     db: &infra::db::Db,
     tournament_id: Uuid,

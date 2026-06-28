@@ -3,6 +3,7 @@ use uuid::Uuid;
 
 use crate::auth::permissions::require_club_manager;
 use crate::auth::Claims;
+use crate::gql::common::helpers::display_name_from_user;
 use crate::gql::error::ResultExt;
 use crate::state::AppState;
 
@@ -22,18 +23,6 @@ fn current_user_id(ctx: &Context<'_>) -> Result<Uuid> {
         .data::<Claims>()
         .map_err(|_| async_graphql::Error::new("You must be logged in to perform this action"))?;
     Uuid::parse_str(&claims.sub).gql_err("Invalid user ID")
-}
-
-/// A display name for a user, used when a player claims a bearer card.
-fn display_name_from_user(u: &infra::models::UserRow) -> String {
-    let last = u.last_name.clone().unwrap_or_default();
-    let name = format!("{} {}", u.first_name, last);
-    let name = name.trim().to_string();
-    if name.is_empty() {
-        u.username.clone().unwrap_or_else(|| u.email.clone())
-    } else {
-        name
-    }
 }
 
 #[derive(Default)]

@@ -2,7 +2,9 @@ use async_graphql::{dataloader::DataLoader, Context, Object, Result, ID};
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::gql::common::helpers::{get_club_id_for_tournament, tournament_hidden_from_viewer};
+use crate::gql::common::helpers::{
+    display_name_from_user, get_club_id_for_tournament, tournament_hidden_from_viewer,
+};
 use crate::gql::error::{auth_error, ResultExt};
 use crate::gql::loaders::{ClubPlayerLoader, UserLoader};
 use crate::gql::subscriptions::{
@@ -21,19 +23,6 @@ use infra::repos::{
     notification_preferences, table_seat_assignments, tournament_registrations,
     tournament_registrations::CreateTournamentRegistration, tournaments, users,
 };
-
-/// Derive a display name for an app user (used in subscription event payloads,
-/// where the registration belongs to an account holder).
-fn display_name_from_user(u: &infra::models::UserRow) -> String {
-    let last = u.last_name.clone().unwrap_or_default();
-    let name = format!("{} {}", u.first_name, last);
-    let name = name.trim().to_string();
-    if name.is_empty() {
-        u.username.clone().unwrap_or_else(|| u.email.clone())
-    } else {
-        name
-    }
-}
 
 #[derive(Default)]
 pub struct RegistrationQuery;
