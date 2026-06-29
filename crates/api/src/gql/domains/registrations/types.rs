@@ -233,7 +233,12 @@ pub enum AssignmentStrategy {
 #[derive(InputObject)]
 pub struct CheckInPlayerInput {
     pub tournament_id: ID,
-    pub user_id: ID,
+    /// The app user to check in. Provide this OR `club_player_id`. Account
+    /// players go through the user-keyed path (early-bird bonus, entries).
+    pub user_id: Option<ID>,
+    /// The club roster identity to check in, for account-less players. Provide
+    /// this OR `user_id`; takes the roster-native path.
+    pub club_player_id: Option<ID>,
     pub assignment_strategy: Option<AssignmentStrategy>,
     pub auto_assign: Option<bool>,            // Default true
     pub grant_early_bird_bonus: Option<bool>, // Manually grant early bird bonus on late check-in

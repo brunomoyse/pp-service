@@ -870,24 +870,47 @@ impl RegistrationMutation {
         // Auth
         let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
         let manager = require_club_manager(ctx, club_id).await?;
-        let user_id = Uuid::parse_str(input.user_id.as_str()).gql_err("Invalid user ID")?;
         let manager_id = Uuid::parse_str(manager.id.as_str()).gql_err("Invalid manager ID")?;
+        let auto_assign = input.auto_assign.unwrap_or(true);
 
-        // Delegate to service
-        let params = super::service::CheckInParams {
-            tournament_id,
-            user_id,
-            manager_id,
-            auto_assign: input.auto_assign.unwrap_or(true),
-            assignment_strategy: input
-                .assignment_strategy
-                .unwrap_or(AssignmentStrategy::Balanced),
-            grant_early_bird_bonus: input.grant_early_bird_bonus.unwrap_or(false),
-        };
-
-        let result = super::service::check_in_player(&state.db, params)
-            .await
-            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+        // Two paths: account players are keyed by user_id (early-bird bonus,
+        // entries); account-less roster players are keyed by club_player_id.
+        // `subject_user_id` drives the seating-event player + activity subject.
+        let (result, subject_user_id, subject_club_player_id) =
+            if let Some(uid) = input.user_id.as_ref() {
+                let user_id = Uuid::parse_str(uid.as_str()).gql_err("Invalid user ID")?;
+                let params = super::service::CheckInParams {
+                    tournament_id,
+                    user_id,
+                    manager_id,
+                    auto_assign,
+                    assignment_strategy: input
+                        .assignment_strategy
+                        .unwrap_or(AssignmentStrategy::Balanced),
+                    grant_early_bird_bonus: input.grant_early_bird_bonus.unwrap_or(false),
+                };
+                let r = super::service::check_in_player(&state.db, params)
+                    .await
+                    .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+                (r, Some(user_id), None)
+            } else if let Some(cpid) = input.club_player_id.as_ref() {
+                let club_player_id =
+                    Uuid::parse_str(cpid.as_str()).gql_err("Invalid club player ID")?;
+                let r = super::service::check_in_roster_player(
+                    &state.db,
+                    tournament_id,
+                    club_player_id,
+                    manager_id,
+                    auto_assign,
+                )
+                .await
+                .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+                (r, None, Some(club_player_id))
+            } else {
+                return Err(async_graphql::Error::new(
+                    "Must provide either user_id or club_player_id",
+                ));
+            };
 
         // Convert to GQL types
         let seat_assignment: Option<SeatAssignment> =
@@ -895,29 +918,38 @@ impl RegistrationMutation {
 
         // Publish seating event after successful commit
         if let Some(ref assignment) = seat_assignment {
-            let user_loader = ctx.data::<DataLoader<UserLoader>>()?;
-            if let Some(user_row) = user_loader
-                .load_one(user_id)
-                .await
-                .gql_err("Database operation failed")?
-            {
-                let event = SeatingChangeEvent {
-                    event_type: SeatingEventType::PlayerAssigned,
-                    tournament_id: tournament_id.into(),
-                    club_id: club_id.into(),
-                    affected_assignment: Some(assignment.clone()),
-                    affected_player: Some(user_row.into()),
-                    message: result.message.clone(),
-                    timestamp: chrono::Utc::now(),
-                };
-                publish_seating_event(event);
-            }
+            let affected_player = if let Some(user_id) = subject_user_id {
+                let user_loader = ctx.data::<DataLoader<UserLoader>>()?;
+                user_loader
+                    .load_one(user_id)
+                    .await
+                    .gql_err("Database operation failed")?
+                    .map(Into::into)
+            } else {
+                None
+            };
+            let event = SeatingChangeEvent {
+                event_type: SeatingEventType::PlayerAssigned,
+                tournament_id: tournament_id.into(),
+                club_id: club_id.into(),
+                affected_assignment: Some(assignment.clone()),
+                affected_player,
+                message: result.message.clone(),
+                timestamp: chrono::Utc::now(),
+            };
+            publish_seating_event(event);
         }
 
         // Log activity
         {
             let db = state.db.clone();
             let auto_seated = seat_assignment.is_some();
+            let metadata = match subject_club_player_id {
+                Some(cpid) => {
+                    serde_json::json!({"auto_seated": auto_seated, "club_player_id": cpid})
+                }
+                None => serde_json::json!({"auto_seated": auto_seated}),
+            };
             tokio::spawn(async move {
                 crate::gql::domains::activity_log::log_and_publish(
                     &db,
@@ -925,8 +957,8 @@ impl RegistrationMutation {
                     "registration",
                     "check_in",
                     Some(manager_id),
-                    Some(user_id),
-                    serde_json::json!({"auto_seated": auto_seated}),
+                    subject_user_id,
+                    metadata,
                 )
                 .await;
             });

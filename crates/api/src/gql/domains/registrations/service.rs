@@ -205,6 +205,82 @@ pub async fn check_in_player(
     })
 }
 
+/// Check-in workflow for an account-less roster player, keyed by
+/// `club_player_id`. Mirrors `check_in_player` but uses the roster-native repo
+/// and seating paths. No early-bird bonus or entry handling — those are
+/// user-id keyed today and don't apply to roster players.
+pub async fn check_in_roster_player(
+    pool: &sqlx::PgPool,
+    tournament_id: Uuid,
+    club_player_id: Uuid,
+    manager_id: Uuid,
+    auto_assign: bool,
+) -> Result<CheckInResult, Box<dyn std::error::Error + Send + Sync>> {
+    let registration = tournament_registrations::get_by_tournament_and_club_player(
+        pool,
+        tournament_id,
+        club_player_id,
+    )
+    .await?
+    .ok_or("Player not registered for this tournament")?;
+
+    if registration.status != "registered" {
+        return Err(format!(
+            "Player cannot be checked in from status: {}",
+            registration.status
+        )
+        .into());
+    }
+
+    tournament_registrations::update_status_by_club_player(
+        pool,
+        tournament_id,
+        club_player_id,
+        "checked_in",
+    )
+    .await?;
+
+    // Auto-seat on a random free seat when requested. `auto_seat_one` is
+    // self-contained (own transaction) and flips the status to "seated".
+    let mut seat_assignment = None;
+    let mut message = String::from("Player checked in successfully");
+    if auto_assign {
+        match crate::gql::domains::seating::service::auto_seat_one(
+            pool,
+            tournament_id,
+            club_player_id,
+            manager_id,
+        )
+        .await?
+        {
+            Some(assignment) => {
+                message = format!(
+                    "Player checked in and assigned to seat {}",
+                    assignment.seat_number
+                );
+                seat_assignment = Some(assignment);
+            }
+            None => {
+                message = "Player checked in but no seat available for auto-assignment".to_string();
+            }
+        }
+    }
+
+    let final_registration = tournament_registrations::get_by_tournament_and_club_player(
+        pool,
+        tournament_id,
+        club_player_id,
+    )
+    .await?
+    .ok_or("Failed to get final registration")?;
+
+    Ok(CheckInResult {
+        updated_registration: final_registration,
+        seat_assignment,
+        message,
+    })
+}
+
 /// Parameters for the self-check-in operation (player checks themselves in via QR).
 pub struct SelfCheckInParams {
     pub tournament_id: Uuid,
