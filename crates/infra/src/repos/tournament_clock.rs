@@ -501,15 +501,21 @@ pub async fn get_tournaments_at_final_level(pool: &PgPool) -> SqlxResult<Vec<Uui
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
-/// Stop clock when tournament reaches final level
+/// Stop clock when tournament reaches final level.
+///
+/// Only flips `clock_status` to 'stopped' — the auto-advance poll already
+/// requires a running clock, so stopping is enough to halt advancement. We must
+/// NOT latch `auto_advance = false` here: it persists across resume/revert and
+/// across structure edits, so a clock that hit the (then-)final level once would
+/// never auto-advance again even after more levels are added. That was the
+/// "clock not auto-advancing anymore" bug.
 pub async fn stop_clock_final_level(
     pool: &PgPool,
     tournament_id: Uuid,
 ) -> SqlxResult<TournamentClockRow> {
     let clock = sqlx::query_as::<_, TournamentClockRow>(
         "UPDATE tournament_clocks
-         SET clock_status = 'stopped',
-             auto_advance = false
+         SET clock_status = 'stopped'
          WHERE tournament_id = $1
          RETURNING id, tournament_id, clock_status, current_level, level_started_at, level_end_time,
                    pause_started_at, total_pause_duration, auto_advance, created_at, updated_at",
