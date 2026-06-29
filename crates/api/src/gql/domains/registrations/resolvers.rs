@@ -536,29 +536,62 @@ impl RegistrationMutation {
 
         let tournament_id =
             Uuid::parse_str(input.tournament_id.as_str()).gql_err("Invalid tournament ID")?;
-        let user_id = Uuid::parse_str(input.user_id.as_str()).gql_err("Invalid user ID")?;
-
-        // Get the current user's claims
+        // Get the current user's claims (the actor)
         let claims = ctx
             .data::<crate::auth::Claims>()
             .map_err(|_| auth_error())?;
         let authenticated_user_id =
             Uuid::parse_str(&claims.sub).gql_err("Invalid authenticated user ID")?;
 
-        // Determine if the caller is a manager
-        let is_manager = if authenticated_user_id != user_id {
-            let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
-            require_club_manager(ctx, club_id).await?;
-            true
-        } else {
-            false
+        let input_user_id = match input.user_id.as_ref() {
+            Some(uid) => Some(Uuid::parse_str(uid.as_str()).gql_err("Invalid user ID")?),
+            None => None,
+        };
+        let input_club_player_id = match input.club_player_id.as_ref() {
+            Some(cpid) => Some(Uuid::parse_str(cpid.as_str()).gql_err("Invalid club player ID")?),
+            None => None,
         };
 
-        // Get current registration
-        let registration =
-            tournament_registrations::get_by_tournament_and_user(&state.db, tournament_id, user_id)
-                .await?
-                .ok_or_else(|| async_graphql::Error::new("Registration not found"))?;
+        // Resolve the registration and whether the caller acts as a manager.
+        // Account players may self-cancel (user_id == caller); roster
+        // cancellation is manager-only.
+        let (registration, is_manager) = if let Some(user_id) = input_user_id {
+            let is_manager = if authenticated_user_id != user_id {
+                let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
+                require_club_manager(ctx, club_id).await?;
+                true
+            } else {
+                false
+            };
+            let reg = tournament_registrations::get_by_tournament_and_user(
+                &state.db,
+                tournament_id,
+                user_id,
+            )
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Registration not found"))?;
+            (reg, is_manager)
+        } else if let Some(club_player_id) = input_club_player_id {
+            let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
+            require_club_manager(ctx, club_id).await?;
+            let reg = tournament_registrations::get_by_tournament_and_club_player(
+                &state.db,
+                tournament_id,
+                club_player_id,
+            )
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Registration not found"))?;
+            (reg, true)
+        } else {
+            return Err(async_graphql::Error::new(
+                "Must provide either user_id or club_player_id",
+            ));
+        };
+
+        // Every registration carries a roster identity; the app user is
+        // optional. Key all downstream operations on these.
+        let reg_user_id = registration.user_id;
+        let reg_club_player_id = registration.club_player_id;
 
         // Players can only cancel from registered or waitlisted status;
         // managers can cancel any status (e.g. to fix mistakes)
@@ -580,42 +613,69 @@ impl RegistrationMutation {
             .await
             .gql_err("Failed to begin transaction")?;
 
-        // Update status to cancelled
-        tournament_registrations::update_status(&mut *tx, tournament_id, user_id, "cancelled")
-            .await?;
+        // Update status to cancelled (keyed on the roster identity, which every
+        // registration has).
+        tournament_registrations::update_status_by_club_player(
+            &mut *tx,
+            tournament_id,
+            reg_club_player_id,
+            "cancelled",
+        )
+        .await?;
 
-        // If the player was seated, clear their seat assignment
+        // If the player was seated, clear their seat assignment. unassign is
+        // keyed by club_player_id (previously this passed user_id, so seated
+        // account players' seats were never actually cleared on cancel).
         if was_seated {
-            table_seat_assignments::unassign_current_seat(&mut *tx, tournament_id, user_id, None)
-                .await?;
+            table_seat_assignments::unassign_current_seat(
+                &mut *tx,
+                tournament_id,
+                reg_club_player_id,
+                None,
+            )
+            .await?;
         }
 
         tx.commit().await.gql_err("Failed to commit transaction")?;
 
         // Get updated registration
-        let updated_row =
-            tournament_registrations::get_by_tournament_and_user(&state.db, tournament_id, user_id)
-                .await?
-                .ok_or_else(|| async_graphql::Error::new("Failed to get updated registration"))?;
+        let updated_row = tournament_registrations::get_by_tournament_and_club_player(
+            &state.db,
+            tournament_id,
+            reg_club_player_id,
+        )
+        .await?
+        .ok_or_else(|| async_graphql::Error::new("Failed to get updated registration"))?;
 
         let updated_registration: TournamentRegistration = updated_row.into();
 
-        // Emit unregistered event
-        if let Some(user_row) = users::get_by_id(&state.db, user_id).await? {
-            let display_name = display_name_from_user(&user_row);
-            let user: User = user_row.into();
-            let player = TournamentPlayer {
+        // Emit unregistered event. Account players resolve a user + name; roster
+        // players resolve their display name from the roster.
+        let cancelled_user_row = match reg_user_id {
+            Some(uid) => users::get_by_id(&state.db, uid).await?,
+            None => None,
+        };
+        let display_name = match &cancelled_user_row {
+            Some(u) => display_name_from_user(u),
+            None => {
+                let rp_loader = ctx.data::<DataLoader<ClubPlayerLoader>>()?;
+                rp_loader
+                    .load_one(reg_club_player_id)
+                    .await
+                    .gql_err("Loading roster failed")?
+                    .map(|rp| rp.display_name)
+                    .unwrap_or_else(|| "Unknown".to_string())
+            }
+        };
+        publish_registration_event(PlayerRegistrationEvent {
+            tournament_id: tournament_id.into(),
+            player: TournamentPlayer {
                 registration: updated_registration.clone(),
                 display_name,
-                user: Some(user),
-            };
-            let event = PlayerRegistrationEvent {
-                tournament_id: tournament_id.into(),
-                player,
-                event_type: RegistrationEventType::PlayerUnregistered,
-            };
-            publish_registration_event(event);
-        }
+                user: cancelled_user_row.map(Into::into),
+            },
+            event_type: RegistrationEventType::PlayerUnregistered,
+        });
 
         // If the cancelled player was confirmed (not waitlisted), promote the next waitlisted player
         let mut promoted_player: Option<TournamentPlayer> = None;
@@ -713,6 +773,10 @@ impl RegistrationMutation {
         {
             let db = state.db.clone();
             let promoted = promoted_player.is_some();
+            let cancel_metadata = match reg_user_id {
+                Some(_) => serde_json::json!({}),
+                None => serde_json::json!({ "club_player_id": reg_club_player_id }),
+            };
             tokio::spawn(async move {
                 crate::gql::domains::activity_log::log_and_publish(
                     &db,
@@ -720,8 +784,8 @@ impl RegistrationMutation {
                     "registration",
                     "cancelled",
                     Some(authenticated_user_id),
-                    Some(user_id),
-                    serde_json::json!({}),
+                    reg_user_id,
+                    cancel_metadata,
                 )
                 .await;
                 if promoted {

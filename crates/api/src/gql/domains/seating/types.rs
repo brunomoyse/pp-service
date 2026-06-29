@@ -118,7 +118,11 @@ pub struct CreateTournamentTableInput {
 pub struct AssignPlayerToSeatInput {
     pub tournament_id: ID,
     pub club_table_id: ID,
-    pub user_id: ID,
+    /// The app user to seat. Provide this OR `club_player_id`.
+    pub user_id: Option<ID>,
+    /// The club roster identity to seat, for account-less players. Provide this
+    /// OR `user_id`.
+    pub club_player_id: Option<ID>,
     pub seat_number: i32,
     pub stack_size: Option<i32>,
     pub notes: Option<String>,

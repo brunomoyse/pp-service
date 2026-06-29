@@ -532,8 +532,23 @@ impl SeatingMutation {
 
         let club_table_id =
             Uuid::parse_str(input.club_table_id.as_str()).gql_err("Invalid table ID")?;
-        let user_id = Uuid::parse_str(input.user_id.as_str()).gql_err("Invalid user ID")?;
         let manager_id = Uuid::parse_str(manager.id.as_str()).gql_err("Invalid manager ID")?;
+
+        // Seat by user_id (account player) or club_player_id (account-less
+        // roster player). Exactly one is required.
+        let user_id = match input.user_id.as_ref() {
+            Some(uid) => Some(Uuid::parse_str(uid.as_str()).gql_err("Invalid user ID")?),
+            None => None,
+        };
+        let club_player_id = match input.club_player_id.as_ref() {
+            Some(cpid) => Some(Uuid::parse_str(cpid.as_str()).gql_err("Invalid club player ID")?),
+            None => None,
+        };
+        if user_id.is_none() && club_player_id.is_none() {
+            return Err(async_graphql::Error::new(
+                "Must provide either user_id or club_player_id",
+            ));
+        }
 
         // Use a transaction to ensure seat assignment and status update are atomic
         let mut tx = state
@@ -553,8 +568,8 @@ impl SeatingMutation {
         let create_data = CreateSeatAssignment {
             tournament_id,
             club_table_id,
-            user_id: Some(user_id),
-            club_player_id: None,
+            user_id,
+            club_player_id,
             seat_number: input.seat_number,
             stack_size: input.stack_size,
             assigned_by: Some(manager_id),
@@ -563,13 +578,31 @@ impl SeatingMutation {
 
         let assignment_row = table_seat_assignments::create(&mut *tx, create_data).await?;
 
-        // Update registration status to seated
-        tournament_registrations::update_status(&mut *tx, tournament_id, user_id, "seated").await?;
+        // Update registration status to seated (by whichever identity was given)
+        match (user_id, club_player_id) {
+            (Some(uid), _) => {
+                tournament_registrations::update_status(&mut *tx, tournament_id, uid, "seated")
+                    .await?;
+            }
+            (None, Some(cpid)) => {
+                tournament_registrations::update_status_by_club_player(
+                    &mut *tx,
+                    tournament_id,
+                    cpid,
+                    "seated",
+                )
+                .await?;
+            }
+            (None, None) => unreachable!("validated above"),
+        }
 
         tx.commit().await.gql_err("Failed to commit transaction")?;
 
-        // Get player info for the event
-        let player = users::get_by_id(&state.db, user_id).await?;
+        // Get player info for the event (account players only)
+        let player = match user_id {
+            Some(uid) => users::get_by_id(&state.db, uid).await?,
+            None => None,
+        };
 
         // Publish seating change event
         let result: SeatAssignment = assignment_row.into();
@@ -585,27 +618,28 @@ impl SeatingMutation {
         publish_seating_event(event);
 
         // Tell the player their seat is ready (in-app now, push when
-        // backgrounded); both respect the seating_updates preference.
-        let prefs = infra::repos::notification_preferences::get_for_user(&state.db, user_id)
-            .await
-            .unwrap_or_default();
-        if prefs.seating_updates {
-            publish_user_notification(UserNotification {
-                id: ID::from(Uuid::new_v4().to_string()),
-                user_id: ID::from(user_id.to_string()),
-                notification_type: NotificationType::SeatAssigned,
-                title: TITLE_SEAT_ASSIGNED.to_string(),
-                message: format!("You have been assigned to seat {}", result.seat_number),
-                tournament_id: Some(ID::from(tournament_id.to_string())),
-                created_at: chrono::Utc::now(),
-            });
-        }
-        {
+        // backgrounded); both respect the seating_updates preference. Only
+        // account players receive notifications.
+        if let Some(uid) = user_id {
+            let prefs = infra::repos::notification_preferences::get_for_user(&state.db, uid)
+                .await
+                .unwrap_or_default();
+            if prefs.seating_updates {
+                publish_user_notification(UserNotification {
+                    id: ID::from(Uuid::new_v4().to_string()),
+                    user_id: ID::from(uid.to_string()),
+                    notification_type: NotificationType::SeatAssigned,
+                    title: TITLE_SEAT_ASSIGNED.to_string(),
+                    message: format!("You have been assigned to seat {}", result.seat_number),
+                    tournament_id: Some(ID::from(tournament_id.to_string())),
+                    created_at: chrono::Utc::now(),
+                });
+            }
             let db = state.db.clone();
             tokio::spawn(async move {
                 crate::services::push_service::send_seating_event(
                     &db,
-                    user_id,
+                    uid,
                     "SEAT_ASSIGNED",
                     tournament_id,
                 )
@@ -617,6 +651,10 @@ impl SeatingMutation {
         {
             let db = state.db.clone();
             let seat_num = result.seat_number;
+            let metadata = match club_player_id {
+                Some(cpid) => serde_json::json!({"seat_number": seat_num, "club_player_id": cpid}),
+                None => serde_json::json!({"seat_number": seat_num}),
+            };
             tokio::spawn(async move {
                 crate::gql::domains::activity_log::log_and_publish(
                     &db,
@@ -624,8 +662,8 @@ impl SeatingMutation {
                     "seating",
                     "player_seated",
                     Some(manager_id),
-                    Some(user_id),
-                    serde_json::json!({"seat_number": seat_num}),
+                    user_id,
+                    metadata,
                 )
                 .await;
             });

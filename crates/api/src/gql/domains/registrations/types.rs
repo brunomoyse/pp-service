@@ -262,7 +262,13 @@ pub struct CheckInResponse {
 #[derive(InputObject)]
 pub struct CancelRegistrationInput {
     pub tournament_id: ID,
-    pub user_id: ID,
+    /// The app user whose registration to cancel. Provide this OR
+    /// `club_player_id`. A player may cancel their own (user_id) registration;
+    /// managers may cancel anyone's.
+    pub user_id: Option<ID>,
+    /// The club roster identity to cancel, for account-less players. Manager
+    /// only. Provide this OR `user_id`.
+    pub club_player_id: Option<ID>,
 }
 
 #[derive(SimpleObject)]
