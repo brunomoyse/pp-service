@@ -35,6 +35,64 @@ fn log_clock_event(
     });
 }
 
+/// After a level advance, close late registration if the tournament has just
+/// passed its configured `late_registration_level`. Shared by the manual
+/// advance mutation and the clock service's auto-advance loop so the transition
+/// happens no matter how the level was advanced.
+///
+/// Returns `true` when the status was flipped to `InProgress`. Best-effort: the
+/// caller decides how to surface errors; this never panics.
+pub async fn close_late_registration_if_due(
+    pool: &sqlx::PgPool,
+    tournament_id: Uuid,
+    new_level: i32,
+    actor_id: Option<Uuid>,
+) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    use infra::repos::tournaments::{self, TournamentLiveStatus};
+
+    let tournament = tournaments::get_by_id(pool, tournament_id)
+        .await?
+        .ok_or("Tournament not found")?;
+
+    // Only act while late registration is actually open.
+    if tournament.live_status != TournamentLiveStatus::LateRegistration {
+        return Ok(false);
+    }
+
+    // Only act when a late-registration level is configured.
+    let Some(late_reg_level) = tournament.late_registration_level else {
+        return Ok(false);
+    };
+
+    // Late reg closes at the END of the configured level, i.e. once we have
+    // advanced into the following level.
+    if new_level <= late_reg_level {
+        return Ok(false);
+    }
+
+    let updated =
+        tournaments::update_live_status(pool, tournament_id, TournamentLiveStatus::InProgress)
+            .await?
+            .ok_or("Tournament not found")?;
+
+    crate::gql::domains::activity_log::log_and_publish(
+        pool,
+        tournament_id,
+        "tournament",
+        "status_changed",
+        actor_id,
+        None,
+        serde_json::json!({
+            "from_status": format!("{:?}", TournamentLiveStatus::LateRegistration),
+            "to_status": format!("{:?}", updated.live_status),
+            "auto": true,
+        }),
+    )
+    .await;
+
+    Ok(true)
+}
+
 /// Helper function to get next structure for a tournament
 async fn get_next_structure(
     pool: &sqlx::PgPool,
@@ -443,6 +501,25 @@ impl TournamentClockMutation {
             manager.id.parse().ok(),
             serde_json::json!({ "level_number": clock_row.current_level }),
         );
+
+        // Auto-close late registration if this advance passed the configured
+        // level. Done before publishing the clock update so a client refetch
+        // triggered by that update sees the new status. Best-effort.
+        if let Err(e) = close_late_registration_if_due(
+            &state.db,
+            tournament_id,
+            clock_row.current_level,
+            manager.id.parse().ok(),
+        )
+        .await
+        {
+            tracing::warn!(
+                tournament_id = %tournament_id,
+                error = %e,
+                "Failed to auto-close late registration after manual advance",
+            );
+        }
+
         let structure = tournament_clock::get_current_structure(&state.db, tournament_id)
             .await
             .ok();
