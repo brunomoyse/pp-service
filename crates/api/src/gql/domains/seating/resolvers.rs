@@ -47,7 +47,11 @@ impl SeatingQuery {
 
         // For each table, get current seat assignments with player info
         let mut tables = Vec::new();
+        let mut table_counts: std::collections::HashMap<Uuid, usize> =
+            std::collections::HashMap::new();
+        let mut caps: Vec<i32> = Vec::new();
         for table_row in table_rows {
+            caps.push(table_row.max_seats);
             let table = TournamentTable {
                 id: table_row.id.into(),
                 tournament_id: tournament_id.into(),
@@ -72,6 +76,7 @@ impl SeatingQuery {
                 })
                 .collect();
 
+            table_counts.insert(table_row.id, seats.len());
             tables.push(TableWithSeats { table, seats });
         }
 
@@ -87,10 +92,18 @@ impl SeatingQuery {
             })
             .collect();
 
+        // Assess table balance (TDA thresholds) so the manager UI can warn when
+        // tables need rebalancing or consolidating.
+        let balance = super::service::assess_balance(&table_counts, &caps);
+
         Ok(TournamentSeatingChart {
             tournament,
             tables,
             unassigned_players,
+            needs_rebalancing: balance.needs_rebalance,
+            needs_consolidation: balance.needs_consolidation,
+            balance_critical: balance.critical,
+            suggested_table_count: balance.suggested_table_count,
         })
     }
 

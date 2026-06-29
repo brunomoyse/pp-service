@@ -92,6 +92,15 @@ pub struct TournamentSeatingChart {
     pub tournament: Tournament,
     pub tables: Vec<TableWithSeats>,
     pub unassigned_players: Vec<UnseatedPlayer>,
+    /// Active tables are unbalanced beyond the TDA threshold (within 1 player
+    /// for <= 6 tables, within 2 above) — the manager should rebalance.
+    pub needs_rebalancing: bool,
+    /// The field now fits on fewer tables than are in use — consolidate.
+    pub needs_consolidation: bool,
+    /// Player spread is 3+ — play should halt on the short table until balanced.
+    pub balance_critical: bool,
+    /// Minimal number of tables the current field should occupy.
+    pub suggested_table_count: i32,
 }
 
 #[derive(SimpleObject, Clone, serde::Serialize, serde::Deserialize)]

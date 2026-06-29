@@ -470,6 +470,128 @@ async fn test_balance_tables() {
     // No need to assert anything here since we already got a Vec from as_array().unwrap()
 }
 
+#[tokio::test]
+async fn test_balance_tables_consolidates_short_field() {
+    // 5 players spread across 3 tables should consolidate onto a single table
+    // (5 players fit on one 9-max table), mirroring how a real room breaks down
+    // tables as the field shrinks.
+    let app_state = setup_test_db().await;
+    let schema = build_schema(app_state.clone());
+
+    let unique_manager_email = format!(
+        "consolidatemgr_{}@test.com",
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+    );
+    let (manager_id, manager_claims) =
+        create_test_user(&app_state, &unique_manager_email, "manager").await;
+    let club_id = create_test_club(&app_state, "Consolidate Club").await;
+    let tournament_id = create_test_tournament(&app_state, club_id, "Consolidate Tournament").await;
+    create_club_manager(&app_state, manager_id, club_id).await;
+
+    // Three linked 9-max tables. Runtime queries (not the `query!` macro) so the
+    // test compiles offline without regenerating the SQLx cache.
+    let mut table_ids = Vec::new();
+    for table_number in 1..=3i32 {
+        let table_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO club_tables (id, club_id, table_number, max_seats) VALUES ($1, $2, $3, 9)",
+        )
+        .bind(table_id)
+        .bind(club_id)
+        .bind(table_number)
+        .execute(&app_state.db)
+        .await
+        .expect("create club table");
+        sqlx::query(
+            "INSERT INTO tournament_table_assignments (tournament_id, club_table_id) VALUES ($1, $2)",
+        )
+        .bind(tournament_id)
+        .bind(table_id)
+        .execute(&app_state.db)
+        .await
+        .expect("link table");
+        table_ids.push(table_id);
+    }
+
+    // Seat 5 players unevenly across the three tables: 2 / 2 / 1.
+    let seat_query = r#"
+        mutation AssignPlayerToSeat($input: AssignPlayerToSeatInput!) {
+            assignPlayerToSeat(input: $input) { id }
+        }
+    "#;
+    let layout = [(0usize, 1), (0, 2), (1, 1), (1, 2), (2, 1)];
+    for (i, (table_idx, seat_number)) in layout.iter().enumerate() {
+        let email = format!(
+            "consolidateplayer_{}_{}@test.com",
+            i,
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+        );
+        let (player_id, _) = create_test_user(&app_state, &email, "player").await;
+        let variables = Variables::from_json(json!({
+            "input": {
+                "tournamentId": tournament_id.to_string(),
+                "clubTableId": table_ids[*table_idx].to_string(),
+                "userId": player_id.to_string(),
+                "seatNumber": seat_number,
+            }
+        }));
+        let response = execute_graphql(
+            &schema,
+            seat_query,
+            Some(variables),
+            Some(manager_claims.clone()),
+        )
+        .await;
+        assert!(
+            response.errors.is_empty(),
+            "seating player {i} should succeed: {:?}",
+            response.errors
+        );
+    }
+
+    // Balance: should consolidate everyone onto one table.
+    let balance_query = r#"
+        mutation BalanceTables($input: BalanceTablesInput!) {
+            balanceTables(input: $input) { id clubTableId }
+        }
+    "#;
+    let variables = Variables::from_json(json!({
+        "input": { "tournamentId": tournament_id.to_string() }
+    }));
+    let response = execute_graphql(
+        &schema,
+        balance_query,
+        Some(variables),
+        Some(manager_claims),
+    )
+    .await;
+    assert!(
+        response.errors.is_empty(),
+        "balance should succeed: {:?}",
+        response.errors
+    );
+
+    // After consolidation exactly one table should hold all 5 players.
+    use sqlx::Row;
+    let rows = sqlx::query(
+        "SELECT club_table_id, COUNT(*) as cnt FROM table_seat_assignments \
+         WHERE tournament_id = $1 AND is_current = true GROUP BY club_table_id",
+    )
+    .bind(tournament_id)
+    .fetch_all(&app_state.db)
+    .await
+    .expect("count current assignments");
+
+    assert_eq!(
+        rows.len(),
+        1,
+        "field should be consolidated onto a single table, got {} tables",
+        rows.len()
+    );
+    let cnt: i64 = rows[0].get("cnt");
+    assert_eq!(cnt, 5, "all 5 players should sit at one table");
+}
+
 // =============================================================================
 // SEAT ASSIGNMENT QUERIES
 // =============================================================================

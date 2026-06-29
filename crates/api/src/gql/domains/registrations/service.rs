@@ -103,52 +103,70 @@ pub async fn check_in_player(
                 table_seat_assignments::list_current_for_tournament(&mut *tx, params.tournament_id)
                     .await?;
 
-            // Count players per table
-            let mut table_counts: std::collections::HashMap<Uuid, usize> =
-                std::collections::HashMap::new();
-            for assignment in &current_assignments {
-                *table_counts.entry(assignment.club_table_id).or_insert(0) += 1;
-            }
-
-            // Find best table based on strategy
-            let target_table = match params.assignment_strategy {
-                AssignmentStrategy::Balanced => tables
-                    .iter()
-                    .min_by_key(|table| table_counts.get(&table.id).unwrap_or(&0))
-                    .ok_or("No tables available")?,
-                AssignmentStrategy::Random => {
-                    use rand::seq::IndexedRandom;
-                    tables
-                        .choose(&mut rand::rng())
-                        .ok_or("No tables available")?
-                }
-                AssignmentStrategy::Sequential => tables
-                    .iter()
-                    .find(|table| {
-                        let count = table_counts.get(&table.id).unwrap_or(&0);
-                        *count < table.max_seats as usize
+            // Decide table + seat based on strategy, as (table_id, seat, table_number).
+            let placement: Option<(Uuid, i32, i32)> = match params.assignment_strategy {
+                AssignmentStrategy::Balanced => {
+                    // Fill-then-balance: keep tables playable (minimal number of
+                    // active tables) instead of spreading players thin.
+                    let total_after = current_assignments.len() as i32 + 1;
+                    crate::gql::domains::seating::service::decide_seat_fill_then_balance(
+                        &tables,
+                        &current_assignments,
+                        total_after,
+                    )
+                    .map(|(table_id, seat)| {
+                        let tnum = tables
+                            .iter()
+                            .find(|t| t.id == table_id)
+                            .map(|t| t.table_number)
+                            .unwrap_or(0);
+                        (table_id, seat, tnum)
                     })
-                    .ok_or("All tables are full")?,
-                _ => unreachable!(),
+                }
+                _ => {
+                    // Count players per table for Sequential's capacity check.
+                    let mut table_counts: std::collections::HashMap<Uuid, usize> =
+                        std::collections::HashMap::new();
+                    for assignment in &current_assignments {
+                        *table_counts.entry(assignment.club_table_id).or_insert(0) += 1;
+                    }
+                    let target_table = match params.assignment_strategy {
+                        AssignmentStrategy::Random => {
+                            use rand::seq::IndexedRandom;
+                            tables.choose(&mut rand::rng())
+                        }
+                        AssignmentStrategy::Sequential => tables.iter().find(|table| {
+                            table_counts.get(&table.id).copied().unwrap_or(0)
+                                < table.max_seats as usize
+                        }),
+                        _ => unreachable!(),
+                    };
+
+                    if let Some(table) = target_table {
+                        let occupied_seats: std::collections::HashSet<i32> =
+                            table_seat_assignments::get_occupied_seats(&mut *tx, table.id)
+                                .await?
+                                .into_iter()
+                                .collect();
+                        let available_seats: Vec<i32> = (1..=table.max_seats)
+                            .filter(|seat| !occupied_seats.contains(seat))
+                            .collect();
+                        if available_seats.is_empty() {
+                            None
+                        } else {
+                            let idx = rand::rng().random_range(0..available_seats.len());
+                            Some((table.id, available_seats[idx], table.table_number))
+                        }
+                    } else {
+                        None
+                    }
+                }
             };
 
-            // Find available seats
-            let occupied_seats: std::collections::HashSet<i32> =
-                table_seat_assignments::get_occupied_seats(&mut *tx, target_table.id)
-                    .await?
-                    .into_iter()
-                    .collect();
-            let available_seats: Vec<i32> = (1..=target_table.max_seats)
-                .filter(|seat| !occupied_seats.contains(seat))
-                .collect();
-
-            if !available_seats.is_empty() {
-                let random_index = rand::rng().random_range(0..available_seats.len());
-                let seat_num = available_seats[random_index];
-
+            if let Some((club_table_id, seat_num, table_number)) = placement {
                 let create_data = CreateSeatAssignment {
                     tournament_id: params.tournament_id,
-                    club_table_id: target_table.id,
+                    club_table_id,
                     user_id: Some(params.user_id),
                     club_player_id: None,
                     seat_number: seat_num,
@@ -173,7 +191,7 @@ pub async fn check_in_player(
 
                 message = format!(
                     "Player checked in and assigned to Table {}, Seat {}",
-                    target_table.table_number, seat_num
+                    table_number, seat_num
                 );
 
                 seat_assignment = Some(assignment_row);
