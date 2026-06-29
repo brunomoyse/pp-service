@@ -7,11 +7,11 @@ use crate::gql::error::{auth_error, ResultExt};
 use crate::gql::subscriptions::{publish_seating_event, publish_user_notification};
 use crate::gql::types::{
     AssignPlayerToSeatInput, AssignTableToTournamentInput, AssignTablesToTournamentInput,
-    BalanceTablesInput, MovePlayerInput, NotificationType, SeatAssignment, SeatWithPlayer,
-    SeatingChangeEvent, SeatingEventType, TableWithSeats, Tournament, TournamentBounty,
-    TournamentSeatingChart, TournamentTable, UnassignTableFromTournamentInput, UnseatedPlayer,
-    UpdateStackSizeInput, User, UserNotification, TITLE_PLAYER_ELIMINATED, TITLE_PLAYER_MOVED,
-    TITLE_SEAT_ASSIGNED,
+    AutoSeatPlayerInput, BalanceTablesInput, MovePlayerInput, NotificationType, SeatAssignment,
+    SeatWithPlayer, SeatingChangeEvent, SeatingEventType, TableWithSeats, Tournament,
+    TournamentBounty, TournamentSeatingChart, TournamentTable, UnassignTableFromTournamentInput,
+    UnseatedPlayer, UpdateStackSizeInput, User, UserNotification, TITLE_PLAYER_ELIMINATED,
+    TITLE_PLAYER_MOVED, TITLE_SEAT_ASSIGNED,
 };
 use crate::state::AppState;
 use infra::repos::{
@@ -630,6 +630,68 @@ impl SeatingMutation {
                 .await;
             });
         }
+
+        Ok(result)
+    }
+
+    /// Auto-seat a single checked-in player on a random free seat across the
+    /// linked tables. Roster-native (keyed by club_player_id), so it works for
+    /// account-less players. Errors when no free seat is available.
+    async fn auto_seat_player(
+        &self,
+        ctx: &Context<'_>,
+        input: AutoSeatPlayerInput,
+    ) -> Result<SeatAssignment> {
+        use crate::auth::permissions::require_club_manager;
+
+        let state = ctx.data::<AppState>()?;
+        let tournament_id =
+            Uuid::parse_str(input.tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+        let club_player_id =
+            Uuid::parse_str(input.club_player_id.as_str()).gql_err("Invalid club player ID")?;
+
+        let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
+        let manager = require_club_manager(ctx, club_id).await?;
+        let manager_id = Uuid::parse_str(manager.id.as_str()).gql_err("Invalid manager ID")?;
+
+        let assignment_row =
+            super::service::auto_seat_one(&state.db, tournament_id, club_player_id, manager_id)
+                .await
+                .map_err(|e| async_graphql::Error::new(e.to_string()))?
+                .ok_or_else(|| {
+                    async_graphql::Error::new("No free seat available to auto-seat this player")
+                })?;
+
+        let seat_number = assignment_row.seat_number;
+        let subject_user = assignment_row.user_id;
+        let result: SeatAssignment = assignment_row.into();
+
+        // Refresh the seating chart for everyone watching.
+        publish_seating_event(SeatingChangeEvent {
+            event_type: SeatingEventType::PlayerAssigned,
+            tournament_id: result.tournament_id.clone(),
+            club_id: club_id.into(),
+            affected_assignment: Some(result.clone()),
+            affected_player: None,
+            message: format!("Player auto-seated to seat {seat_number}"),
+            timestamp: chrono::Utc::now(),
+        });
+
+        // Log activity. The subject resolves to the app user when present, else
+        // to the roster name via metadata.club_player_id.
+        let db = state.db.clone();
+        tokio::spawn(async move {
+            crate::gql::domains::activity_log::log_and_publish(
+                &db,
+                tournament_id,
+                "seating",
+                "player_seated",
+                Some(manager_id),
+                subject_user,
+                serde_json::json!({ "seat_number": seat_number, "club_player_id": club_player_id }),
+            )
+            .await;
+        });
 
         Ok(result)
     }

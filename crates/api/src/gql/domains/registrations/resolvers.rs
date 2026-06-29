@@ -398,8 +398,14 @@ impl RegistrationMutation {
             false
         };
 
+        // "Present" players check in on registration; auto-seat implies present.
+        let present =
+            !is_waitlisted && (input.check_in.unwrap_or(false) || input.auto_seat.unwrap_or(false));
+
         let status = if is_waitlisted {
             Some("waitlisted".to_string())
+        } else if present {
+            Some("checked_in".to_string())
         } else {
             None // defaults to 'registered'
         };
@@ -461,6 +467,59 @@ impl RegistrationMutation {
             )
             .await;
         });
+
+        // Optionally seat the freshly checked-in player on a random free seat.
+        // Best-effort: a seating hiccup must not fail the registration.
+        if !is_waitlisted && input.auto_seat.unwrap_or(false) {
+            match crate::gql::domains::seating::service::auto_seat_one(
+                &state.db,
+                tournament_id,
+                club_player_id,
+                manager_id,
+            )
+            .await
+            {
+                Ok(Some(assignment_row)) => {
+                    let seat_number = assignment_row.seat_number;
+                    let subject_user = assignment_row.user_id;
+                    let assignment: SeatAssignment = assignment_row.into();
+                    publish_seating_event(SeatingChangeEvent {
+                        event_type: SeatingEventType::PlayerAssigned,
+                        tournament_id: assignment.tournament_id.clone(),
+                        club_id: club_id.into(),
+                        affected_assignment: Some(assignment),
+                        affected_player: None,
+                        message: format!("Player auto-seated to seat {seat_number}"),
+                        timestamp: Utc::now(),
+                    });
+
+                    let db = state.db.clone();
+                    tokio::spawn(async move {
+                        crate::gql::domains::activity_log::log_and_publish(
+                            &db,
+                            tournament_id,
+                            "seating",
+                            "player_seated",
+                            Some(manager_id),
+                            subject_user,
+                            serde_json::json!({
+                                "seat_number": seat_number,
+                                "club_player_id": club_player_id,
+                            }),
+                        )
+                        .await;
+                    });
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!(
+                        tournament_id = %tournament_id,
+                        error = %e,
+                        "Auto-seat on register failed",
+                    );
+                }
+            }
+        }
 
         Ok(tournament_registration)
     }

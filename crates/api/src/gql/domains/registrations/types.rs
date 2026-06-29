@@ -207,6 +207,12 @@ pub struct RegisterRosterPlayerInput {
     pub tournament_id: ID,
     pub club_player_id: ID,
     pub notes: Option<String>,
+    /// Mark the player present (CHECKED_IN) on registration instead of just
+    /// REGISTERED. Ignored when the player lands on the waitlist.
+    pub check_in: Option<bool>,
+    /// Immediately seat the player on a random free seat (implies check_in).
+    /// No-op when there are no linked tables / free seats, or when waitlisted.
+    pub auto_seat: Option<bool>,
 }
 
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]

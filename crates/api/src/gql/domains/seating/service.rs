@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
 use rand::seq::SliceRandom;
-use rand::RngExt;
 use uuid::Uuid;
 
 use infra::repos::{
@@ -41,6 +40,100 @@ struct SeatPlan {
     club_table_id: Uuid,
     seat_number: i32,
     stack_size: Option<i32>,
+}
+
+/// Pick the least-filled table that still has a free seat and reserve a random
+/// free seat on it (mutating its `occupied` set). Returns the table id and seat
+/// number, or `None` when every table is full. Synchronous so the RNG never
+/// crosses an await point.
+fn pick_random_seat(fills: &mut [TableFill], rng: &mut impl rand::RngExt) -> Option<(Uuid, i32)> {
+    let table = fills
+        .iter_mut()
+        .filter(|f| (f.occupied.len() as i32) < f.max_seats)
+        .min_by_key(|f| f.occupied.len())?;
+    let free: Vec<i32> = (1..=table.max_seats)
+        .filter(|n| !table.occupied.contains(n))
+        .collect();
+    let seat_number = free[rng.random_range(0..free.len())];
+    table.occupied.insert(seat_number);
+    Some((table.id, seat_number))
+}
+
+/// Seat one checked-in player on a random free seat across the linked tables
+/// (least-filled table first), moving their registration to SEATED. Returns
+/// `None` when there are no tables, no free seat, or the player already holds a
+/// seat. Pure DB work; the caller publishes the seating event and logs.
+pub async fn auto_seat_one(
+    pool: &sqlx::PgPool,
+    tournament_id: Uuid,
+    club_player_id: Uuid,
+    manager_id: Uuid,
+) -> Result<Option<infra::models::TableSeatAssignmentRow>, Box<dyn std::error::Error + Send + Sync>>
+{
+    let tables = club_tables::list_assigned_to_tournament(pool, tournament_id).await?;
+    if tables.is_empty() {
+        return Ok(None);
+    }
+
+    let mut tx = pool.begin().await?;
+
+    let current =
+        table_seat_assignments::list_current_for_tournament(&mut *tx, tournament_id).await?;
+    if current.iter().any(|a| a.club_player_id == club_player_id) {
+        return Ok(None); // already seated
+    }
+
+    let mut occupied: HashMap<Uuid, HashSet<i32>> = HashMap::new();
+    for a in &current {
+        occupied
+            .entry(a.club_table_id)
+            .or_default()
+            .insert(a.seat_number);
+    }
+    let mut fills: Vec<TableFill> = tables
+        .iter()
+        .map(|t| TableFill {
+            id: t.id,
+            max_seats: t.max_seats,
+            occupied: occupied.remove(&t.id).unwrap_or_default(),
+        })
+        .collect();
+
+    let pick = {
+        let mut rng = rand::rng();
+        pick_random_seat(&mut fills, &mut rng)
+    };
+    let Some((club_table_id, seat_number)) = pick else {
+        return Ok(None); // no free seat
+    };
+
+    let assignment = table_seat_assignments::create(
+        &mut *tx,
+        CreateSeatAssignment {
+            tournament_id,
+            club_table_id,
+            // The DB link trigger stamps user_id from the roster identity when
+            // the player has an app account.
+            user_id: None,
+            club_player_id: Some(club_player_id),
+            seat_number,
+            stack_size: None,
+            assigned_by: Some(manager_id),
+            notes: Some("Auto-seated".to_string()),
+        },
+    )
+    .await?;
+
+    tournament_registrations::update_status_by_club_player(
+        &mut *tx,
+        tournament_id,
+        club_player_id,
+        "seated",
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(Some(assignment))
 }
 
 /// Randomly seat every CHECKED_IN player who has no current seat across the
@@ -105,24 +198,13 @@ pub async fn auto_seat_checked_in(
         let mut rng = rand::rng();
         eligible.shuffle(&mut rng);
         for reg in &eligible {
-            let Some(table) = fills
-                .iter_mut()
-                .filter(|f| (f.occupied.len() as i32) < f.max_seats)
-                .min_by_key(|f| f.occupied.len())
-            else {
+            let Some((club_table_id, seat_number)) = pick_random_seat(&mut fills, &mut rng) else {
                 break; // every table is full
             };
-
-            let free: Vec<i32> = (1..=table.max_seats)
-                .filter(|n| !table.occupied.contains(n))
-                .collect();
-            let seat_number = free[rng.random_range(0..free.len())];
-            table.occupied.insert(seat_number);
-
             plan.push(SeatPlan {
                 club_player_id: reg.club_player_id,
                 user_id: reg.user_id,
-                club_table_id: table.id,
+                club_table_id,
                 seat_number,
                 stack_size: reg.starting_stack,
             });

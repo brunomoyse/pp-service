@@ -124,6 +124,14 @@ pub struct AssignPlayerToSeatInput {
     pub notes: Option<String>,
 }
 
+/// Seat a single checked-in roster player on a random free seat. Identified by
+/// the club roster id so it works for account-less players too.
+#[derive(InputObject)]
+pub struct AutoSeatPlayerInput {
+    pub tournament_id: ID,
+    pub club_player_id: ID,
+}
+
 #[derive(InputObject)]
 pub struct MovePlayerInput {
     pub tournament_id: ID,
