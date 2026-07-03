@@ -2,6 +2,7 @@ pub mod config;
 pub mod cookie;
 pub mod custom_oauth;
 pub mod jwt;
+pub mod lockout;
 pub mod oauth;
 pub mod password;
 pub mod permissions;

@@ -1,6 +1,13 @@
+use std::sync::LazyLock;
+
 use bcrypt::{hash, verify, DEFAULT_COST};
 
 use crate::error::AppError;
+
+/// A real bcrypt hash of a fixed throwaway value, computed once. Verifying an
+/// attempt against it burns the same time as a genuine check.
+static DUMMY_HASH: LazyLock<String> =
+    LazyLock::new(|| hash("timing-equalizer", DEFAULT_COST).expect("bcrypt dummy hash"));
 
 pub struct PasswordService;
 
@@ -13,6 +20,12 @@ impl PasswordService {
     pub fn verify_password(password: &str, hash: &str) -> Result<bool, AppError> {
         verify(password, hash)
             .map_err(|e| AppError::Internal(format!("Failed to verify password: {}", e)))
+    }
+
+    /// Burn a bcrypt verification against a dummy hash so "unknown email" and
+    /// "wrong password" take indistinguishable time (anti-enumeration).
+    pub fn verify_dummy(password: &str) {
+        let _ = verify(password, &DUMMY_HASH);
     }
 
     pub fn validate_password_strength(password: &str) -> Result<(), AppError> {

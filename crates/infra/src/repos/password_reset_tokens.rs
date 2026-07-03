@@ -50,6 +50,24 @@ pub async fn find_valid_by_hash(
     }))
 }
 
+/// Count tokens created for a user since the given instant, regardless of
+/// used/invalidated state — the basis for the anti-abuse cap on reset emails.
+pub async fn created_since_count(
+    pool: &PgPool,
+    user_id: Uuid,
+    since: DateTime<Utc>,
+) -> Result<i64, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT COUNT(*) AS n FROM password_reset_tokens WHERE user_id = $1 AND created_at >= $2",
+    )
+    .bind(user_id)
+    .bind(since)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(row.get("n"))
+}
+
 pub async fn mark_used(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE password_reset_tokens SET used_at = now() WHERE id = $1")
         .bind(id)

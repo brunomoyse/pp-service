@@ -259,6 +259,14 @@ impl AuthMutation {
 
         let state = ctx.data::<AppState>()?;
 
+        // Reject early if this account is temporarily locked from too many
+        // failures (same per-account lockout as the REST /oauth/login path).
+        if crate::auth::lockout::is_locked(&input.email) {
+            return Err(async_graphql::Error::new(
+                "Too many failed attempts. Please try again later.",
+            ));
+        }
+
         // Find user by email — only fetch id + password_hash for auth check
         let auth_row = sqlx::query("SELECT id, password_hash FROM users WHERE email = $1")
             .bind(&input.email)
@@ -268,7 +276,14 @@ impl AuthMutation {
 
         let auth_row = match auth_row {
             Some(row) => row,
-            None => return Err(async_graphql::Error::new("Invalid credentials")),
+            None => {
+                // Burn a bcrypt round so unknown-email and wrong-password take
+                // the same time, and count the failure so probing can't dodge
+                // the lockout.
+                PasswordService::verify_dummy(&input.password);
+                crate::auth::lockout::record_failure(&input.email);
+                return Err(async_graphql::Error::new("Invalid credentials"));
+            }
         };
 
         let user_id: Uuid = auth_row.get("id");
@@ -279,11 +294,17 @@ impl AuthMutation {
             if !PasswordService::verify_password(&input.password, hash)
                 .gql_err("Database operation failed")?
             {
+                crate::auth::lockout::record_failure(&input.email);
                 return Err(async_graphql::Error::new("Invalid credentials"));
             }
         } else {
-            return Err(async_graphql::Error::new("User has no password set"));
+            // OAuth-only account: same generic error as a bad password so
+            // probing can't distinguish account types.
+            crate::auth::lockout::record_failure(&input.email);
+            return Err(async_graphql::Error::new("Invalid credentials"));
         }
+
+        crate::auth::lockout::record_success(&input.email);
 
         // Fetch full user data via repo (includes locale)
         let user: User = infra::repos::users::get_by_id(&state.db, user_id)
@@ -373,6 +394,27 @@ impl AuthMutation {
 
         if let Some(user) = user {
             let user_id = Uuid::parse_str(user.id.as_str()).gql_err("Invalid user ID")?;
+
+            // Anti-abuse cap: at most 3 reset emails per user per hour. Beyond
+            // that, silently skip (the response stays generic) so an attacker
+            // can neither bomb a victim's inbox nor detect the throttle.
+            let recent = infra::repos::password_reset_tokens::created_since_count(
+                &state.db,
+                user_id,
+                Utc::now() - Duration::hours(1),
+            )
+            .await
+            .gql_err("Database operation failed")?;
+
+            if recent >= 3 {
+                tracing::warn!(user_id = %user_id, "password reset throttled (3/hour cap)");
+                return Ok(RequestPasswordResetResponse {
+                    success: true,
+                    message:
+                        "If an account with that email exists, a password reset link has been sent."
+                            .to_string(),
+                });
+            }
 
             // Invalidate any existing pending tokens for this user
             infra::repos::password_reset_tokens::invalidate_for_user(&state.db, user_id)

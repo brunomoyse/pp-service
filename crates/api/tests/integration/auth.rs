@@ -204,3 +204,113 @@ async fn registration_enforces_password_policy() {
         strong.errors
     );
 }
+
+#[tokio::test]
+async fn password_reset_requests_are_capped_per_user() {
+    use sqlx::Row;
+
+    let app_state = setup_test_db().await;
+    let schema = build_schema(app_state.clone());
+
+    let email = format!(
+        "reset_cap_{}@test.com",
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+    );
+    let (user_id, _claims) = create_test_user(&app_state, &email, "player").await;
+
+    let mutation = r#"
+        mutation RequestReset($input: RequestPasswordResetInput!) {
+            requestPasswordReset(input: $input) {
+                success
+                message
+            }
+        }
+    "#;
+
+    // 5 requests in a burst: every response must be the generic success
+    // (no enumeration, no visible throttle) …
+    for _ in 0..5 {
+        let variables = Variables::from_json(json!({ "input": { "email": email } }));
+        let response = execute_graphql(&schema, mutation, Some(variables), None).await;
+        assert!(
+            response.errors.is_empty(),
+            "requestPasswordReset should not error: {:?}",
+            response.errors
+        );
+        let data = response.data.into_json().unwrap();
+        assert_eq!(data["requestPasswordReset"]["success"], true);
+    }
+
+    // … but only 3 tokens may have been created (3/hour anti-abuse cap).
+    let row = sqlx::query("SELECT COUNT(*) AS n FROM password_reset_tokens WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_one(&app_state.db)
+        .await
+        .expect("count tokens");
+    let n: i64 = row.get("n");
+    assert_eq!(n, 3, "reset token creation must stop at the 3/hour cap");
+}
+
+#[tokio::test]
+async fn graphql_login_locks_after_repeated_failures() {
+    let app_state = setup_test_db().await;
+    let schema = build_schema(app_state);
+
+    let email = format!(
+        "gql_lockout_{}@test.com",
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+    );
+    let register = r#"
+        mutation Register($input: UserRegistrationInput!) {
+            registerUser(input: $input) { id }
+        }
+    "#;
+    let response = execute_graphql(
+        &schema,
+        register,
+        Some(Variables::from_json(json!({ "input": {
+            "email": email,
+            "password": "Str0ngPassphrase",
+            "firstName": "Lock",
+            "lastName": "Out",
+            "username": format!("lockout_{}", chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)),
+        }}))),
+        None,
+    )
+    .await;
+    assert!(
+        response.errors.is_empty(),
+        "registration must succeed: {:?}",
+        response.errors
+    );
+
+    let login = r#"
+        mutation Login($input: UserLoginInput!) {
+            loginUser(input: $input) { token }
+        }
+    "#;
+    let attempt = |password: &str| {
+        Variables::from_json(json!({ "input": { "email": email, "password": password } }))
+    };
+
+    // 5 wrong-password attempts: all must fail with the generic message.
+    for _ in 0..5 {
+        let r = execute_graphql(&schema, login, Some(attempt("wrong-password")), None).await;
+        assert!(!r.errors.is_empty(), "a wrong password must fail");
+        assert_eq!(r.errors[0].message, "Invalid credentials");
+    }
+
+    // The account is now locked: even the CORRECT password is rejected.
+    let locked = execute_graphql(&schema, login, Some(attempt("Str0ngPassphrase")), None).await;
+    assert!(
+        !locked.errors.is_empty(),
+        "locked account must reject logins"
+    );
+    assert!(
+        locked.errors[0]
+            .message
+            .contains("Too many failed attempts"),
+        "expected lockout message, got: {}",
+        locked.errors[0].message
+    );
+}
