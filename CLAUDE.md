@@ -131,7 +131,7 @@ POST /graphql                       GraphQL queries/mutations
 GET  /graphql                       GraphQL WebSocket subscriptions
 ```
 
-**Middleware stack**: JWT extraction -> TraceLayer -> TimeoutLayer (30s) -> CorsLayer (permissive)
+**Middleware stack**: JWT extraction -> TraceLayer -> TimeoutLayer (30s) -> CorsLayer (`ALLOWED_ORIGINS` allowlist, credentials on) -> security headers (nosniff, X-Frame-Options DENY, Referrer-Policy) -> metrics counter -> correlation id. Auth + GraphQL routes are rate-limited (tower-governor).
 
 ## Database
 

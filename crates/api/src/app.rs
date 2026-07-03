@@ -17,7 +17,9 @@ use axum::{
 use tower_governor::governor::GovernorConfigBuilder;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use tower_governor::GovernorLayer;
-use tower_http::{cors::CorsLayer, timeout::TimeoutLayer, trace::TraceLayer};
+use tower_http::{
+    cors::CorsLayer, set_header::SetResponseHeaderLayer, timeout::TimeoutLayer, trace::TraceLayer,
+};
 
 use crate::auth::Claims;
 use crate::error::AppError;
@@ -125,6 +127,20 @@ where
                 .allow_headers([CONTENT_TYPE, AUTHORIZATION])
                 .allow_credentials(true)
         })
+        // Security headers on every response. The API also serves HTML (OAuth
+        // login/register forms), so clickjacking protection is not theoretical.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            axum::http::header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            axum::http::header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            axum::http::header::REFERRER_POLICY,
+            HeaderValue::from_static("strict-origin-when-cross-origin"),
+        ))
         // Count requests/responses for /metrics.
         .layer(middleware::from_fn(track_metrics))
         // Outermost: assign a request id and a tracing span so every log line
