@@ -1,7 +1,9 @@
--- Payout templates
+-- Payout templates (club-scoped since club_id became NOT NULL; all owned by
+-- Poker One, the club the fixture manager account manages)
 
-INSERT INTO payout_templates (name, description, min_players, max_players, payout_structure)
-VALUES
+INSERT INTO payout_templates (club_id, name, description, min_players, max_players, payout_structure)
+SELECT '66666666-6666-6666-6666-666666666666', v.*
+FROM (VALUES
     ('Heads Up', 'Winner takes all for 2 players', 2, 2,
      '[{"position": 1, "percentage": 100.0}]'::jsonb),
 
@@ -28,4 +30,5 @@ VALUES
 
     ('76+ Players', 'Top 10 paid', 76, NULL,
      '[{"position": 1, "percentage": 28.0}, {"position": 2, "percentage": 16.0}, {"position": 3, "percentage": 11.5}, {"position": 4, "percentage": 9.5}, {"position": 5, "percentage": 7.5}, {"position": 6, "percentage": 6.5}, {"position": 7, "percentage": 5.5}, {"position": 8, "percentage": 4.5}, {"position": 9, "percentage": 3.0}, {"position": 10, "percentage": 2.5}, {"position": 11, "percentage": 2.0}, {"position": 12, "percentage": 1.5}, {"position": 13, "percentage": 1.0}, {"position": 14, "percentage": 0.7}, {"position": 15, "percentage": 0.3}]'::jsonb)
+) AS v(name, description, min_players, max_players, payout_structure)
 ON CONFLICT DO NOTHING;
