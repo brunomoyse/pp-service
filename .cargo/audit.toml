@@ -1,0 +1,7 @@
+[advisories]
+# RUSTSEC-2023-0071 (rsa: Marvin timing sidechannel, no fixed version).
+# The rsa crate is reachable via jsonwebtoken's rust_crypto backend (which
+# must be enabled whole — partial feature sets panic at runtime) and appears
+# in Cargo.lock via the never-compiled sqlx-mysql. All JWTs are HS256; the
+# vulnerable RSA decryption/signing paths are never exercised.
+ignore = ["RUSTSEC-2023-0071"]

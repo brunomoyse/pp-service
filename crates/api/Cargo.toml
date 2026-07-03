@@ -57,6 +57,10 @@ parking_lot = "0.12"
 
 # OAuth & Authentication
 oauth2 = "5.0"
+# The full rust_crypto backend is required (a partial feature set like
+# hmac+sha2 panics at runtime: no process-level CryptoProvider). It pulls in
+# the rsa crate (RUSTSEC-2023-0071, ignored in .cargo/audit.toml): we sign and
+# verify HS256 only, so the vulnerable RSA code paths are never exercised.
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 reqwest = { version = "0.13.4", features = ["json"] }
 base64 = "0.22"
