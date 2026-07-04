@@ -150,6 +150,7 @@ pub struct PlayerStatsResponse {
     pub last_7_days: PlayerStatistics,
     pub last_30_days: PlayerStatistics,
     pub last_year: PlayerStatistics,
+    pub all_time: PlayerStatistics,
 }
 
 #[derive(SimpleObject, Clone)]

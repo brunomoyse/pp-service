@@ -251,6 +251,10 @@ async fn test_my_tournament_statistics() {
                     totalItm
                     totalTournaments
                 }
+                allTime {
+                    totalItm
+                    totalTournaments
+                }
             }
         }
     "#;
@@ -270,6 +274,7 @@ async fn test_my_tournament_statistics() {
     assert!(stats["last7Days"].is_object());
     assert!(stats["last30Days"].is_object());
     assert!(stats["lastYear"].is_object());
+    assert!(stats["allTime"].is_object());
 }
 
 #[tokio::test]

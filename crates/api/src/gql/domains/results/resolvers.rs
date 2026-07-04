@@ -69,9 +69,14 @@ impl ResultQuery {
         let state = ctx.data::<AppState>()?;
 
         // Get statistics for different time periods
-        let stats_7_days = tournament_results::get_user_statistics(&state.db, user_id, 7).await?;
-        let stats_30_days = tournament_results::get_user_statistics(&state.db, user_id, 30).await?;
-        let stats_year = tournament_results::get_user_statistics(&state.db, user_id, 365).await?;
+        let stats_7_days =
+            tournament_results::get_user_statistics(&state.db, user_id, Some(7)).await?;
+        let stats_30_days =
+            tournament_results::get_user_statistics(&state.db, user_id, Some(30)).await?;
+        let stats_year =
+            tournament_results::get_user_statistics(&state.db, user_id, Some(365)).await?;
+        let stats_all_time =
+            tournament_results::get_user_statistics(&state.db, user_id, None).await?;
 
         // Convert to GraphQL types
         let convert_stats = |stats: UserStatistics| PlayerStatistics {
@@ -87,6 +92,7 @@ impl ResultQuery {
             last_7_days: convert_stats(stats_7_days),
             last_30_days: convert_stats(stats_30_days),
             last_year: convert_stats(stats_year),
+            all_time: convert_stats(stats_all_time),
         })
     }
 

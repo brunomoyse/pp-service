@@ -17,21 +17,21 @@ pub struct LeaderboardConfigQuery;
 
 #[Object]
 impl LeaderboardConfigQuery {
-    /// All leagues for a club. Managers of the club only.
+    /// All leagues for a club. Public: standings (`leaderboard(configId:)`) are
+    /// public, so the list powering the player app's league selector is too.
     async fn leaderboard_configs(
         &self,
         ctx: &Context<'_>,
         club_id: ID,
     ) -> Result<Vec<LeaderboardConfig>> {
         let club_uuid = Uuid::parse_str(club_id.as_str()).gql_err("Invalid club ID")?;
-        require_club_manager(ctx, club_uuid).await?;
 
         let state = ctx.data::<AppState>()?;
         let rows = leaderboard_configs::list_by_club(&state.db, club_uuid).await?;
         Ok(rows.into_iter().map(LeaderboardConfig::from).collect())
     }
 
-    /// A single league. Managers of its club only.
+    /// A single league. Public (same visibility as the list and the standings).
     async fn leaderboard_config(
         &self,
         ctx: &Context<'_>,
@@ -42,7 +42,6 @@ impl LeaderboardConfigQuery {
         let Some(row) = leaderboard_configs::get_by_id(&state.db, config_uuid).await? else {
             return Ok(None);
         };
-        require_club_manager(ctx, row.club_id).await?;
         Ok(Some(LeaderboardConfig::from(row)))
     }
 

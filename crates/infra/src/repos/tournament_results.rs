@@ -144,9 +144,11 @@ pub async fn list_user_recent<'e>(
 pub async fn get_user_statistics(
     pool: &PgPool,
     user_id: Uuid,
-    days_back: i32,
+    days_back: Option<i32>,
 ) -> Result<UserStatistics> {
-    let cutoff_date = chrono::Utc::now() - chrono::Duration::days(days_back as i64);
+    // `None` = all-time (no cutoff); queries treat a NULL cutoff as "no filter".
+    let cutoff_date =
+        days_back.map(|days| chrono::Utc::now() - chrono::Duration::days(days as i64));
 
     // Get ITM count and total prize money
     let itm_row = sqlx::query(
@@ -158,7 +160,7 @@ pub async fn get_user_statistics(
         JOIN tournaments t ON tr.tournament_id = t.id
         WHERE tr.user_id = $1
             AND tr.prize_cents > 0
-            AND tr.created_at >= $2
+            AND ($2::timestamptz IS NULL OR tr.created_at >= $2)
             AND t.club_id NOT IN (SELECT id FROM clubs WHERE plan = 'free')
         "#,
     )
@@ -176,7 +178,7 @@ pub async fn get_user_statistics(
         FROM tournament_registrations reg
         JOIN tournaments t ON reg.tournament_id = t.id
         WHERE reg.user_id = $1
-            AND reg.created_at >= $2
+            AND ($2::timestamptz IS NULL OR reg.created_at >= $2)
             AND t.club_id NOT IN (SELECT id FROM clubs WHERE plan = 'free')
         "#,
     )
