@@ -1,10 +1,11 @@
-use async_graphql::{Context, Object, Result};
+use async_graphql::{Context, Object, Result, ID};
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use super::service;
 use super::types::{
-    ClubPlan, CreateClubTableInput, CreateRedemptionCodeInput, RedemptionCode, UpdateClubTableInput,
+    ClubManager, ClubPlan, CreateClubTableInput, CreateRedemptionCodeInput, InviteClubManagerInput,
+    InviteClubManagerResponse, RedemptionCode, UpdateClubTableInput,
 };
 use crate::auth::permissions::{
     is_free_plan, require_admin, require_club_manager, viewer_is_admin,
@@ -13,13 +14,27 @@ use crate::gql::error::ResultExt;
 use crate::gql::types::{Club, ClubTable, CompanyLookup, OnboardClubInput, OnboardClubPayload};
 use crate::services::vies;
 use crate::state::AppState;
-use infra::repos::{club_tables, clubs, redemption_codes, table_seat_assignments, tournaments};
+use infra::repos::{
+    club_managers, club_tables, clubs, redemption_codes, table_seat_assignments, tournaments, users,
+};
 
 #[derive(Default)]
 pub struct ClubQuery;
 
 #[Object]
 impl ClubQuery {
+    /// The club's team: every active manager assignment. Managers of the club only.
+    async fn club_managers(&self, ctx: &Context<'_>, club_id: ID) -> Result<Vec<ClubManager>> {
+        let club_uuid = Uuid::parse_str(club_id.as_str()).gql_err("Invalid club ID")?;
+        require_club_manager(ctx, club_uuid).await?;
+
+        let state = ctx.data::<AppState>()?;
+        let rows = club_managers::list_by_club_with_users(&state.db, club_uuid)
+            .await
+            .gql_err("Failed to load club managers")?;
+        Ok(rows.into_iter().map(ClubManager::from).collect())
+    }
+
     async fn clubs(&self, ctx: &Context<'_>) -> Result<Vec<Club>> {
         let state = ctx.data::<AppState>()?;
         let rows = clubs::list(&state.db).await?;
@@ -146,6 +161,148 @@ pub struct ClubMutation;
 
 #[Object]
 impl ClubMutation {
+    /// Invite a co-manager by email. Managers of the club only. Creates the
+    /// account (role manager, no password) if the email is unknown and emails a
+    /// 72h set-password link; existing players are promoted to manager and get
+    /// a plain notification email.
+    async fn invite_club_manager(
+        &self,
+        ctx: &Context<'_>,
+        input: InviteClubManagerInput,
+    ) -> Result<InviteClubManagerResponse> {
+        use chrono::{Duration, Utc};
+        use rand::distr::Alphanumeric;
+        use rand::RngExt;
+
+        let club_uuid = Uuid::parse_str(input.club_id.as_str()).gql_err("Invalid club ID")?;
+        let inviter = require_club_manager(ctx, club_uuid).await?;
+        let state = ctx.data::<AppState>()?;
+
+        let email = input.email.trim().to_lowercase();
+        if !email.contains('@') || email.len() < 3 {
+            return Err(async_graphql::Error::new("Invalid email address"));
+        }
+
+        let club = clubs::get_by_id(&state.db, club_uuid)
+            .await
+            .gql_err("Database operation failed")?
+            .ok_or_else(|| async_graphql::Error::new("Club not found"))?;
+
+        // Find or create the invitee's account.
+        let existing = users::get_by_email(&state.db, &email)
+            .await
+            .gql_err("Database operation failed")?;
+        let (user, created_account) = match existing {
+            Some(user) => {
+                users::promote_player_to_manager(&state.db, user.id)
+                    .await
+                    .gql_err("Database operation failed")?;
+                (user, false)
+            }
+            None => {
+                // users.first_name is NOT NULL — fall back to the email local part.
+                let fallback = email.split('@').next().unwrap_or("Manager").to_string();
+                let first_name = input
+                    .first_name
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(&fallback);
+                let user = users::create_invited_manager(
+                    &state.db,
+                    &email,
+                    first_name,
+                    input
+                        .last_name
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty()),
+                )
+                .await
+                .gql_err("Failed to create the invited account")?;
+                (user, true)
+            }
+        };
+
+        club_managers::create_or_reactivate(&state.db, club_uuid, user.id, inviter_uuid(&inviter)?)
+            .await
+            .gql_err("Failed to assign club manager")?;
+
+        // New accounts get a 72h set-password token (same table/flow as resets).
+        let mut set_password_token = None;
+        if created_account {
+            let raw_token: String = rand::rng()
+                .sample_iter(&Alphanumeric)
+                .take(64)
+                .map(char::from)
+                .collect();
+            let token_hash = crate::auth::refresh::hash_token(&raw_token);
+            infra::repos::password_reset_tokens::create(
+                &state.db,
+                &token_hash,
+                user.id,
+                Utc::now() + Duration::hours(72),
+            )
+            .await
+            .gql_err("Database operation failed")?;
+            set_password_token = Some(raw_token);
+        }
+
+        let mut email_sent = false;
+        if let Some(email_service) = state.email_service() {
+            let locale = crate::services::email_service::Locale::from_str_lossy(
+                input.locale.as_deref().unwrap_or(&user.locale),
+            );
+            let inviter_name = inviter.first_name.clone();
+            match email_service
+                .send_manager_invite(
+                    &email,
+                    &user.first_name,
+                    &inviter_name,
+                    &club.name,
+                    set_password_token.as_deref(),
+                    locale,
+                )
+                .await
+            {
+                Ok(()) => email_sent = true,
+                Err(e) => tracing::error!("Failed to send manager invite email: {}", e),
+            }
+        }
+
+        Ok(InviteClubManagerResponse {
+            created_account,
+            email_sent,
+        })
+    }
+
+    /// Deactivate a manager assignment. Managers of the club only; the last
+    /// active manager of a club cannot be removed.
+    async fn revoke_club_manager(&self, ctx: &Context<'_>, id: ID) -> Result<bool> {
+        let assignment_uuid = Uuid::parse_str(id.as_str()).gql_err("Invalid assignment ID")?;
+        let state = ctx.data::<AppState>()?;
+
+        let row = club_managers::get_by_id(&state.db, assignment_uuid)
+            .await
+            .gql_err("Database operation failed")?
+            .ok_or_else(|| async_graphql::Error::new("Assignment not found"))?;
+        require_club_manager(ctx, row.club_id).await?;
+
+        let active = club_managers::count_active_by_club(&state.db, row.club_id)
+            .await
+            .gql_err("Database operation failed")?;
+        if row.is_active && active <= 1 {
+            return Err(async_graphql::Error::new(
+                "Cannot remove the last manager of a club",
+            ));
+        }
+
+        club_managers::deactivate(&state.db, assignment_uuid)
+            .await
+            .gql_err("Database operation failed")?;
+        Ok(true)
+    }
+
     /// Self-serve onboarding: create the owner's account + their club in one
     /// transaction and return a JWT so the client logs straight in.
     /// Unauthenticated; this is the public signup entry point.
@@ -456,4 +613,8 @@ fn normalize_code(raw: &str) -> String {
         .filter(|c| c.is_ascii_alphanumeric())
         .flat_map(|c| c.to_uppercase())
         .collect()
+}
+
+fn inviter_uuid(user: &crate::gql::types::User) -> Result<Uuid> {
+    Uuid::parse_str(user.id.as_str()).gql_err("Invalid user ID")
 }

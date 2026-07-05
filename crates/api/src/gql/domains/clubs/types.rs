@@ -218,3 +218,45 @@ pub struct CreateRedemptionCodeInput {
     pub expires_at: Option<DateTime<Utc>>,
     pub note: Option<String>,
 }
+
+/// An active manager assignment on a club, joined with the manager's account.
+#[derive(SimpleObject)]
+pub struct ClubManager {
+    pub id: ID,
+    pub user_id: ID,
+    pub email: String,
+    pub first_name: String,
+    pub last_name: Option<String>,
+    pub assigned_at: DateTime<Utc>,
+}
+
+impl From<infra::repos::club_managers::ClubManagerWithUser> for ClubManager {
+    fn from(r: infra::repos::club_managers::ClubManagerWithUser) -> Self {
+        Self {
+            id: r.id.into(),
+            user_id: r.user_id.into(),
+            email: r.email,
+            first_name: r.first_name,
+            last_name: r.last_name,
+            assigned_at: r.assigned_at,
+        }
+    }
+}
+
+#[derive(InputObject)]
+pub struct InviteClubManagerInput {
+    pub club_id: ID,
+    pub email: String,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    /// Locale for the invitation email; defaults to the inviter's club locale ("en").
+    pub locale: Option<String>,
+}
+
+#[derive(SimpleObject)]
+pub struct InviteClubManagerResponse {
+    /// Whether a brand-new account was created (vs. an existing user assigned).
+    pub created_account: bool,
+    /// False when the email service is not configured; the assignment still succeeded.
+    pub email_sent: bool,
+}

@@ -95,6 +95,15 @@ struct I18n {
     soon_heading: &'static str,
     soon_body_tpl: &'static str,
     soon_ready: &'static str,
+
+    // Club manager invitation
+    invite_subject_tpl: &'static str,
+    invite_heading: &'static str,
+    invite_body_tpl: &'static str,
+    invite_new_account: &'static str,
+    invite_cta_new: &'static str,
+    invite_cta_existing: &'static str,
+    invite_disclaimer_new: &'static str,
 }
 
 fn i18n(locale: Locale) -> &'static I18n {
@@ -128,6 +137,14 @@ static I18N_EN: I18n = I18n {
     soon_heading: "Starting Soon",
     soon_body_tpl: "is starting in about 15 minutes.",
     soon_ready: "Make sure you&rsquo;re ready to take your seat.",
+
+    invite_subject_tpl: "You\u{2019}ve been invited to manage",
+    invite_heading: "Team Invitation",
+    invite_body_tpl: "invited you to help manage",
+    invite_new_account: "An account has been created for you. Choose a password to get started:",
+    invite_cta_new: "Set My Password",
+    invite_cta_existing: "Open PocketPair",
+    invite_disclaimer_new: "This link expires in 72 hours. If you weren\u{2019}t expecting this invitation, you can safely ignore this email.",
 };
 
 static I18N_FR: I18n = I18n {
@@ -153,6 +170,14 @@ static I18N_FR: I18n = I18n {
     soon_heading: "D\u{e9}but Imminent",
     soon_body_tpl: "commence dans environ 15 minutes.",
     soon_ready: "Assurez-vous d&rsquo;\u{ea}tre pr\u{ea}t\u{a0}!",
+
+    invite_subject_tpl: "Vous \u{ea}tes invit\u{e9} \u{e0} g\u{e9}rer",
+    invite_heading: "Invitation d\u{2019}\u{e9}quipe",
+    invite_body_tpl: "vous invite \u{e0} aider \u{e0} g\u{e9}rer",
+    invite_new_account: "Un compte a \u{e9}t\u{e9} cr\u{e9}\u{e9} pour vous. Choisissez un mot de passe pour commencer :",
+    invite_cta_new: "D\u{e9}finir mon mot de passe",
+    invite_cta_existing: "Ouvrir PocketPair",
+    invite_disclaimer_new: "Ce lien expire dans 72 heures. Si vous n\u{2019}attendiez pas cette invitation, vous pouvez ignorer cet e-mail.",
 };
 
 static I18N_NL: I18n = I18n {
@@ -178,6 +203,14 @@ static I18N_NL: I18n = I18n {
     soon_heading: "Begint Binnenkort",
     soon_body_tpl: "begint over ongeveer 15 minuten.",
     soon_ready: "Zorg dat je klaar bent!",
+
+    invite_subject_tpl: "Je bent uitgenodigd als beheerder van",
+    invite_heading: "Teamuitnodiging",
+    invite_body_tpl: "nodigt je uit om mee te beheren:",
+    invite_new_account: "Er is een account voor je aangemaakt. Kies een wachtwoord om te beginnen:",
+    invite_cta_new: "Wachtwoord instellen",
+    invite_cta_existing: "PocketPair openen",
+    invite_disclaimer_new: "Deze link verloopt over 72 uur. Verwachtte je deze uitnodiging niet, dan kun je deze e-mail negeren.",
 };
 
 // ── Shared HTML layout ──────────────────────────────────────────────
@@ -399,6 +432,70 @@ impl EmailService {
         );
 
         self.send_email(to_email, to_name, t.pw_subject, &html, &text)
+            .await
+    }
+
+    /// Invitation to co-manage a club. `set_password_token` is Some for freshly
+    /// created accounts (72h set-password link); None sends a plain
+    /// notification pointing at the app for people who already have an account.
+    pub async fn send_manager_invite(
+        &self,
+        to_email: &str,
+        to_name: &str,
+        inviter_name: &str,
+        club_name: &str,
+        set_password_token: Option<&str>,
+        locale: Locale,
+    ) -> Result<(), EmailError> {
+        let t = i18n(locale);
+        let subject = format!("{} {}", t.invite_subject_tpl, club_name);
+        let link = match set_password_token {
+            Some(token) => format!(
+                "{}/auth/reset-password?token={}",
+                self.config.frontend_base_url, token
+            ),
+            None => self.config.frontend_base_url.to_string(),
+        };
+        let cta = if set_password_token.is_some() {
+            t.invite_cta_new
+        } else {
+            t.invite_cta_existing
+        };
+        let safe_name = encode_text(to_name);
+        let safe_inviter = encode_text(inviter_name);
+        let safe_club = encode_text(club_name);
+        let safe_link = encode_text(&link);
+
+        let mut body_html = format!(
+            "{}{}",
+            paragraph(&format!("{} {},", t.hi, safe_name)),
+            paragraph(&format!(
+                "<strong>{}</strong> {} <strong>{}</strong>.",
+                safe_inviter, t.invite_body_tpl, safe_club
+            )),
+        );
+        if set_password_token.is_some() {
+            body_html.push_str(&paragraph(t.invite_new_account));
+        }
+        body_html.push_str(&cta_button(&safe_link, cta));
+        if set_password_token.is_some() {
+            body_html.push_str(&muted_paragraph(t.invite_disclaimer_new));
+        }
+
+        let html = wrap_in_layout(
+            t.invite_heading,
+            "&#129309;",
+            &body_html,
+            &self.logo_url(),
+            t.footer_tagline,
+        );
+
+        let text = format!(
+            "{} {},\n\n{} {} {}.\n\n{}: {}\n\n-- PocketPair",
+            t.hi, to_name, inviter_name, t.invite_body_tpl, club_name, cta, link
+        );
+
+        self.send_email(to_email, to_name, &subject, &html, &text)
             .await
     }
 

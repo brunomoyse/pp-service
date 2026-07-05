@@ -264,3 +264,49 @@ pub async fn find_inactive_player_ids<'e>(
 
     Ok(ids)
 }
+
+pub async fn get_by_email<'e>(
+    executor: impl PgExecutor<'e>,
+    email: &str,
+) -> Result<Option<UserRow>> {
+    sqlx::query_as::<_, UserRow>(
+        "SELECT id, email, username, first_name, last_name, phone, is_active, role, locale, created_at, updated_at FROM users WHERE email = $1",
+    )
+    .bind(email)
+    .fetch_optional(executor)
+    .await
+}
+
+/// Create an account for an invited club manager. No password is set — the
+/// invitee chooses one via the emailed set-password (reset) link.
+pub async fn create_invited_manager<'e>(
+    executor: impl PgExecutor<'e>,
+    email: &str,
+    first_name: &str,
+    last_name: Option<&str>,
+) -> Result<UserRow> {
+    sqlx::query_as::<_, UserRow>(
+        "
+        INSERT INTO users (email, first_name, last_name, role, is_active)
+        VALUES ($1, $2, $3, 'manager', true)
+        RETURNING id, email, username, first_name, last_name, phone, is_active, role, locale, created_at, updated_at
+        ",
+    )
+    .bind(email)
+    .bind(first_name)
+    .bind(last_name)
+    .fetch_one(executor)
+    .await
+}
+
+/// Promote a player to manager (invited as club staff). Admins are untouched.
+pub async fn promote_player_to_manager<'e>(
+    executor: impl PgExecutor<'e>,
+    user_id: Uuid,
+) -> Result<()> {
+    sqlx::query("UPDATE users SET role = 'manager' WHERE id = $1 AND role = 'player'")
+        .bind(user_id)
+        .execute(executor)
+        .await?;
+    Ok(())
+}
