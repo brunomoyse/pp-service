@@ -33,7 +33,7 @@ INSERT INTO users (id, email, username, first_name, last_name, role, locale, pas
 
 -- === Clubs (insert re-fires the default template triggers) ===
 INSERT INTO clubs (id, name, city, country, address, postal_code, plan) VALUES
-('4114f430-9557-5c65-b29c-038a84013882', 'Liège Poker Club', 'Liège', 'BE', 'Rue de la Casquette 12', '4000', 'club'),
+('4114f430-9557-5c65-b29c-038a84013882', 'Soumagne Poker Club', 'Soumagne', 'BE', 'Rue du Centre 12', '4630', 'club'),
 ('5ec5689d-a433-5706-a9ae-31c85c144b23', 'Antwerp Card Room', 'Antwerpen', 'BE', 'Lange Koepoortstraat 47', '2000', 'club');
 INSERT INTO club_managers (club_id, user_id) VALUES
 ('4114f430-9557-5c65-b29c-038a84013882', 'f647df8a-5e87-5d63-af45-659fe8a0c16f'), ('5ec5689d-a433-5706-a9ae-31c85c144b23', 'f647df8a-5e87-5d63-af45-659fe8a0c16f');

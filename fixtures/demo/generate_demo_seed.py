@@ -104,7 +104,7 @@ emit(
 emit("\n-- === Clubs (insert re-fires the default template triggers) ===")
 emit(
     "INSERT INTO clubs (id, name, city, country, address, postal_code, plan) VALUES\n"
-    f"({q(CLUB_LIEGE)}, 'Liège Poker Club', 'Liège', 'BE', 'Rue de la Casquette 12', '4000', 'club'),\n"
+    f"({q(CLUB_LIEGE)}, 'Soumagne Poker Club', 'Soumagne', 'BE', 'Rue du Centre 12', '4630', 'club'),\n"
     f"({q(CLUB_ANTWERP)}, 'Antwerp Card Room', 'Antwerpen', 'BE', 'Lange Koepoortstraat 47', '2000', 'club');"  # 'free' clubs are hidden from player discovery
 )
 emit(
