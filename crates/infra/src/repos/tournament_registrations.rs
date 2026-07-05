@@ -161,6 +161,21 @@ pub async fn count_by_tournament<'e>(
     Ok(result)
 }
 
+/// Players actually taking (or having taken) part — excludes cancellations and no-shows.
+pub async fn count_participants_by_tournament<'e>(
+    executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
+) -> Result<i64> {
+    let result = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM tournament_registrations WHERE tournament_id = $1 AND status NOT IN ('cancelled', 'no_show')",
+    )
+    .bind(tournament_id)
+    .fetch_one(executor)
+    .await?;
+
+    Ok(result)
+}
+
 pub async fn list_user_current<'e>(
     executor: impl PgExecutor<'e>,
     user_id: Uuid,

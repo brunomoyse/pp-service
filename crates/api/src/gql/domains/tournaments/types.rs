@@ -361,6 +361,24 @@ impl Tournament {
         super::clock::load_tournament_clock(&state.db, tournament_id).await
     }
 
+    /// Number of players taking part (excludes cancellations and no-shows).
+    async fn registration_count(&self, ctx: &Context<'_>) -> async_graphql::Result<i64> {
+        use crate::state::AppState;
+
+        let state = ctx.data::<AppState>()?;
+
+        let tournament_id =
+            uuid::Uuid::parse_str(self.id.as_str()).gql_err("Invalid tournament ID")?;
+
+        Ok(
+            infra::repos::tournament_registrations::count_participants_by_tournament(
+                &state.db,
+                tournament_id,
+            )
+            .await?,
+        )
+    }
+
     async fn registrations(
         &self,
         ctx: &Context<'_>,
