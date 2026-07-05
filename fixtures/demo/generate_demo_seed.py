@@ -183,18 +183,18 @@ def sun(weeks_back: int) -> datetime:
 
 tournaments: list[T] = []
 
-# Finished — Friday Night Deepstack #18..#24 (7 weeks of history)
-for i, wb in enumerate(range(7, 0, -1)):
+# Finished — Friday Night Deepstack #14..#24 (11 weeks of history, ~2.5 months)
+for i, wb in enumerate(range(11, 0, -1)):
     tournaments.append(T(
-        f"deepstack{18 + i}", CLUB_LIEGE, f"Friday Night Deepstack #{18 + i}",
+        f"deepstack{14 + i}", CLUB_LIEGE, f"Friday Night Deepstack #{14 + i}",
         "Weekly deepstack — 25k stack, 20-minute levels, late reg until level 6.",
         fri(wb), 5000, 500, 25000, "finished",
     ))
 
-# Finished — Sunday Bounty #5..#8 (every other Sunday)
-for i, wb in enumerate((7, 5, 3, 1)):
+# Finished — Sunday Bounty #3..#8 (every other Sunday, spanning ~11 weeks)
+for i, wb in enumerate((11, 9, 7, 5, 3, 1)):
     tournaments.append(T(
-        f"bounty{5 + i}", CLUB_LIEGE, f"Sunday Bounty #{5 + i}",
+        f"bounty{3 + i}", CLUB_LIEGE, f"Sunday Bounty #{3 + i}",
         "€10 fixed bounty per knockout. Rebuys allowed for the first four levels.",
         sun(wb), 4000, 500, 20000, "finished", bounty=1000,
     ))
@@ -236,14 +236,16 @@ upcoming = [
 tournaments.extend(upcoming)
 
 # --------------------------------------------------- fields & reviewer script
-# Reviewer's arc: 6 events played, 3 cashes incl. one win; ITM 50%.
+# Reviewer's arc: 6 events over ~9 weeks (3 within the last 30 days, 3 older) so the
+# 30-day and 1-year stat views clearly differ. 3 cashes incl. one win; ITM 50%.
+# The win sits ~5 weeks back, so it shows up in the 1-year view but not the 30-day one.
 REVIEWER_SCRIPT = {  # tournament key -> final position
-    "deepstack21": 12,
-    "deepstack22": 3,
-    "bounty7": 1,
-    "deepstack23": 8,
-    "antwerp_freeze": 5,
-    "deepstack24": 2,
+    "deepstack16": 12,    # ~9 weeks back
+    "deepstack18": 9,     # ~7 weeks back
+    "deepstack20": 1,     # ~5 weeks back, the win (outside the 30-day window)
+    "deepstack23": 3,     # ~2 weeks back, cash
+    "antwerp_freeze": 8,  # ~13 days back
+    "deepstack24": 2,     # ~1 week back, cash
 }
 
 player_keys = [k for k, *_ in PLAYERS]
