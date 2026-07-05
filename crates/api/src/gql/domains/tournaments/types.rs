@@ -352,36 +352,13 @@ impl Tournament {
 
     async fn clock(&self, ctx: &Context<'_>) -> async_graphql::Result<Option<TournamentClock>> {
         use crate::state::AppState;
-        use infra::repos::tournament_clock::ClockStatus as InfraClockStatus;
-        use std::str::FromStr;
 
         let state = ctx.data::<AppState>()?;
 
         let tournament_id =
             uuid::Uuid::parse_str(self.id.as_str()).gql_err("Invalid tournament ID")?;
 
-        let clock = infra::repos::tournament_clock::get_clock(&state.db, tournament_id).await?;
-
-        Ok(clock.map(|clock_row| TournamentClock {
-            id: clock_row.id.into(),
-            tournament_id: clock_row.tournament_id.into(),
-            status: InfraClockStatus::from_str(&clock_row.clock_status)
-                .unwrap_or(InfraClockStatus::Stopped)
-                .into(),
-            current_level: clock_row.current_level,
-            time_remaining_seconds: None, // This would need calculation
-            level_started_at: clock_row.level_started_at,
-            level_end_time: clock_row.level_end_time,
-            total_pause_duration_seconds: clock_row.total_pause_duration.microseconds / 1_000_000,
-            auto_advance: clock_row.auto_advance,
-            current_structure: None, // These would require additional queries
-            next_structure: None,
-            small_blind: None,
-            big_blind: None,
-            ante: None,
-            is_break: None,
-            level_duration_minutes: None,
-        }))
+        super::clock::load_tournament_clock(&state.db, tournament_id).await
     }
 
     async fn registrations(

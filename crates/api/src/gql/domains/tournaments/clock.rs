@@ -140,6 +140,67 @@ fn create_tournament_clock(
     }
 }
 
+/// Load the full clock state for a tournament: row + current/next structure +
+/// computed time remaining. Shared by the `tournamentClock` query and the
+/// nested `Tournament.clock` field so both return identical, complete data
+/// (the nested field used to return `None` for the computed parts, leaving
+/// player-app clocks stuck at 00:00 until the first subscription push).
+pub async fn load_tournament_clock(
+    db: &sqlx::PgPool,
+    tournament_id: Uuid,
+) -> Result<Option<TournamentClock>> {
+    let Some(clock_row) = tournament_clock::get_clock(db, tournament_id).await? else {
+        return Ok(None);
+    };
+
+    let structure = tournament_clock::get_current_structure(db, tournament_id)
+        .await
+        .ok();
+    let next_structure = get_next_structure(db, tournament_id, clock_row.current_level).await;
+
+    // Calculate time remaining
+    let time_remaining = if let Ok(status) = InfraClockStatus::from_str(&clock_row.clock_status) {
+        match status {
+            InfraClockStatus::Running => clock_row.level_end_time.map(|end_time| {
+                let remaining = end_time - Utc::now();
+                remaining.num_seconds().max(0)
+            }),
+            InfraClockStatus::Paused => {
+                if let (Some(end_time), Some(pause_start)) =
+                    (clock_row.level_end_time, clock_row.pause_started_at)
+                {
+                    let remaining = end_time - pause_start;
+                    Some(remaining.num_seconds().max(0))
+                } else {
+                    None
+                }
+            }
+            InfraClockStatus::Stopped => {
+                // Show full duration of current level when stopped
+                structure.as_ref().map(|s| (s.duration_minutes as i64) * 60)
+            }
+        }
+    } else {
+        None
+    };
+
+    // Convert PgInterval to seconds
+    let total_pause_seconds = clock_row.total_pause_duration.microseconds / 1_000_000;
+    let status = InfraClockStatus::from_str(&clock_row.clock_status)
+        .ok()
+        .unwrap_or(InfraClockStatus::Stopped)
+        .into();
+
+    Ok(Some(create_tournament_clock(
+        &clock_row,
+        structure.as_ref(),
+        next_structure,
+        time_remaining,
+        total_pause_seconds,
+        status,
+    )))
+}
+
 #[derive(Default)]
 pub struct TournamentClockQuery;
 
@@ -154,84 +215,7 @@ impl TournamentClockQuery {
         let state = ctx.data::<AppState>()?;
         let tournament_id: Uuid = tournament_id.parse()?;
 
-        if let Some(clock_row) = tournament_clock::get_clock(&state.db, tournament_id).await? {
-            let structure = tournament_clock::get_current_structure(&state.db, tournament_id)
-                .await
-                .ok();
-            let next_structure =
-                get_next_structure(&state.db, tournament_id, clock_row.current_level).await;
-
-            // Calculate time remaining
-            let time_remaining = if let Ok(status) =
-                InfraClockStatus::from_str(&clock_row.clock_status)
-            {
-                match status {
-                    InfraClockStatus::Running => {
-                        if let Some(end_time) = clock_row.level_end_time {
-                            let remaining = end_time - Utc::now();
-                            Some(remaining.num_seconds().max(0))
-                        } else {
-                            None
-                        }
-                    }
-                    InfraClockStatus::Paused => {
-                        if let (Some(end_time), Some(pause_start)) =
-                            (clock_row.level_end_time, clock_row.pause_started_at)
-                        {
-                            let remaining = end_time - pause_start;
-                            Some(remaining.num_seconds().max(0))
-                        } else {
-                            None
-                        }
-                    }
-                    InfraClockStatus::Stopped => {
-                        // Show full duration of current level when stopped
-                        // Use already fetched structure or fetch it
-                        if let Some(s) = &structure {
-                            Some((s.duration_minutes as i64) * 60)
-                        } else if let Ok(current_structure) =
-                            tournament_clock::get_current_structure(&state.db, tournament_id).await
-                        {
-                            Some((current_structure.duration_minutes as i64) * 60)
-                        } else {
-                            None
-                        }
-                    }
-                }
-            } else {
-                None
-            };
-
-            // Convert PgInterval to seconds
-            let total_pause_seconds = clock_row.total_pause_duration.microseconds / 1_000_000;
-
-            Ok(Some(TournamentClock {
-                id: clock_row.id.into(),
-                tournament_id: clock_row.tournament_id.into(),
-                status: InfraClockStatus::from_str(&clock_row.clock_status)
-                    .ok()
-                    .unwrap_or(InfraClockStatus::Stopped)
-                    .into(),
-                current_level: clock_row.current_level,
-                time_remaining_seconds: time_remaining,
-                level_started_at: clock_row.level_started_at,
-                level_end_time: clock_row.level_end_time,
-                total_pause_duration_seconds: total_pause_seconds,
-                auto_advance: clock_row.auto_advance,
-                current_structure: structure
-                    .as_ref()
-                    .map(|s| TournamentStructure::from(s.clone())),
-                next_structure,
-                // Additional fields from ClockUpdate
-                small_blind: structure.as_ref().map(|s| s.small_blind),
-                big_blind: structure.as_ref().map(|s| s.big_blind),
-                ante: structure.as_ref().map(|s| s.ante),
-                is_break: structure.as_ref().map(|s| s.is_break),
-                level_duration_minutes: structure.as_ref().map(|s| s.duration_minutes),
-            }))
-        } else {
-            Ok(None)
-        }
+        load_tournament_clock(&state.db, tournament_id).await
     }
 
     /// Get tournament structure levels
