@@ -133,6 +133,17 @@ pub async fn enter_tournament_results(
         results.push(result_row);
     }
 
+    // Entering final results ends the tournament. Do it inside the same
+    // transaction so the results, the (optional) deal, and the FINISHED
+    // transition commit atomically — a manager can never end up with recorded
+    // results on a tournament still stuck at FINAL_TABLE.
+    tournaments::update_live_status(
+        &mut *tx,
+        params.tournament_id,
+        tournaments::TournamentLiveStatus::Finished,
+    )
+    .await?;
+
     // Evaluate achievements for each player
     let mut newly_unlocked_achievements: Vec<(
         Uuid,
@@ -189,28 +200,47 @@ async fn calculate_payouts(
     if let Some(deal_input) = deal {
         match deal_input.deal_type {
             DealType::EvenSplit | DealType::Icm => {
-                let affected_total = if let Some(template_id) = template_id {
-                    calculate_template_total(
-                        db,
-                        template_id,
-                        &deal_input.affected_positions,
-                        total_prize_pool,
-                    )
-                    .await?
+                // Real chip-based ICM when requested and the inputs allow it
+                // (template for the place prizes + a positive stack per player).
+                // Otherwise fall through to an even split — including as the ICM
+                // fallback, so a deal always produces a valid payout.
+                let icm = if matches!(deal_input.deal_type, DealType::Icm) {
+                    calculate_icm_payouts(db, template_id, positions, deal_input, total_prize_pool)
+                        .await?
                 } else {
-                    total_prize_pool
+                    None
                 };
 
-                let per_player = affected_total / deal_input.affected_positions.len() as i32;
-
-                for position in positions {
-                    if deal_input
-                        .affected_positions
-                        .contains(&position.final_position)
-                    {
-                        let index = (position.final_position - 1) as usize;
+                if let Some(icm_payouts) = icm {
+                    for (index, amount) in icm_payouts {
                         if index < payouts.len() {
-                            payouts[index] = per_player;
+                            payouts[index] = amount;
+                        }
+                    }
+                } else {
+                    let affected_total = if let Some(template_id) = template_id {
+                        calculate_template_total(
+                            db,
+                            template_id,
+                            &deal_input.affected_positions,
+                            total_prize_pool,
+                        )
+                        .await?
+                    } else {
+                        total_prize_pool
+                    };
+
+                    let per_player = affected_total / deal_input.affected_positions.len() as i32;
+
+                    for position in positions {
+                        if deal_input
+                            .affected_positions
+                            .contains(&position.final_position)
+                        {
+                            let index = (position.final_position - 1) as usize;
+                            if index < payouts.len() {
+                                payouts[index] = per_player;
+                            }
                         }
                     }
                 }
@@ -321,6 +351,170 @@ async fn calculate_template_total(
     } else {
         Ok(total_prize_pool)
     }
+}
+
+/// Compute an ICM (Independent Chip Model) split for a deal, returning
+/// `(payout_index, amount_cents)` for each player covered by the deal.
+///
+/// The money at stake is the sum of the template prizes for the affected
+/// finishing places; ICM shares it by each player's chip stack (their
+/// probability of finishing in each remaining place — Malmuth-Harville).
+/// Payouts are rounded to whole euros (largest-remainder over the whole-euro
+/// pool) so players never receive eurocents; any sub-euro remainder from a
+/// pool that isn't a round number of euros lands on the chip leader. The
+/// returned amounts always sum back to the affected total so the caller's
+/// reconciliation guard holds.
+///
+/// Returns `None` (→ caller falls back to an even split) when a template or
+/// chip stacks are missing, a stack is non-positive, or the affected prizes
+/// are zero — i.e. whenever ICM is undefined.
+async fn calculate_icm_payouts(
+    db: &sqlx::PgPool,
+    template_id: Option<&ID>,
+    positions: &[PlayerPositionInput],
+    deal_input: &PlayerDealInput,
+    total_prize_pool: i32,
+) -> Result<Option<Vec<(usize, i32)>>, Box<dyn std::error::Error + Send + Sync>> {
+    let Some(template_id) = template_id else {
+        return Ok(None);
+    };
+    let Some(chip_counts) = deal_input.chip_counts.as_ref() else {
+        return Ok(None);
+    };
+    if chip_counts.is_empty() {
+        return Ok(None);
+    }
+
+    let template_id_uuid =
+        Uuid::parse_str(template_id.as_str()).map_err(|_| "Invalid template ID")?;
+    let Some(template) = payout_templates::get_by_id(db, template_id_uuid).await? else {
+        return Ok(None);
+    };
+    let payout_structure = parse_payout_structure(&template.payout_structure)?;
+
+    let chips_by_user: std::collections::HashMap<&str, i32> = chip_counts
+        .iter()
+        .map(|c| (c.user_id.as_str(), c.chips))
+        .collect();
+
+    // Players in the deal, paired with their payout slot index and stack.
+    let mut players: Vec<(usize, f64)> = Vec::new();
+    for position in positions {
+        if deal_input
+            .affected_positions
+            .contains(&position.final_position)
+        {
+            let index = (position.final_position - 1) as usize;
+            let chips = *chips_by_user
+                .get(position.user_id.as_str())
+                .unwrap_or(&0);
+            players.push((index, chips as f64));
+        }
+    }
+    if players.is_empty() || players.iter().any(|(_, stack)| *stack <= 0.0) {
+        return Ok(None);
+    }
+
+    // Prize for each affected finishing place, largest first — ICM assigns the
+    // top remaining prize to whoever "wins" at each level of the recursion.
+    let mut place_prizes: Vec<i32> = deal_input
+        .affected_positions
+        .iter()
+        .map(|p| {
+            get_position_percentage(&payout_structure, *p)
+                .map(|pct| (total_prize_pool as f64 * pct / 100.0).round() as i32)
+                .unwrap_or(0)
+        })
+        .collect();
+    place_prizes.sort_unstable_by(|a, b| b.cmp(a));
+
+    let affected_total: i32 = place_prizes.iter().sum();
+    if affected_total <= 0 {
+        return Ok(None);
+    }
+
+    let stacks: Vec<f64> = players.iter().map(|(_, stack)| *stack).collect();
+    let prizes: Vec<f64> = place_prizes.iter().map(|&p| p as f64).collect();
+    let equities = icm_equity(&stacks, &prizes);
+
+    // Round to whole euros while conserving the exact affected total.
+    let n = players.len();
+    let euros_total = affected_total / 100;
+    let sub_euro = affected_total - euros_total * 100;
+    let raw_euros: Vec<f64> = equities.iter().map(|cents| cents / 100.0).collect();
+    let mut floor_euros: Vec<i32> = raw_euros.iter().map(|e| e.floor() as i32).collect();
+    let assigned: i32 = floor_euros.iter().sum();
+
+    // Hand out the remaining whole euros to the largest fractional parts.
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by(|&a, &b| {
+        let frac = |i: usize| raw_euros[i] - floor_euros[i] as f64;
+        frac(b)
+            .partial_cmp(&frac(a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let mut leftover = euros_total - assigned;
+    let mut k = 0usize;
+    while leftover > 0 {
+        floor_euros[order[k % n]] += 1;
+        leftover -= 1;
+        k += 1;
+    }
+
+    let mut cents: Vec<i32> = floor_euros.iter().map(|e| e * 100).collect();
+    if sub_euro != 0 {
+        let leader = stacks
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        cents[leader] += sub_euro;
+    }
+
+    Ok(Some(
+        players
+            .iter()
+            .enumerate()
+            .map(|(i, (index, _))| (*index, cents[i]))
+            .collect(),
+    ))
+}
+
+/// Malmuth-Harville ICM equities: expected prize per player given chip stacks
+/// and the (descending) prize for each remaining place. `n <= 9` at a final
+/// table, so the factorial recursion is trivially cheap.
+fn icm_equity(stacks: &[f64], prizes: &[f64]) -> Vec<f64> {
+    let n = stacks.len();
+    let mut equity = vec![0.0; n];
+    if prizes.is_empty() || n == 0 {
+        return equity;
+    }
+    let total: f64 = stacks.iter().sum();
+    if total <= 0.0 {
+        return equity;
+    }
+
+    let prize = prizes[0];
+    let rest = &prizes[1..];
+    for i in 0..n {
+        let p_first = stacks[i] / total;
+        equity[i] += p_first * prize;
+
+        if !rest.is_empty() && n > 1 {
+            let sub_stacks: Vec<f64> = (0..n).filter(|&j| j != i).map(|j| stacks[j]).collect();
+            let sub_equity = icm_equity(&sub_stacks, rest);
+            let mut k = 0;
+            for (j, eq) in equity.iter_mut().enumerate() {
+                if j == i {
+                    continue;
+                }
+                *eq += p_first * sub_equity[k];
+                k += 1;
+            }
+        }
+    }
+    equity
 }
 
 fn calculate_deal_total(deal_input: &PlayerDealInput, payouts: &[i32]) -> i32 {

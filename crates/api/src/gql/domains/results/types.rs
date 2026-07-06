@@ -119,6 +119,10 @@ pub struct PlayerDealInput {
     pub deal_type: DealType,
     pub affected_positions: Vec<i32>,
     pub custom_payouts: Option<Vec<CustomPayoutInput>>,
+    /// Chip stacks of the players in the deal, used to compute an ICM split.
+    /// Required for `Icm` deals; ignored for even-split / custom. When absent
+    /// (or a stack is non-positive), an `Icm` deal falls back to an even split.
+    pub chip_counts: Option<Vec<ChipCountInput>>,
     pub notes: Option<String>,
 }
 
@@ -126,6 +130,12 @@ pub struct PlayerDealInput {
 pub struct CustomPayoutInput {
     pub user_id: ID,
     pub amount_cents: i32,
+}
+
+#[derive(InputObject)]
+pub struct ChipCountInput {
+    pub user_id: ID,
+    pub chips: i32,
 }
 
 #[derive(SimpleObject)]

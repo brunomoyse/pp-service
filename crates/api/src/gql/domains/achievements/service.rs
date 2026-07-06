@@ -25,9 +25,21 @@ pub async fn evaluate_for_player<'a>(
         SELECT
             COUNT(DISTINCT tr.tournament_id) as total_tournaments_with_results,
             SUM(CASE WHEN tr.prize_cents > 0 THEN 1 ELSE 0 END)::int4 as itm_count,
-            SUM(CASE WHEN tr.final_position = 1 THEN 1 ELSE 0 END)::int4 as wins,
+            -- A placement reached via a deal/chop was negotiated, not played out,
+            -- so it must not unlock the placement achievements first_win (1st) and
+            -- bridesmaid (2nd). Only these two are suppressed for dealt finishes;
+            -- final-table count, winnings and ITM still credit the real money won.
+            SUM(CASE WHEN tr.final_position = 1 AND NOT EXISTS (
+                    SELECT 1 FROM player_deals pd
+                    WHERE pd.tournament_id = tr.tournament_id
+                      AND tr.final_position = ANY(pd.affected_positions)
+                ) THEN 1 ELSE 0 END)::int4 as wins,
             SUM(CASE WHEN tr.final_position <= 9 THEN 1 ELSE 0 END)::int4 as final_tables,
-            SUM(CASE WHEN tr.final_position = 2 THEN 1 ELSE 0 END)::int4 as runner_ups,
+            SUM(CASE WHEN tr.final_position = 2 AND NOT EXISTS (
+                    SELECT 1 FROM player_deals pd
+                    WHERE pd.tournament_id = tr.tournament_id
+                      AND tr.final_position = ANY(pd.affected_positions)
+                ) THEN 1 ELSE 0 END)::int4 as runner_ups,
             COALESCE(SUM(tr.prize_cents), 0)::int4 as total_winnings_cents
         FROM tournament_results tr
         WHERE tr.user_id = $1
