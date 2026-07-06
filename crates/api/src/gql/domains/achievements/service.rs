@@ -27,6 +27,7 @@ pub async fn evaluate_for_player<'a>(
             SUM(CASE WHEN tr.prize_cents > 0 THEN 1 ELSE 0 END)::int4 as itm_count,
             SUM(CASE WHEN tr.final_position = 1 THEN 1 ELSE 0 END)::int4 as wins,
             SUM(CASE WHEN tr.final_position <= 9 THEN 1 ELSE 0 END)::int4 as final_tables,
+            SUM(CASE WHEN tr.final_position = 2 THEN 1 ELSE 0 END)::int4 as runner_ups,
             COALESCE(SUM(tr.prize_cents), 0)::int4 as total_winnings_cents
         FROM tournament_results tr
         WHERE tr.user_id = $1
@@ -40,6 +41,7 @@ pub async fn evaluate_for_player<'a>(
     let itm_count: i32 = stats_row.get("itm_count");
     let wins: i32 = stats_row.get("wins");
     let final_tables: i32 = stats_row.get("final_tables");
+    let runner_ups: i32 = stats_row.get("runner_ups");
     let total_winnings_cents: i32 = stats_row.get("total_winnings_cents");
 
     // Count total tournament participations (registrations, not busted/no-show/cancelled)
@@ -149,6 +151,45 @@ pub async fn evaluate_for_player<'a>(
     .await?;
     let deals_made = deals_made as i32;
 
+    // Has the player ever bubbled? The "bubble" is the first player out of the
+    // money: the finishing place one spot below the last paid position. Per
+    // tournament, last_paid = MAX(final_position) among prize_cents > 0 rows; the
+    // player bubbled if their (unpaid) result sits exactly one place after it.
+    let bubble_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM tournament_results me
+        JOIN (
+            SELECT tournament_id, MAX(final_position) AS last_paid
+            FROM tournament_results
+            WHERE prize_cents > 0
+            GROUP BY tournament_id
+        ) paid ON paid.tournament_id = me.tournament_id
+        WHERE me.user_id = $1
+          AND me.prize_cents = 0
+          AND me.final_position = paid.last_paid + 1
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    let bubble_count = bubble_count as i32;
+
+    // Loyalty: how many distinct calendar months the player has been active in
+    // (any non-cancelled/no-show registration counts). Drives "Club Fixture".
+    let distinct_months: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(DISTINCT date_trunc('month', t.start_time))
+        FROM tournament_registrations reg
+        JOIN tournaments t ON reg.tournament_id = t.id
+        WHERE reg.user_id = $1 AND reg.status NOT IN ('cancelled', 'no_show')
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    let distinct_months = distinct_months as i32;
+
     // Evaluate each achievement
     let catalog = achievements::list_catalog(&mut **tx).await?;
 
@@ -225,6 +266,18 @@ pub async fn evaluate_for_player<'a>(
                 // Boolean: has been part of at least one deal.
                 (0, deals_made > 0)
             }
+            "bridesmaid" => {
+                // Boolean: has finished runner-up (2nd) at least once.
+                (runner_ups, runner_ups > 0)
+            }
+            "bubble_boy" => {
+                // Boolean: has bubbled (busted one spot out of the money).
+                (0, bubble_count > 0)
+            }
+            "club_pillar" => (
+                distinct_months,
+                threshold.map(|t| distinct_months >= t).unwrap_or(false),
+            ),
             _ => (0, false),
         };
 
