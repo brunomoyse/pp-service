@@ -15,7 +15,6 @@ mod club_roster;
 mod club_tables;
 mod data_retention;
 mod drinks;
-mod economy_firewall;
 mod eliminate_player;
 mod money_reconciliation;
 mod notification;

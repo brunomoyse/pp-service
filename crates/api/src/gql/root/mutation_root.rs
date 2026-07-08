@@ -4,7 +4,6 @@ use crate::gql::domains::announcements::AnnouncementMutation;
 use crate::gql::domains::attendance::AttendanceMutation;
 use crate::gql::domains::auth::AuthMutation;
 use crate::gql::domains::clubs::ClubMutation;
-use crate::gql::domains::cosmetics::CosmeticsMutation;
 use crate::gql::domains::devices::DeviceMutation;
 use crate::gql::domains::drinks::DrinksMutation;
 use crate::gql::domains::entries::EntryMutation;
@@ -12,7 +11,6 @@ use crate::gql::domains::identity::IdentityMutation;
 use crate::gql::domains::leaderboard_configs::LeaderboardConfigMutation;
 use crate::gql::domains::notes::NotesMutation;
 use crate::gql::domains::predictions::PredictionsMutation;
-use crate::gql::domains::pro::ProMutation;
 use crate::gql::domains::registrations::RegistrationMutation;
 use crate::gql::domains::results::ResultMutation;
 use crate::gql::domains::scouting::ScoutingMutation;
@@ -30,7 +28,6 @@ pub struct MutationRoot(
     AttendanceMutation,
     AuthMutation,
     ClubMutation,
-    CosmeticsMutation,
     DeviceMutation,
     DrinksMutation,
     EntryMutation,
@@ -38,7 +35,6 @@ pub struct MutationRoot(
     LeaderboardConfigMutation,
     NotesMutation,
     PredictionsMutation,
-    ProMutation,
     RegistrationMutation,
     ResultMutation,
     ScoutingMutation,

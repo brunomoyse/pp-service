@@ -4,10 +4,7 @@ use uuid::Uuid;
 use super::types::{NoteTagKind, PlayerStyle};
 use crate::gql::error::GqlError;
 use infra::models::{PlayerNoteRow, PlayerNoteTagRow, ShowdownObservationRow};
-use infra::repos::{player_notes, pro_entitlements};
-
-/// Free tier may note this many distinct subjects (a "taste"); Pro is unlimited.
-const FREE_SUBJECT_LIMIT: i64 = 3;
+use infra::repos::player_notes;
 
 pub async fn upsert_note(
     db: &PgPool,
@@ -16,18 +13,6 @@ pub async fn upsert_note(
     body: Option<&str>,
     style: Option<PlayerStyle>,
 ) -> Result<PlayerNoteRow, GqlError> {
-    // The free-tier cap only applies when starting a note on a NEW subject.
-    let existing = player_notes::get_for_subject(db, author, subject).await?;
-    if existing.is_none() && !pro_entitlements::is_pro(db, author).await? {
-        let count = player_notes::count_subjects_for_author(db, author).await?;
-        if count >= FREE_SUBJECT_LIMIT {
-            return Err(GqlError::new(format!(
-                "Free accounts can note up to {FREE_SUBJECT_LIMIT} players. \
-                 Upgrade to Pro for unlimited notes."
-            )));
-        }
-    }
-
     let body = body.unwrap_or("");
     let style_db = style.map(|s| s.as_db());
     Ok(player_notes::upsert(db, author, subject, body, style_db).await?)

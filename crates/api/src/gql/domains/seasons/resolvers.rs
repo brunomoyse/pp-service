@@ -96,27 +96,6 @@ impl SeasonsMutation {
         Ok(service::to_season(row))
     }
 
-    /// Gift the premium reward track of a season to a player. The season's club
-    /// managers only. This is an entitlement gift, never a purchase (G1).
-    async fn grant_season_pass_premium(
-        &self,
-        ctx: &Context<'_>,
-        season_id: ID,
-        app_user_id: ID,
-    ) -> Result<SeasonPass> {
-        let state = ctx.data::<AppState>()?;
-        let sid = Uuid::parse_str(season_id.as_str()).gql_err("Invalid season ID")?;
-        let target = Uuid::parse_str(app_user_id.as_str()).gql_err("Invalid user ID")?;
-
-        let season = seasons_repo::get_by_id(&state.db, sid)
-            .await?
-            .ok_or_else(|| async_graphql::Error::new("Season not found"))?;
-        require_club_manager(ctx, season.club_id).await?;
-
-        seasons_repo::set_premium(&state.db, sid, target, true).await?;
-        Ok(service::compute_pass(&state.db, &season, target).await?)
-    }
-
     /// Claim a completed weekly quest, banking its XP into the active season pass.
     async fn claim_quest(&self, ctx: &Context<'_>, code: String) -> Result<QuestProgress> {
         let state = ctx.data::<AppState>()?;

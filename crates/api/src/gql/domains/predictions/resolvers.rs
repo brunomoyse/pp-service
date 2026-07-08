@@ -3,7 +3,6 @@ use uuid::Uuid;
 
 use crate::auth::jwt::Claims;
 use crate::auth::permissions::require_club_manager;
-use crate::features::{require_feature, Feature};
 use crate::gql::common::helpers::get_club_id_for_tournament;
 use crate::gql::error::ResultExt;
 use crate::state::AppState;
@@ -24,7 +23,6 @@ pub struct PredictionsQuery;
 impl PredictionsQuery {
     /// The current user's Prediction-Points balance and what they can claim.
     async fn my_prediction_balance(&self, ctx: &Context<'_>) -> Result<PredictionBalance> {
-        require_feature(Feature::Predictions)?;
         let state = ctx.data::<AppState>()?;
         let user_id = current_user_id(ctx)?;
         let balance = predictions::balance(&state.db, user_id).await?;
@@ -37,7 +35,6 @@ impl PredictionsQuery {
 
     /// The current user's fantasy predictions, newest first.
     async fn my_predictions(&self, ctx: &Context<'_>) -> Result<Vec<PredictionEntry>> {
-        require_feature(Feature::Predictions)?;
         let state = ctx.data::<AppState>()?;
         let user_id = current_user_id(ctx)?;
         let rows = predictions::list_for_user(&state.db, user_id).await?;
@@ -53,7 +50,6 @@ impl PredictionsMutation {
     /// Claim earned prediction points (from attendance/play) plus the one-time
     /// welcome seed. Earned-only — no euros ever enter this balance (G2).
     async fn claim_prediction_points(&self, ctx: &Context<'_>) -> Result<PredictionBalance> {
-        require_feature(Feature::Predictions)?;
         let state = ctx.data::<AppState>()?;
         let user_id = current_user_id(ctx)?;
         let balance = service::claim(&state.db, user_id).await?;
@@ -71,7 +67,6 @@ impl PredictionsMutation {
         predicted_winner_user_id: ID,
         stake_points: i32,
     ) -> Result<PredictionEntry> {
-        require_feature(Feature::Predictions)?;
         let state = ctx.data::<AppState>()?;
         let user_id = current_user_id(ctx)?;
         let tid = Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
@@ -97,7 +92,6 @@ impl PredictionsMutation {
         ctx: &Context<'_>,
         tournament_id: ID,
     ) -> Result<i32> {
-        require_feature(Feature::Predictions)?;
         let state = ctx.data::<AppState>()?;
         let tid = Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
 

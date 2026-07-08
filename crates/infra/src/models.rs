@@ -311,7 +311,6 @@ pub struct SeasonPassRow {
     pub id: Uuid,
     pub season_id: Uuid,
     pub app_user_id: Uuid,
-    pub is_premium: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -397,32 +396,6 @@ pub struct FavoriteClubRow {
     pub tournaments: i64,
 }
 
-// ---- Euro cosmetics economy (G1/G2) ----
-
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
-pub struct CosmeticItemRow {
-    pub id: Uuid,
-    pub code: String,
-    pub kind: String,
-    pub name: String,
-    pub description: Option<String>,
-    pub price_cents: i32,
-    pub preview_ref: String,
-    pub club_id: Option<Uuid>,
-    pub active: bool,
-    pub created_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
-pub struct UserCosmeticRow {
-    pub id: Uuid,
-    pub app_user_id: Uuid,
-    pub cosmetic_item_id: Uuid,
-    pub source: String,
-    pub equipped: bool,
-    pub acquired_at: DateTime<Utc>,
-}
-
 // ---- Prediction Points economy (earned-only, G2) ----
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -476,21 +449,6 @@ pub struct PredictionEntryView {
     pub status: String,
     pub payout_points: i32,
     pub created_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
-pub struct ProEntitlementRow {
-    pub id: Uuid,
-    pub app_user_id: Uuid,
-    pub source: String,
-    pub granted_by_club_id: Option<Uuid>,
-    pub granted_by_user_id: Option<Uuid>,
-    pub starts_at: DateTime<Utc>,
-    pub expires_at: Option<DateTime<Utc>>,
-    pub status: String,
-    pub notes: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]

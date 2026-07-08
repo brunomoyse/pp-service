@@ -1,0 +1,2 @@
+-- This migration cannot be safely reverted.
+-- Rolling back would require restoring all cosmetic tables and associated data.

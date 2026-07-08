@@ -1,7 +1,7 @@
 use async_graphql::{Context, Object, Result};
 use uuid::Uuid;
 
-use crate::auth::permissions::require_pro;
+use crate::auth::jwt::Claims;
 use crate::gql::error::ResultExt;
 use crate::state::AppState;
 use infra::repos::analytics;
@@ -13,10 +13,10 @@ pub struct AnalyticsQuery;
 
 #[Object]
 impl AnalyticsQuery {
-    /// Personal performance analytics — breakdowns and cumulative P/L. Pro only.
+    /// Personal performance analytics — breakdowns and cumulative P/L.
     async fn my_pro_analytics(&self, ctx: &Context<'_>) -> Result<ProAnalytics> {
-        let user = require_pro(ctx).await?;
-        let user_id = Uuid::parse_str(user.id.as_str()).gql_err("Invalid user ID")?;
+        let claims = ctx.data::<Claims>()?;
+        let user_id = Uuid::parse_str(&claims.sub).gql_err("Invalid user ID")?;
         let state = ctx.data::<AppState>()?;
 
         let by_club = analytics::by_club(&state.db, user_id)

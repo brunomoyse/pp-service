@@ -34,12 +34,6 @@ pub use crate::gql::domains::notes::types::{
     PlayerNoteTag, PlayerStyle, ShowdownObservation, UpsertPlayerNoteInput,
 };
 
-// System types
-pub use crate::gql::domains::system::types::FeatureFlags;
-
-// Pro entitlement types
-pub use crate::gql::domains::pro::types::{GrantProEntitlementInput, ProEntitlement};
-
 // Analytics types
 pub use crate::gql::domains::analytics::types::{
     BuyInBreakdown, ClubBreakdown, PnlPoint, ProAnalytics,
@@ -55,9 +49,6 @@ pub use crate::gql::domains::seasons::types::{
 
 // Social types
 pub use crate::gql::domains::social::types::{Friend, MutualFlame, Rivalry, YearInPoker};
-
-// Cosmetics (euro economy) types
-pub use crate::gql::domains::cosmetics::types::CosmeticItem;
 
 // Predictions (Prediction-Points economy) types
 pub use crate::gql::domains::predictions::types::{PredictionBalance, PredictionEntry};

@@ -52,8 +52,6 @@ pub struct SeasonPass {
     pub xp_into_tier: i32,
     /// XP required to span one tier.
     pub xp_per_tier: i32,
-    /// Whether the gifted premium reward track is unlocked.
-    pub is_premium: bool,
 }
 
 /// A weekly quest with the current player's progress against it.

@@ -90,7 +90,7 @@ pub async fn get_pass<'e>(
     app_user_id: Uuid,
 ) -> SqlxResult<Option<SeasonPassRow>> {
     sqlx::query_as::<_, SeasonPassRow>(
-        "SELECT id, season_id, app_user_id, is_premium, created_at, updated_at \
+        "SELECT id, season_id, app_user_id, created_at, updated_at \
          FROM season_pass WHERE season_id = $1 AND app_user_id = $2",
     )
     .bind(season_id)
@@ -99,7 +99,7 @@ pub async fn get_pass<'e>(
     .await
 }
 
-/// Create the pass row if missing (premium defaults false).
+/// Create the pass row if missing.
 pub async fn ensure_pass<'e>(
     executor: impl PgExecutor<'e>,
     season_id: Uuid,
@@ -108,29 +108,10 @@ pub async fn ensure_pass<'e>(
     sqlx::query_as::<_, SeasonPassRow>(
         "INSERT INTO season_pass (season_id, app_user_id) VALUES ($1, $2) \
          ON CONFLICT (season_id, app_user_id) DO UPDATE SET season_id = EXCLUDED.season_id \
-         RETURNING id, season_id, app_user_id, is_premium, created_at, updated_at",
+         RETURNING id, season_id, app_user_id, created_at, updated_at",
     )
     .bind(season_id)
     .bind(app_user_id)
-    .fetch_one(executor)
-    .await
-}
-
-/// Gift (or revoke) the premium reward track for a player's pass.
-pub async fn set_premium<'e>(
-    executor: impl PgExecutor<'e>,
-    season_id: Uuid,
-    app_user_id: Uuid,
-    is_premium: bool,
-) -> SqlxResult<SeasonPassRow> {
-    sqlx::query_as::<_, SeasonPassRow>(
-        "INSERT INTO season_pass (season_id, app_user_id, is_premium) VALUES ($1, $2, $3) \
-         ON CONFLICT (season_id, app_user_id) DO UPDATE SET is_premium = EXCLUDED.is_premium \
-         RETURNING id, season_id, app_user_id, is_premium, created_at, updated_at",
-    )
-    .bind(season_id)
-    .bind(app_user_id)
-    .bind(is_premium)
     .fetch_one(executor)
     .await
 }

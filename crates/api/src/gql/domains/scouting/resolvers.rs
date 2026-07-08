@@ -2,7 +2,6 @@ use async_graphql::{Context, Object, Result, ID};
 use uuid::Uuid;
 
 use crate::auth::jwt::Claims;
-use crate::features::{require_feature, Feature};
 use crate::gql::error::ResultExt;
 use crate::state::AppState;
 use infra::repos::{privacy, scouting};
@@ -26,7 +25,6 @@ pub struct ScoutingQuery;
 impl ScoutingQuery {
     /// The current user's privacy/consent settings (defaults all OFF).
     async fn my_privacy_settings(&self, ctx: &Context<'_>) -> Result<PrivacySettings> {
-        require_feature(Feature::PublicStats)?;
         let state = ctx.data::<AppState>()?;
         let user_id = current_user_id(ctx)?;
         let row = privacy::get(&state.db, user_id).await?;
@@ -40,7 +38,6 @@ impl ScoutingQuery {
         ctx: &Context<'_>,
         query: String,
     ) -> Result<Vec<ScoutingMatch>> {
-        require_feature(Feature::PublicStats)?;
         current_user_id(ctx)?; // auth required
         let trimmed = query.trim();
         if trimmed.len() < MIN_QUERY_LEN {
@@ -51,10 +48,8 @@ impl ScoutingQuery {
         Ok(rows.into_iter().map(ScoutingMatch::from).collect())
     }
 
-    /// View a pool member's full scouting profile. Consumes one free lookup
-    /// unless the searcher has unlimited access (Pro + in the pool).
+    /// View a pool member's full scouting profile. Lookups are unlimited.
     async fn scouting_profile(&self, ctx: &Context<'_>, user_id: ID) -> Result<ScoutingProfile> {
-        require_feature(Feature::PublicStats)?;
         let state = ctx.data::<AppState>()?;
         let searcher = current_user_id(ctx)?;
         let target = Uuid::parse_str(user_id.as_str()).gql_err("Invalid user ID")?;
@@ -81,9 +76,8 @@ impl ScoutingQuery {
         })
     }
 
-    /// The current user's free-lookup quota standing.
+    /// The current user's scouting lookup status (unlimited for all).
     async fn my_scouting_quota(&self, ctx: &Context<'_>) -> Result<ScoutingQuota> {
-        require_feature(Feature::PublicStats)?;
         let state = ctx.data::<AppState>()?;
         let searcher = current_user_id(ctx)?;
         let q = service::quota_status(&state.db, searcher).await?;
@@ -108,7 +102,6 @@ impl ScoutingMutation {
         share_named_pl: bool,
         in_scouting_pool: bool,
     ) -> Result<PrivacySettings> {
-        require_feature(Feature::PublicStats)?;
         let state = ctx.data::<AppState>()?;
         let user_id = current_user_id(ctx)?;
         let row = privacy::upsert(&state.db, user_id, share_named_pl, in_scouting_pool).await?;

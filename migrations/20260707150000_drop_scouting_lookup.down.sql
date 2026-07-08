@@ -1,0 +1,2 @@
+-- This migration cannot be safely reverted.
+-- Rolling back would require restoring the scouting_lookup table and all associated data.

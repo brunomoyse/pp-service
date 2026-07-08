@@ -1,0 +1,2 @@
+-- This migration cannot be safely reverted.
+-- Rolling back would require restoring the pro_entitlements table and all associated data.

@@ -5,7 +5,6 @@
 pub mod app;
 pub mod auth;
 pub mod error;
-pub mod features;
 pub mod gql;
 pub mod middleware;
 pub mod observability;

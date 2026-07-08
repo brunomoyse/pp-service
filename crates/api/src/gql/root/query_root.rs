@@ -7,7 +7,6 @@ use crate::gql::domains::announcements::AnnouncementQuery;
 use crate::gql::domains::attendance::AttendanceQuery;
 use crate::gql::domains::auth::AuthQuery;
 use crate::gql::domains::clubs::ClubQuery;
-use crate::gql::domains::cosmetics::CosmeticsQuery;
 use crate::gql::domains::drinks::DrinksQuery;
 use crate::gql::domains::entries::EntryQuery;
 use crate::gql::domains::identity::IdentityQuery;
@@ -15,7 +14,6 @@ use crate::gql::domains::leaderboard_configs::LeaderboardConfigQuery;
 use crate::gql::domains::leaderboards::LeaderboardQuery;
 use crate::gql::domains::notes::NotesQuery;
 use crate::gql::domains::predictions::PredictionsQuery;
-use crate::gql::domains::pro::ProQuery;
 use crate::gql::domains::registrations::RegistrationQuery;
 use crate::gql::domains::results::ResultQuery;
 use crate::gql::domains::scouting::ScoutingQuery;
@@ -23,7 +21,6 @@ use crate::gql::domains::seasons::SeasonsQuery;
 use crate::gql::domains::seating::SeatingQuery;
 use crate::gql::domains::series::SeriesQuery;
 use crate::gql::domains::social::SocialQuery;
-use crate::gql::domains::system::SystemQuery;
 use crate::gql::domains::templates::TemplateQuery;
 use crate::gql::domains::tournaments::{TournamentClockQuery, TournamentQuery};
 use crate::gql::domains::users::UserQuery;
@@ -37,7 +34,6 @@ pub struct QueryRoot(
     AttendanceQuery,
     AuthQuery,
     ClubQuery,
-    CosmeticsQuery,
     DrinksQuery,
     EntryQuery,
     IdentityQuery,
@@ -45,7 +41,6 @@ pub struct QueryRoot(
     LeaderboardQuery,
     NotesQuery,
     PredictionsQuery,
-    ProQuery,
     RegistrationQuery,
     ResultQuery,
     ScoutingQuery,
@@ -53,7 +48,6 @@ pub struct QueryRoot(
     SeatingQuery,
     SeriesQuery,
     SocialQuery,
-    SystemQuery,
     TemplateQuery,
     TournamentClockQuery,
     TournamentQuery,

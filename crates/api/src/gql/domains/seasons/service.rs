@@ -41,10 +41,6 @@ pub async fn compute_pass(
     let quest_xp = quests_repo::xp_in_window(db, user_id, season.starts_at, season.ends_at).await?;
 
     let xp = check_ins * CHECK_IN_XP + quest_xp;
-    let is_premium = seasons_repo::get_pass(db, season.id, user_id)
-        .await?
-        .map(|p| p.is_premium)
-        .unwrap_or(false);
 
     Ok(SeasonPass {
         season_id: season.id.into(),
@@ -52,7 +48,6 @@ pub async fn compute_pass(
         tier: (xp / XP_PER_TIER) as i32,
         xp_into_tier: (xp % XP_PER_TIER) as i32,
         xp_per_tier: XP_PER_TIER as i32,
-        is_premium,
     })
 }
 

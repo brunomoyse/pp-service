@@ -2,8 +2,6 @@ use async_graphql::{Context, Object, Result, ID};
 use uuid::Uuid;
 
 use crate::auth::jwt::Claims;
-use crate::auth::permissions::require_pro;
-use crate::features::{require_feature, Feature};
 use crate::gql::domains::identity::types::ClubPlayer;
 use crate::gql::error::ResultExt;
 use crate::state::AppState;
@@ -32,7 +30,6 @@ impl NotesQuery {
         ctx: &Context<'_>,
         subject_club_player_id: ID,
     ) -> Result<Option<PlayerNote>> {
-        require_feature(Feature::Notes)?;
         let author = author_id(ctx)?;
         let subject =
             Uuid::parse_str(subject_club_player_id.as_str()).gql_err("Invalid subject ID")?;
@@ -44,7 +41,6 @@ impl NotesQuery {
 
     /// All of the current user's notes.
     async fn my_player_notes(&self, ctx: &Context<'_>) -> Result<Vec<PlayerNote>> {
-        require_feature(Feature::Notes)?;
         let author = author_id(ctx)?;
         let state = ctx.data::<AppState>()?;
         let rows = player_notes::list_for_author(&state.db, author).await?;
@@ -52,15 +48,13 @@ impl NotesQuery {
     }
 
     /// Pre-game prep: everyone registered for a tournament, paired with the
-    /// viewer's own note on them. The Pro demo moment. Pro only.
+    /// viewer's own note on them.
     async fn tournament_field_notes(
         &self,
         ctx: &Context<'_>,
         tournament_id: ID,
     ) -> Result<Vec<FieldPlayerNote>> {
-        require_feature(Feature::Notes)?;
-        let user = require_pro(ctx).await?;
-        let author = Uuid::parse_str(user.id.as_str()).gql_err("Invalid user ID")?;
+        let author = author_id(ctx)?;
         let tid = Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
 
         let state = ctx.data::<AppState>()?;
@@ -116,7 +110,6 @@ impl NotesMutation {
         ctx: &Context<'_>,
         input: UpsertPlayerNoteInput,
     ) -> Result<PlayerNote> {
-        require_feature(Feature::Notes)?;
         let author = author_id(ctx)?;
         let subject =
             Uuid::parse_str(input.subject_club_player_id.as_str()).gql_err("Invalid subject ID")?;
@@ -135,7 +128,6 @@ impl NotesMutation {
 
     /// Delete the current user's note (and its tags/showdowns via cascade).
     async fn delete_player_note(&self, ctx: &Context<'_>, note_id: ID) -> Result<bool> {
-        require_feature(Feature::Notes)?;
         let author = author_id(ctx)?;
         let id = Uuid::parse_str(note_id.as_str()).gql_err("Invalid note ID")?;
         let state = ctx.data::<AppState>()?;
@@ -147,7 +139,6 @@ impl NotesMutation {
         ctx: &Context<'_>,
         input: AddPlayerNoteTagInput,
     ) -> Result<PlayerNoteTag> {
-        require_feature(Feature::Notes)?;
         let author = author_id(ctx)?;
         let note_id = Uuid::parse_str(input.note_id.as_str()).gql_err("Invalid note ID")?;
         let state = ctx.data::<AppState>()?;
@@ -161,7 +152,6 @@ impl NotesMutation {
         note_id: ID,
         tag_id: ID,
     ) -> Result<bool> {
-        require_feature(Feature::Notes)?;
         let author = author_id(ctx)?;
         let note_uuid = Uuid::parse_str(note_id.as_str()).gql_err("Invalid note ID")?;
         let tag_uuid = Uuid::parse_str(tag_id.as_str()).gql_err("Invalid tag ID")?;
@@ -174,7 +164,6 @@ impl NotesMutation {
         ctx: &Context<'_>,
         input: AddShowdownObservationInput,
     ) -> Result<ShowdownObservation> {
-        require_feature(Feature::Notes)?;
         let author = author_id(ctx)?;
         let note_id = Uuid::parse_str(input.note_id.as_str()).gql_err("Invalid note ID")?;
         let tournament_id = match input.tournament_id {

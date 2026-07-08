@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS cosmetic_purchase CASCADE;
+DROP TABLE IF EXISTS user_cosmetic CASCADE;
+DROP TABLE IF EXISTS cosmetic_item CASCADE;

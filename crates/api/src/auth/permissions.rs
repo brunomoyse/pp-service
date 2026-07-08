@@ -153,28 +153,6 @@ pub async fn viewer_manages_club(ctx: &Context<'_>, club_id: Uuid) -> bool {
         .unwrap_or(false)
 }
 
-/// Require that the authenticated user holds an active Pro entitlement.
-pub async fn require_pro(ctx: &Context<'_>) -> Result<User> {
-    let user = require_role(ctx, Role::Player).await?;
-    let state = ctx.data::<AppState>()?;
-
-    let user_id = Uuid::parse_str(user.id.as_str())
-        .map_err(|e| Error::new(format!("Invalid user ID: {}", e)))?;
-
-    let is_pro = infra::repos::pro_entitlements::is_pro(&state.db, user_id)
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to check Pro entitlement: {}", e);
-            Error::new("Failed to verify Pro status")
-        })?;
-
-    if !is_pro {
-        return Err(Error::new("This feature requires a Pro account"));
-    }
-
-    Ok(user)
-}
-
 fn has_required_role(user_role: &Role, required_role: Role) -> bool {
     match required_role {
         Role::Admin => *user_role == Role::Admin,

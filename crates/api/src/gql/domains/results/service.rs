@@ -405,9 +405,7 @@ async fn calculate_icm_payouts(
             .contains(&position.final_position)
         {
             let index = (position.final_position - 1) as usize;
-            let chips = *chips_by_user
-                .get(position.user_id.as_str())
-                .unwrap_or(&0);
+            let chips = *chips_by_user.get(position.user_id.as_str()).unwrap_or(&0);
             players.push((index, chips as f64));
         }
     }
