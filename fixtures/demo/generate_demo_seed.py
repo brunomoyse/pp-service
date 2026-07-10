@@ -414,14 +414,14 @@ emit(
     "seat_number, stack_size, is_current, assigned_by, assigned_at) VALUES\n"
     + ",\n".join(live_seat) + ";"
 )
-# Put the tournament at a mid-event level with a live, ticking clock (level is
-# tracked on the clock). auto_advance ON so the clock service rolls it to the
-# next level when the timer expires, like a real live event — otherwise it
-# freezes at 00:00 at the end of this level.
+# Park the clock PAUSED at a mid-event level so the demo shows a stable live
+# snapshot (150/300, ~12:00 on the clock) that neither drifts nor freezes at
+# 00:00. A paused clock is skipped by the auto-advance sweep; remaining time is
+# computed as level_end_time - pause_started_at.
 emit(
-    "UPDATE tournament_clocks SET clock_status = 'running', "
-    f"current_level = {LIVE_LEVEL}, level_started_at = NOW() - interval '12 minutes', "
-    "level_end_time = NOW() + interval '8 minutes', auto_advance = true "
+    "UPDATE tournament_clocks SET clock_status = 'paused', auto_advance = false, "
+    f"current_level = {LIVE_LEVEL}, level_started_at = NOW() - interval '8 minutes', "
+    "level_end_time = NOW() + interval '12 minutes', pause_started_at = NOW() "
     f"WHERE tournament_id = {q(LIVE.id)};"
 )
 
