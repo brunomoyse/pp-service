@@ -235,6 +235,31 @@ upcoming = [
 ]
 tournaments.extend(upcoming)
 
+# In-progress event the reviewer is seated at, right now — powers the "My Table"
+# view (see tablemates + private notes during a live tournament). Times are
+# NOW()-relative at apply time, so it always looks live regardless of the anchor.
+LIVE = T(
+    "live_now", CLUB_LIEGE, "Tuesday Night Live",
+    "Live now, deepstack in progress. 25k stack, 20-minute levels.",
+    ANCHOR, 5000, 500, 25000, "in_progress",
+)
+tournaments.append(LIVE)
+
+# Reviewer + tablemates at Liège table 1 (seat, stack). Most carry a reviewer
+# note; Antoine is un-noted so the "tap to add a note" state is visible too.
+LIVE_SEATS = [
+    ("nicolas", 1, 18500),
+    ("maxime", 2, 41000),
+    ("julien", 3, 22000),
+    ("reviewer", 4, 33500),
+    ("kevin", 5, 27500),
+    ("antoine", 6, 15000),
+    ("thomas", 7, 24000),
+    ("bart", 8, 30500),
+    ("lucas", 9, 12500),
+]
+LIVE_LEVEL = 6  # a mid-tournament level from LEVELS (150/300, 300 ante)
+
 # --------------------------------------------------- fields & reviewer script
 # Reviewer's arc: 6 events over ~9 weeks (3 within the last 30 days, 3 older) so the
 # 30-day and 1-year stat views clearly differ. 3 cashes incl. one win; ITM 50%.
@@ -276,11 +301,16 @@ upcoming_regs = {
 emit("\n-- === Tournaments ===")
 t_rows = []
 for t in tournaments:
-    end = ts(t.start + timedelta(hours=5)) if t.status == "finished" else "NULL"
+    if t.status == "in_progress":
+        start_sql = "NOW() - interval '95 minutes'"
+        end = "NULL"
+    else:
+        start_sql = ts(t.start)
+        end = ts(t.start + timedelta(hours=5)) if t.status == "finished" else "NULL"
     cap = t.seat_cap if t.seat_cap else "NULL"
     bounty_type = "'fixed'" if t.bounty else "'none'"
     t_rows.append(
-        f"({q(t.id)}, {q(t.club)}, {q(t.name)}, {q(t.desc)}, {ts(t.start)}, {end}, "
+        f"({q(t.id)}, {q(t.club)}, {q(t.name)}, {q(t.desc)}, {start_sql}, {end}, "
         f"{t.buy_in}, {t.rake}, {cap}, {t.stack}, '{t.status}', {bounty_type}, {t.bounty}, 6)"
     )
 emit(
@@ -305,6 +335,8 @@ emit(
 emit("\n-- === Registrations, entries, check-ins ===")
 reg_rows, entry_rows, checkin_rows = [], [], []
 for t in tournaments:
+    if t.key == LIVE.key:
+        continue  # emitted in its own live block below
     if t.status == "finished":
         for i, (key, user_id) in enumerate(t.participants):
             reg_time = t.start - timedelta(days=rng.randint(1, 5), minutes=rng.randint(0, 600))
@@ -341,6 +373,55 @@ emit(
 emit(
     "INSERT INTO check_in (app_user_id, tournament_id, club_id, checked_in_at) VALUES\n"
     + ",\n".join(checkin_rows) + ";"
+)
+
+# ---------------------------------------------- live tournament (My Table view)
+emit("\n-- === Live in-progress tournament: seated field + running clock ===")
+live_table = uid("table", CLUB_LIEGE, 1)
+live_reg, live_entry, live_checkin, live_seat = [], [], [], []
+for key, seat, stack in LIVE_SEATS:
+    user_id = REVIEWER if key == "reviewer" else uid("user", key)
+    cpid = cp(CLUB_LIEGE, key)
+    live_reg.append(
+        f"({q(LIVE.id)}, {q(user_id)}, {q(cpid)}, NOW() - interval '2 hours', 'seated')"
+    )
+    live_entry.append(
+        f"({q(LIVE.id)}, {q(user_id)}, {q(cpid)}, 'initial', {LIVE.buy_in}, {LIVE.stack}, "
+        f"'cash', {q(MANAGER)}, NOW() - interval '110 minutes')"
+    )
+    live_checkin.append(
+        f"({q(user_id)}, {q(LIVE.id)}, {q(CLUB_LIEGE)}, NOW() - interval '110 minutes')"
+    )
+    live_seat.append(
+        f"({q(LIVE.id)}, {q(live_table)}, {q(user_id)}, {q(cpid)}, {seat}, {stack}, "
+        f"true, {q(MANAGER)}, NOW() - interval '95 minutes')"
+    )
+emit(
+    "INSERT INTO tournament_registrations (tournament_id, user_id, club_player_id, registration_time, status) VALUES\n"
+    + ",\n".join(live_reg) + ";"
+)
+emit(
+    "INSERT INTO tournament_entries (tournament_id, user_id, club_player_id, entry_type, "
+    "amount_cents, chips_received, payment_method, recorded_by, created_at) VALUES\n"
+    + ",\n".join(live_entry) + ";"
+)
+emit(
+    "INSERT INTO check_in (app_user_id, tournament_id, club_id, checked_in_at) VALUES\n"
+    + ",\n".join(live_checkin) + ";"
+)
+emit(
+    "INSERT INTO table_seat_assignments (tournament_id, club_table_id, user_id, club_player_id, "
+    "seat_number, stack_size, is_current, assigned_by, assigned_at) VALUES\n"
+    + ",\n".join(live_seat) + ";"
+)
+# Put the tournament at a mid-event level with a live, ticking clock (level is
+# tracked on the clock). auto_advance off so the demo stays parked at this level
+# instead of drifting over time.
+emit(
+    "UPDATE tournament_clocks SET clock_status = 'running', "
+    f"current_level = {LIVE_LEVEL}, level_started_at = NOW() - interval '12 minutes', "
+    "level_end_time = NOW() + interval '8 minutes', auto_advance = false "
+    f"WHERE tournament_id = {q(LIVE.id)};"
 )
 
 emit("\n-- === Results & payouts ===")

@@ -121,7 +121,8 @@ INSERT INTO tournaments (id, club_id, name, description, start_time, end_time, b
 ('929426f0-fb4e-5d04-8c57-d5136cd9caa0', '4114f430-9557-5c65-b29c-038a84013882', 'Friday Night Deepstack #25', 'Weekly deepstack — 25k stack, 20-minute levels, late reg until level 6.', '2026-07-10 18:00:00+00', NULL, 5000, 500, NULL, 25000, 'registration_open', 'none', 0, 6),
 ('e118e501-ca41-522a-a643-8e7eca002afd', '4114f430-9557-5c65-b29c-038a84013882', 'Sunday Bounty #9', '€10 fixed bounty per knockout. Rebuys allowed for the first four levels.', '2026-07-12 13:00:00+00', NULL, 4000, 500, NULL, 20000, 'registration_open', 'fixed', 1000, 6),
 ('b5d4973a-6aab-5176-b523-c56db01a4498', '4114f430-9557-5c65-b29c-038a84013882', 'Monthly Main Event #3', 'Our flagship monthly freezeout. 30k stack, 30-minute levels, top 5 paid.', '2026-07-18 17:00:00+00', NULL, 15000, 1000, 40, 30000, 'registration_open', 'none', 0, 6),
-('27367441-df3e-5883-a39d-d032cd46596a', '5ec5689d-a433-5706-a9ae-31c85c144b23', 'Midweek Turbo', 'Fast structure, 12-minute levels — done before midnight.', '2026-07-09 17:30:00+00', NULL, 3000, 300, NULL, 15000, 'registration_open', 'none', 0, 6);
+('27367441-df3e-5883-a39d-d032cd46596a', '5ec5689d-a433-5706-a9ae-31c85c144b23', 'Midweek Turbo', 'Fast structure, 12-minute levels — done before midnight.', '2026-07-09 17:30:00+00', NULL, 3000, 300, NULL, 15000, 'registration_open', 'none', 0, 6),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '4114f430-9557-5c65-b29c-038a84013882', 'Tuesday Night Live', 'Live now, deepstack in progress. 25k stack, 20-minute levels.', NOW() - interval '95 minutes', NULL, 5000, 500, NULL, 25000, 'in_progress', 'none', 0, 6);
 
 -- === Blind structures ===
 INSERT INTO tournament_structures (tournament_id, level_number, small_blind, big_blind, ante, duration_minutes, is_break, break_duration_minutes) VALUES
@@ -460,7 +461,21 @@ INSERT INTO tournament_structures (tournament_id, level_number, small_blind, big
 ('27367441-df3e-5883-a39d-d032cd46596a', 11, 500, 1000, 1000, 20, false, NULL),
 ('27367441-df3e-5883-a39d-d032cd46596a', 12, 600, 1200, 1200, 20, false, NULL),
 ('27367441-df3e-5883-a39d-d032cd46596a', 13, 800, 1600, 1600, 20, false, NULL),
-('27367441-df3e-5883-a39d-d032cd46596a', 14, 1000, 2000, 2000, 20, false, NULL);
+('27367441-df3e-5883-a39d-d032cd46596a', 14, 1000, 2000, 2000, 20, false, NULL),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', 1, 25, 50, 0, 20, false, NULL),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', 2, 50, 100, 0, 20, false, NULL),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', 3, 75, 150, 0, 20, false, NULL),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', 4, 100, 200, 200, 20, false, NULL),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', 5, 0, 0, 0, 15, true, 15),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', 6, 150, 300, 300, 20, false, NULL),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', 7, 200, 400, 400, 20, false, NULL),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', 8, 300, 600, 600, 20, false, NULL),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', 9, 400, 800, 800, 20, false, NULL),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', 10, 0, 0, 0, 15, true, 15),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', 11, 500, 1000, 1000, 20, false, NULL),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', 12, 600, 1200, 1200, 20, false, NULL),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', 13, 800, 1600, 1600, 20, false, NULL),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', 14, 1000, 2000, 2000, 20, false, NULL);
 
 -- === Registrations, entries, check-ins ===
 INSERT INTO tournament_registrations (tournament_id, user_id, club_player_id, registration_time, status) VALUES
@@ -1690,6 +1705,49 @@ INSERT INTO check_in (app_user_id, tournament_id, club_id, checked_in_at) VALUES
 ('fbab6b35-2de3-5a9f-a856-bdb1426b1047', '02ebfceb-7a5f-5cf6-af9e-849213e20efd', '5ec5689d-a433-5706-a9ae-31c85c144b23', '2026-06-21 12:32:00+00'),
 ('65b3a0bd-f6d7-5a33-b7a0-ba560fcb841e', '02ebfceb-7a5f-5cf6-af9e-849213e20efd', '5ec5689d-a433-5706-a9ae-31c85c144b23', '2026-06-21 12:23:00+00'),
 ('32403c7e-3427-537a-b4ab-77a7c40b1279', '02ebfceb-7a5f-5cf6-af9e-849213e20efd', '5ec5689d-a433-5706-a9ae-31c85c144b23', '2026-06-21 12:47:00+00');
+
+-- === Live in-progress tournament: seated field + running clock ===
+INSERT INTO tournament_registrations (tournament_id, user_id, club_player_id, registration_time, status) VALUES
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '9549d323-2ca7-5b7a-a23b-e9844c782d78', 'ff3522bf-e4d5-5633-91b7-ad8bc24a880a', NOW() - interval '2 hours', 'seated'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '1e34fb07-7add-500a-a388-c8494c20c8bb', '1b425dfe-afef-5083-9a10-c116d29e5e8e', NOW() - interval '2 hours', 'seated'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '8bec458b-ce53-501a-a54c-fbbd7838f6c0', 'bd8707d5-93ba-5e4f-8960-15f051829612', NOW() - interval '2 hours', 'seated'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '8d69f9f5-1ee6-5e48-8237-61a5c7ecd7ea', '66de17a9-2aba-5fc2-9138-0846dc98196e', NOW() - interval '2 hours', 'seated'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '77597f34-b651-5d77-8e79-29f52d3ba161', 'b52076a6-b084-50b4-86c3-163081338033', NOW() - interval '2 hours', 'seated'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '65b3a0bd-f6d7-5a33-b7a0-ba560fcb841e', 'f55da36c-7312-53ec-8f37-e2b589c83f23', NOW() - interval '2 hours', 'seated'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', 'a2d3ebec-de8d-59dd-8c5b-0ca5af7a454c', '57fd4814-25ce-571b-9640-db67f8faad50', NOW() - interval '2 hours', 'seated'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '17b0800f-f72e-5209-85e0-b90be77eb8e8', '056eea7d-6958-5494-abb4-207de44015aa', NOW() - interval '2 hours', 'seated'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', 'eaac0ce1-d164-5538-aac8-f9e19dd79a02', 'd687bcb0-6571-582d-9740-b70fc839f9f1', NOW() - interval '2 hours', 'seated');
+INSERT INTO tournament_entries (tournament_id, user_id, club_player_id, entry_type, amount_cents, chips_received, payment_method, recorded_by, created_at) VALUES
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '9549d323-2ca7-5b7a-a23b-e9844c782d78', 'ff3522bf-e4d5-5633-91b7-ad8bc24a880a', 'initial', 5000, 25000, 'cash', 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '110 minutes'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '1e34fb07-7add-500a-a388-c8494c20c8bb', '1b425dfe-afef-5083-9a10-c116d29e5e8e', 'initial', 5000, 25000, 'cash', 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '110 minutes'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '8bec458b-ce53-501a-a54c-fbbd7838f6c0', 'bd8707d5-93ba-5e4f-8960-15f051829612', 'initial', 5000, 25000, 'cash', 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '110 minutes'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '8d69f9f5-1ee6-5e48-8237-61a5c7ecd7ea', '66de17a9-2aba-5fc2-9138-0846dc98196e', 'initial', 5000, 25000, 'cash', 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '110 minutes'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '77597f34-b651-5d77-8e79-29f52d3ba161', 'b52076a6-b084-50b4-86c3-163081338033', 'initial', 5000, 25000, 'cash', 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '110 minutes'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '65b3a0bd-f6d7-5a33-b7a0-ba560fcb841e', 'f55da36c-7312-53ec-8f37-e2b589c83f23', 'initial', 5000, 25000, 'cash', 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '110 minutes'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', 'a2d3ebec-de8d-59dd-8c5b-0ca5af7a454c', '57fd4814-25ce-571b-9640-db67f8faad50', 'initial', 5000, 25000, 'cash', 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '110 minutes'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '17b0800f-f72e-5209-85e0-b90be77eb8e8', '056eea7d-6958-5494-abb4-207de44015aa', 'initial', 5000, 25000, 'cash', 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '110 minutes'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', 'eaac0ce1-d164-5538-aac8-f9e19dd79a02', 'd687bcb0-6571-582d-9740-b70fc839f9f1', 'initial', 5000, 25000, 'cash', 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '110 minutes');
+INSERT INTO check_in (app_user_id, tournament_id, club_id, checked_in_at) VALUES
+('9549d323-2ca7-5b7a-a23b-e9844c782d78', '77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '4114f430-9557-5c65-b29c-038a84013882', NOW() - interval '110 minutes'),
+('1e34fb07-7add-500a-a388-c8494c20c8bb', '77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '4114f430-9557-5c65-b29c-038a84013882', NOW() - interval '110 minutes'),
+('8bec458b-ce53-501a-a54c-fbbd7838f6c0', '77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '4114f430-9557-5c65-b29c-038a84013882', NOW() - interval '110 minutes'),
+('8d69f9f5-1ee6-5e48-8237-61a5c7ecd7ea', '77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '4114f430-9557-5c65-b29c-038a84013882', NOW() - interval '110 minutes'),
+('77597f34-b651-5d77-8e79-29f52d3ba161', '77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '4114f430-9557-5c65-b29c-038a84013882', NOW() - interval '110 minutes'),
+('65b3a0bd-f6d7-5a33-b7a0-ba560fcb841e', '77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '4114f430-9557-5c65-b29c-038a84013882', NOW() - interval '110 minutes'),
+('a2d3ebec-de8d-59dd-8c5b-0ca5af7a454c', '77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '4114f430-9557-5c65-b29c-038a84013882', NOW() - interval '110 minutes'),
+('17b0800f-f72e-5209-85e0-b90be77eb8e8', '77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '4114f430-9557-5c65-b29c-038a84013882', NOW() - interval '110 minutes'),
+('eaac0ce1-d164-5538-aac8-f9e19dd79a02', '77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '4114f430-9557-5c65-b29c-038a84013882', NOW() - interval '110 minutes');
+INSERT INTO table_seat_assignments (tournament_id, club_table_id, user_id, club_player_id, seat_number, stack_size, is_current, assigned_by, assigned_at) VALUES
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '82cb9dba-45ae-5af8-9910-d8da5c2b0b95', '9549d323-2ca7-5b7a-a23b-e9844c782d78', 'ff3522bf-e4d5-5633-91b7-ad8bc24a880a', 1, 18500, true, 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '95 minutes'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '82cb9dba-45ae-5af8-9910-d8da5c2b0b95', '1e34fb07-7add-500a-a388-c8494c20c8bb', '1b425dfe-afef-5083-9a10-c116d29e5e8e', 2, 41000, true, 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '95 minutes'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '82cb9dba-45ae-5af8-9910-d8da5c2b0b95', '8bec458b-ce53-501a-a54c-fbbd7838f6c0', 'bd8707d5-93ba-5e4f-8960-15f051829612', 3, 22000, true, 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '95 minutes'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '82cb9dba-45ae-5af8-9910-d8da5c2b0b95', '8d69f9f5-1ee6-5e48-8237-61a5c7ecd7ea', '66de17a9-2aba-5fc2-9138-0846dc98196e', 4, 33500, true, 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '95 minutes'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '82cb9dba-45ae-5af8-9910-d8da5c2b0b95', '77597f34-b651-5d77-8e79-29f52d3ba161', 'b52076a6-b084-50b4-86c3-163081338033', 5, 27500, true, 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '95 minutes'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '82cb9dba-45ae-5af8-9910-d8da5c2b0b95', '65b3a0bd-f6d7-5a33-b7a0-ba560fcb841e', 'f55da36c-7312-53ec-8f37-e2b589c83f23', 6, 15000, true, 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '95 minutes'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '82cb9dba-45ae-5af8-9910-d8da5c2b0b95', 'a2d3ebec-de8d-59dd-8c5b-0ca5af7a454c', '57fd4814-25ce-571b-9640-db67f8faad50', 7, 24000, true, 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '95 minutes'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '82cb9dba-45ae-5af8-9910-d8da5c2b0b95', '17b0800f-f72e-5209-85e0-b90be77eb8e8', '056eea7d-6958-5494-abb4-207de44015aa', 8, 30500, true, 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '95 minutes'),
+('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '82cb9dba-45ae-5af8-9910-d8da5c2b0b95', 'eaac0ce1-d164-5538-aac8-f9e19dd79a02', 'd687bcb0-6571-582d-9740-b70fc839f9f1', 9, 12500, true, 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '95 minutes');
+UPDATE tournament_clocks SET clock_status = 'running', current_level = 6, level_started_at = NOW() - interval '12 minutes', level_end_time = NOW() + interval '8 minutes', auto_advance = false WHERE tournament_id = '77f4692b-3a00-5b90-8f1f-9c52f3a4f65d';
 
 -- === Results & payouts ===
 INSERT INTO tournament_results (tournament_id, user_id, club_player_id, final_position, prize_cents, points) VALUES
