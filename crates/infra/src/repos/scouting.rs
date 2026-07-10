@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use sqlx::{PgExecutor, Result as SqlxResult};
 use uuid::Uuid;
 
@@ -58,54 +57,4 @@ pub async fn pool_handle<'e>(
     .fetch_optional(executor)
     .await?;
     Ok(row.map(|r| r.0))
-}
-
-/// Distinct profiles a searcher has viewed since `since` (the quota usage).
-pub async fn distinct_targets_since<'e>(
-    executor: impl PgExecutor<'e>,
-    searcher_id: Uuid,
-    since: DateTime<Utc>,
-) -> SqlxResult<i64> {
-    let row: (i64,) = sqlx::query_as(
-        "SELECT COUNT(DISTINCT target_id) FROM scouting_lookup \
-         WHERE searcher_id = $1 AND created_at >= $2",
-    )
-    .bind(searcher_id)
-    .bind(since)
-    .fetch_one(executor)
-    .await?;
-    Ok(row.0)
-}
-
-/// Whether the searcher has already viewed this target within the window (a
-/// repeat view is free — it doesn't consume new quota).
-pub async fn has_looked_since<'e>(
-    executor: impl PgExecutor<'e>,
-    searcher_id: Uuid,
-    target_id: Uuid,
-    since: DateTime<Utc>,
-) -> SqlxResult<bool> {
-    let row: (bool,) = sqlx::query_as(
-        "SELECT EXISTS(SELECT 1 FROM scouting_lookup \
-         WHERE searcher_id = $1 AND target_id = $2 AND created_at >= $3)",
-    )
-    .bind(searcher_id)
-    .bind(target_id)
-    .bind(since)
-    .fetch_one(executor)
-    .await?;
-    Ok(row.0)
-}
-
-pub async fn record_lookup<'e>(
-    executor: impl PgExecutor<'e>,
-    searcher_id: Uuid,
-    target_id: Uuid,
-) -> SqlxResult<()> {
-    sqlx::query("INSERT INTO scouting_lookup (searcher_id, target_id) VALUES ($1, $2)")
-        .bind(searcher_id)
-        .bind(target_id)
-        .execute(executor)
-        .await?;
-    Ok(())
 }
