@@ -1747,7 +1747,7 @@ INSERT INTO table_seat_assignments (tournament_id, club_table_id, user_id, club_
 ('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '82cb9dba-45ae-5af8-9910-d8da5c2b0b95', 'a2d3ebec-de8d-59dd-8c5b-0ca5af7a454c', '57fd4814-25ce-571b-9640-db67f8faad50', 7, 24000, true, 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '95 minutes'),
 ('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '82cb9dba-45ae-5af8-9910-d8da5c2b0b95', '17b0800f-f72e-5209-85e0-b90be77eb8e8', '056eea7d-6958-5494-abb4-207de44015aa', 8, 30500, true, 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '95 minutes'),
 ('77f4692b-3a00-5b90-8f1f-9c52f3a4f65d', '82cb9dba-45ae-5af8-9910-d8da5c2b0b95', 'eaac0ce1-d164-5538-aac8-f9e19dd79a02', 'd687bcb0-6571-582d-9740-b70fc839f9f1', 9, 12500, true, 'f647df8a-5e87-5d63-af45-659fe8a0c16f', NOW() - interval '95 minutes');
-UPDATE tournament_clocks SET clock_status = 'running', current_level = 6, level_started_at = NOW() - interval '12 minutes', level_end_time = NOW() + interval '8 minutes', auto_advance = false WHERE tournament_id = '77f4692b-3a00-5b90-8f1f-9c52f3a4f65d';
+UPDATE tournament_clocks SET clock_status = 'running', current_level = 6, level_started_at = NOW() - interval '12 minutes', level_end_time = NOW() + interval '8 minutes', auto_advance = true WHERE tournament_id = '77f4692b-3a00-5b90-8f1f-9c52f3a4f65d';
 
 -- === Results & payouts ===
 INSERT INTO tournament_results (tournament_id, user_id, club_player_id, final_position, prize_cents, points) VALUES

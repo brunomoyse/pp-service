@@ -415,12 +415,13 @@ emit(
     + ",\n".join(live_seat) + ";"
 )
 # Put the tournament at a mid-event level with a live, ticking clock (level is
-# tracked on the clock). auto_advance off so the demo stays parked at this level
-# instead of drifting over time.
+# tracked on the clock). auto_advance ON so the clock service rolls it to the
+# next level when the timer expires, like a real live event — otherwise it
+# freezes at 00:00 at the end of this level.
 emit(
     "UPDATE tournament_clocks SET clock_status = 'running', "
     f"current_level = {LIVE_LEVEL}, level_started_at = NOW() - interval '12 minutes', "
-    "level_end_time = NOW() + interval '8 minutes', auto_advance = false "
+    "level_end_time = NOW() + interval '8 minutes', auto_advance = true "
     f"WHERE tournament_id = {q(LIVE.id)};"
 )
 
