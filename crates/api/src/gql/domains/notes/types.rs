@@ -177,3 +177,23 @@ pub struct AddShowdownObservationInput {
     pub tournament_id: Option<ID>,
     pub description: String,
 }
+
+/// A single seat at the viewer's table, with the viewer's private note on the
+/// occupant (if any).
+#[derive(SimpleObject)]
+pub struct TableSeatNote {
+    pub club_player: crate::gql::domains::identity::types::ClubPlayer,
+    pub seat_number: i32,
+    pub stack_size: Option<i32>,
+    pub note: Option<PlayerNote>,
+}
+
+/// The viewer's current table in a live tournament: the human table number,
+/// their own seat, and every other seated player with the viewer's note.
+#[derive(SimpleObject)]
+pub struct MyTableView {
+    pub table_number: i32,
+    pub my_seat_number: Option<i32>,
+    /// Tablemates (the viewer excluded), ordered by seat number.
+    pub seats: Vec<TableSeatNote>,
+}

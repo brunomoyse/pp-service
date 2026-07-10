@@ -10,8 +10,8 @@ use infra::repos::player_notes;
 
 use super::service;
 use super::types::{
-    AddPlayerNoteTagInput, AddShowdownObservationInput, FieldPlayerNote, PlayerNote, PlayerNoteTag,
-    ShowdownObservation, UpsertPlayerNoteInput,
+    AddPlayerNoteTagInput, AddShowdownObservationInput, FieldPlayerNote, MyTableView, PlayerNote,
+    PlayerNoteTag, ShowdownObservation, TableSeatNote, UpsertPlayerNoteInput,
 };
 
 fn author_id(ctx: &Context<'_>) -> Result<Uuid> {
@@ -96,6 +96,68 @@ impl NotesQuery {
             })
             .collect();
         Ok(field)
+    }
+
+    /// Live prep: the players seated at the viewer's own table, each paired with
+    /// the viewer's private note. Null when the viewer isn't currently seated.
+    async fn my_table_notes(
+        &self,
+        ctx: &Context<'_>,
+        tournament_id: ID,
+    ) -> Result<Option<MyTableView>> {
+        let author = author_id(ctx)?;
+        let tid = Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+
+        let state = ctx.data::<AppState>()?;
+        let rows = player_notes::table_with_notes(&state.db, tid, author).await?;
+        if rows.is_empty() {
+            return Ok(None);
+        }
+
+        let table_number = rows[0].table_number;
+        let mut my_seat_number = None;
+        let mut seats = Vec::new();
+        for r in rows {
+            // The viewer's own seat sets the header; they aren't a tablemate.
+            if r.rp_app_user_id == Some(author) {
+                my_seat_number = Some(r.seat_number);
+                continue;
+            }
+            let rp = ClubPlayerRow {
+                id: r.rp_id,
+                club_id: r.rp_club_id,
+                display_name: r.rp_display_name,
+                first_name: None,
+                last_name: None,
+                app_user_id: r.rp_app_user_id,
+                is_active: true,
+                created_at: r.rp_created_at,
+                updated_at: r.rp_updated_at,
+            };
+            let note = r.pn_id.map(|id| {
+                PlayerNote::from(PlayerNoteRow {
+                    id,
+                    author_app_user_id: author,
+                    subject_club_player_id: r.rp_id,
+                    body: r.pn_body.unwrap_or_default(),
+                    style: r.pn_style,
+                    created_at: r.pn_created_at.unwrap_or(r.rp_created_at),
+                    updated_at: r.pn_updated_at.unwrap_or(r.rp_updated_at),
+                })
+            });
+            seats.push(TableSeatNote {
+                club_player: ClubPlayer::from(rp),
+                seat_number: r.seat_number,
+                stack_size: r.stack_size,
+                note,
+            });
+        }
+
+        Ok(Some(MyTableView {
+            table_number,
+            my_seat_number,
+            seats,
+        }))
     }
 }
 

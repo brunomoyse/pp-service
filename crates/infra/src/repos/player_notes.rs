@@ -27,6 +27,27 @@ pub struct FieldNoteRow {
     pub pn_updated_at: Option<DateTime<Utc>>,
 }
 
+/// One seat at a tournament table, with the viewer's note on the occupant
+/// flattened in. Carries the seat's position and the human table number so the
+/// caller can render "Table N · Seat M".
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct TableSeatNoteRow {
+    pub rp_id: Uuid,
+    pub rp_club_id: Uuid,
+    pub rp_display_name: String,
+    pub rp_app_user_id: Option<Uuid>,
+    pub rp_created_at: DateTime<Utc>,
+    pub rp_updated_at: DateTime<Utc>,
+    pub seat_number: i32,
+    pub stack_size: Option<i32>,
+    pub table_number: i32,
+    pub pn_id: Option<Uuid>,
+    pub pn_body: Option<String>,
+    pub pn_style: Option<String>,
+    pub pn_created_at: Option<DateTime<Utc>>,
+    pub pn_updated_at: Option<DateTime<Utc>>,
+}
+
 const NOTE_COLS: &str =
     "id, author_app_user_id, subject_club_player_id, body, style, created_at, updated_at";
 
@@ -226,6 +247,44 @@ pub async fn field_with_notes<'e>(
            AND reg.status NOT IN ('cancelled', 'no_show') \
            AND rp.app_user_id IS DISTINCT FROM $2 \
          ORDER BY (pn.id IS NOT NULL) DESC, rp.display_name ASC",
+    )
+    .bind(tournament_id)
+    .bind(author_app_user_id)
+    .fetch_all(executor)
+    .await
+}
+
+/// Every current seat at the viewer's own table in a tournament, each with the
+/// viewer's private note (if any) on the occupant. Author-scoped: only `$2`'s
+/// own notes are joined. Includes the viewer's own seat (so the caller can
+/// report their seat/table); empty when the viewer isn't currently seated.
+pub async fn table_with_notes<'e>(
+    executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
+    author_app_user_id: Uuid,
+) -> SqlxResult<Vec<TableSeatNoteRow>> {
+    sqlx::query_as::<_, TableSeatNoteRow>(
+        "SELECT \
+            rp.id AS rp_id, rp.club_id AS rp_club_id, rp.display_name AS rp_display_name, \
+            rp.app_user_id AS rp_app_user_id, rp.created_at AS rp_created_at, \
+            rp.updated_at AS rp_updated_at, \
+            tsa.seat_number AS seat_number, tsa.stack_size AS stack_size, \
+            ct.table_number AS table_number, \
+            pn.id AS pn_id, pn.body AS pn_body, pn.style AS pn_style, \
+            pn.created_at AS pn_created_at, pn.updated_at AS pn_updated_at \
+         FROM table_seat_assignments tsa \
+         JOIN club_player rp ON rp.id = tsa.club_player_id \
+         JOIN club_tables ct ON ct.id = tsa.club_table_id \
+         LEFT JOIN player_note pn \
+            ON pn.subject_club_player_id = rp.id AND pn.author_app_user_id = $2 \
+         WHERE tsa.tournament_id = $1 \
+           AND tsa.is_current \
+           AND tsa.club_table_id = ( \
+               SELECT club_table_id FROM table_seat_assignments \
+               WHERE tournament_id = $1 AND is_current AND user_id = $2 \
+               LIMIT 1 \
+           ) \
+         ORDER BY tsa.seat_number ASC",
     )
     .bind(tournament_id)
     .bind(author_app_user_id)
