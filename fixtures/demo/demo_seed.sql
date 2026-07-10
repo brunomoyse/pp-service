@@ -2363,4 +2363,61 @@ INSERT INTO season_pass (season_id, app_user_id) VALUES
 INSERT INTO leaderboard_configs (id, club_id, name, formula_params, membership_mode, period_start, period_end, is_default) VALUES
 ('89449e9d-fcdc-54be-b2dd-1b258910e965', '4114f430-9557-5c65-b29c-038a84013882', 'Summer Series 2026', '{"base_points": 2.0, "field_multiplier": 3.0, "buyin_multiplier": 1.0, "min_players": 1, "cap": 60}'::jsonb, 'all_in_period', '2026-06-01 00:00:00+00', '2026-08-31 22:00:00+00', true);
 UPDATE tournaments SET leaderboard_config_id = '89449e9d-fcdc-54be-b2dd-1b258910e965' WHERE club_id = '4114f430-9557-5c65-b29c-038a84013882' AND start_time >= '2026-06-01 00:00:00+00';
+
+-- === Scouting pool opt-ins (discoverability + named P/L consent) ===
+INSERT INTO user_privacy_settings (app_user_id, share_named_pl, in_scouting_pool) VALUES
+('8d69f9f5-1ee6-5e48-8237-61a5c7ecd7ea', true, true),
+('1e34fb07-7add-500a-a388-c8494c20c8bb', true, true),
+('8bec458b-ce53-501a-a54c-fbbd7838f6c0', true, true),
+('9549d323-2ca7-5b7a-a23b-e9844c782d78', false, true),
+('a2d3ebec-de8d-59dd-8c5b-0ca5af7a454c', true, true),
+('eaac0ce1-d164-5538-aac8-f9e19dd79a02', false, true),
+('fbab6b35-2de3-5a9f-a856-bdb1426b1047', true, true),
+('d8daf41e-26b8-5488-ab26-aeb541e51a82', false, true),
+('32403c7e-3427-537a-b4ab-77a7c40b1279', true, true),
+('4d31d819-ebbb-566b-8c03-29c828ef220b', false, true),
+('77597f34-b651-5d77-8e79-29f52d3ba161', true, true),
+('ae5c0745-17fb-5a5e-8ea4-41e8cbeca214', false, true),
+('17b0800f-f72e-5209-85e0-b90be77eb8e8', true, true);
+
+-- === Opponent notes (reviewer's private scouting book) ===
+INSERT INTO player_note (id, author_app_user_id, subject_club_player_id, body, style) VALUES
+('63b7d0b3-464e-5838-91e2-673f6bc2a0fa', '8d69f9f5-1ee6-5e48-8237-61a5c7ecd7ea', '1b425dfe-afef-5083-9a10-c116d29e5e8e', 'Very aggressive pre-flop, 3-bets light from the button. Fires rivers when the board bricks, slows right down out of position.', 'LAG'),
+('e4cdf6f4-7213-56a9-b3e6-bbeac98087dd', '8d69f9f5-1ee6-5e48-8237-61a5c7ecd7ea', 'bd8707d5-93ba-5e4f-8960-15f051829612', 'Solid regular. Opens tight from early position and is value-heavy. Folds to a well-timed 3-bet.', 'TAG'),
+('ece1cf9f-0c8b-5ccd-b5e0-32930ef0d423', '8d69f9f5-1ee6-5e48-8237-61a5c7ecd7ea', 'ff3522bf-e4d5-5633-91b7-ad8bc24a880a', 'Calls far too wide pre and post. Rarely folds top pair. Print value, do not bluff him.', 'LP'),
+('7c7c2f61-360f-5c1d-aba5-a48638dadaa2', '8d69f9f5-1ee6-5e48-8237-61a5c7ecd7ea', '57fd4814-25ce-571b-9640-db67f8faad50', 'Patient, waits for premiums, c-bets small. Respect his river raises, they are the nuts.', 'TAG'),
+('fef95170-b159-5a94-bc23-116b16984a95', '8d69f9f5-1ee6-5e48-8237-61a5c7ecd7ea', 'd687bcb0-6571-582d-9740-b70fc839f9f1', 'Loose and splashy, overplays draws and turns middle pair into a bluff. Call down lighter.', 'LAG'),
+('3f541449-80af-58b2-8e76-bd499ed5c752', '8d69f9f5-1ee6-5e48-8237-61a5c7ecd7ea', '7c67e572-a089-5a76-b026-de1f9add6647', 'Tight and passive, only bets when she is strong. Fold to any turn or river aggression.', 'TP'),
+('a8ab9a1d-d899-5961-b8e7-2a92f5a62349', '8d69f9f5-1ee6-5e48-8237-61a5c7ecd7ea', '3081bb85-29b9-579d-a485-9c11a7e00422', 'Calling station, chases gutshots to the river. Value bet thin, never try to bluff her off a pair.', 'LP'),
+('b195a0c2-362e-59ec-8034-6df83d3e8944', '8d69f9f5-1ee6-5e48-8237-61a5c7ecd7ea', 'b52076a6-b084-50b4-86c3-163081338033', 'Table captain, applies constant pressure and iso-raises limpers. Trap with strong hands and let him barrel.', 'LAG'),
+('27236f9c-039c-5670-8789-54adad63da98', '8d69f9f5-1ee6-5e48-8237-61a5c7ecd7ea', '056eea7d-6958-5494-abb4-207de44015aa', 'Balanced reg, genuinely hard to read. Avoid marginal spots against him out of position.', 'TAG'),
+('5e6c4b4c-2617-5d93-96f1-e98e6a575961', '8d69f9f5-1ee6-5e48-8237-61a5c7ecd7ea', 'ab5ae0ac-773c-5289-9b17-99528d084f0c', 'Passive, only min-raises the nuts. Believe his big bets and fold your bluff-catchers.', 'LP');
+INSERT INTO player_note_tag (note_id, kind, tag) VALUES
+('63b7d0b3-464e-5838-91e2-673f6bc2a0fa', 'tag', 'aggressive'),
+('63b7d0b3-464e-5838-91e2-673f6bc2a0fa', 'tag', 'tricky'),
+('63b7d0b3-464e-5838-91e2-673f6bc2a0fa', 'tell', 'Reaches for chips early when strong'),
+('e4cdf6f4-7213-56a9-b3e6-bbeac98087dd', 'tag', 'tight'),
+('e4cdf6f4-7213-56a9-b3e6-bbeac98087dd', 'tag', 'aggressive'),
+('ece1cf9f-0c8b-5ccd-b5e0-32930ef0d423', 'tag', 'loose'),
+('ece1cf9f-0c8b-5ccd-b5e0-32930ef0d423', 'tag', 'passive'),
+('ece1cf9f-0c8b-5ccd-b5e0-32930ef0d423', 'tag', 'station'),
+('7c7c2f61-360f-5c1d-aba5-a48638dadaa2', 'tag', 'tight'),
+('7c7c2f61-360f-5c1d-aba5-a48638dadaa2', 'tag', 'rock'),
+('fef95170-b159-5a94-bc23-116b16984a95', 'tag', 'loose'),
+('fef95170-b159-5a94-bc23-116b16984a95', 'tag', 'aggressive'),
+('fef95170-b159-5a94-bc23-116b16984a95', 'tag', 'maniac'),
+('3f541449-80af-58b2-8e76-bd499ed5c752', 'tag', 'tight'),
+('3f541449-80af-58b2-8e76-bd499ed5c752', 'tag', 'passive'),
+('a8ab9a1d-d899-5961-b8e7-2a92f5a62349', 'tag', 'station'),
+('a8ab9a1d-d899-5961-b8e7-2a92f5a62349', 'tag', 'loose'),
+('b195a0c2-362e-59ec-8034-6df83d3e8944', 'tag', 'aggressive'),
+('b195a0c2-362e-59ec-8034-6df83d3e8944', 'tag', 'tricky'),
+('b195a0c2-362e-59ec-8034-6df83d3e8944', 'tag', 'maniac'),
+('27236f9c-039c-5670-8789-54adad63da98', 'tag', 'tricky'),
+('5e6c4b4c-2617-5d93-96f1-e98e6a575961', 'tag', 'passive'),
+('5e6c4b4c-2617-5d93-96f1-e98e6a575961', 'tag', 'rock');
+INSERT INTO showdown_observation (note_id, tournament_id, description) VALUES
+('63b7d0b3-464e-5838-91e2-673f6bc2a0fa', 'c7bd2cef-ec18-5b52-9862-93d276f78a52', 'Showed a three-barrel bluff with seven-high on a paired board.'),
+('ece1cf9f-0c8b-5ccd-b5e0-32930ef0d423', '5f3dc88d-9581-58e0-934b-19e543e3701d', 'Called three streets with second pair, no kicker.'),
+('b195a0c2-362e-59ec-8034-6df83d3e8944', 'd7e8a44d-a8e4-5b0f-9780-6bb41c1cc226', '4-bet shoved A-5 suited over my 3-bet and tabled it.');
 COMMIT;
