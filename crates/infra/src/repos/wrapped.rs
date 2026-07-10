@@ -44,6 +44,33 @@ pub async fn favorite_club_for_year<'e>(
     .await
 }
 
+/// The opponent who has finished ahead of this player most often across every
+/// tournament they both played — the player's lifetime "nemesis", if any. Used
+/// by the Year in Poker recap. A lower `final_position` is better, so a "loss"
+/// is a tournament where the opponent finished above the player.
+pub async fn nemesis_for_user<'e>(
+    executor: impl PgExecutor<'e>,
+    user_id: Uuid,
+) -> SqlxResult<Option<String>> {
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT COALESCE(u.username, u.first_name) AS opponent_name \
+         FROM tournament_results r1 \
+         JOIN tournament_results r2 \
+              ON r2.tournament_id = r1.tournament_id AND r2.user_id <> r1.user_id \
+         JOIN users u ON u.id = r2.user_id \
+         WHERE r1.user_id = $1 \
+         GROUP BY r2.user_id, u.username, u.first_name \
+         HAVING SUM(CASE WHEN r1.final_position > r2.final_position THEN 1 ELSE 0 END) > 0 \
+         ORDER BY SUM(CASE WHEN r1.final_position > r2.final_position THEN 1 ELSE 0 END) DESC, \
+                  COUNT(*) DESC \
+         LIMIT 1",
+    )
+    .bind(user_id)
+    .fetch_optional(executor)
+    .await?;
+    Ok(row.map(|r| r.0))
+}
+
 /// Number of check-ins a player logged that year.
 pub async fn check_ins_for_year<'e>(
     executor: impl PgExecutor<'e>,

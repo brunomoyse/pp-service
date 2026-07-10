@@ -6,9 +6,9 @@ use crate::auth::jwt::Claims;
 use crate::gql::common::helpers::tournament_hidden_from_viewer;
 use crate::gql::error::ResultExt;
 use crate::state::AppState;
-use infra::repos::{attendance, friendships, rivalries, wrapped};
+use infra::repos::{attendance, friendships, wrapped};
 
-use super::types::{Friend, Rivalry, YearInPoker};
+use super::types::{Friend, YearInPoker};
 
 fn current_user_id(ctx: &Context<'_>) -> Result<Uuid> {
     let claims = ctx.data::<Claims>()?;
@@ -20,20 +20,6 @@ pub struct SocialQuery;
 
 #[Object]
 impl SocialQuery {
-    /// The current user's head-to-head records, most-played opponents first.
-    /// The nemesis is the entry with the most losses.
-    async fn my_rivalries(
-        &self,
-        ctx: &Context<'_>,
-        #[graphql(default = 10)] limit: i32,
-    ) -> Result<Vec<Rivalry>> {
-        let state = ctx.data::<AppState>()?;
-        let user_id = current_user_id(ctx)?;
-        let capped = limit.clamp(1, 50) as i64;
-        let rows = rivalries::for_user(&state.db, user_id, capped).await?;
-        Ok(rows.into_iter().map(Rivalry::from).collect())
-    }
-
     /// The current user's accepted friends.
     async fn my_friends(&self, ctx: &Context<'_>) -> Result<Vec<Friend>> {
         let state = ctx.data::<AppState>()?;
@@ -73,12 +59,7 @@ impl SocialQuery {
             .map(|s| s.longest_streak)
             .unwrap_or(0);
         // Lifetime nemesis: the opponent who has beaten the player most.
-        let nemesis = rivalries::for_user(db, user_id, 50)
-            .await?
-            .into_iter()
-            .filter(|r| r.losses > 0)
-            .max_by_key(|r| (r.losses, r.meetings))
-            .map(|r| r.opponent_name);
+        let nemesis = wrapped::nemesis_for_user(db, user_id).await?;
 
         let winnings = stats.winnings_cents;
         let buyins = stats.buyins_cents;

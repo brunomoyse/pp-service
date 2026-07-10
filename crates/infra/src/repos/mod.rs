@@ -28,7 +28,6 @@ pub mod privacy;
 pub mod quests;
 pub mod redemption_codes;
 pub mod refresh_tokens;
-pub mod rivalries;
 pub mod scouting;
 pub mod seasons;
 pub mod table_seat_assignments;

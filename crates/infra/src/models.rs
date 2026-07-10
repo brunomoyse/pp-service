@@ -333,18 +333,6 @@ pub struct SeasonChampionRow {
     pub events: i64,
 }
 
-/// Aggregate result: head-to-head record against one opponent.
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
-pub struct RivalryRow {
-    pub opponent_id: Uuid,
-    pub opponent_name: String,
-    pub meetings: i64,
-    /// Tournaments where the subject finished above this opponent.
-    pub wins: i64,
-    /// Tournaments where this opponent finished above the subject.
-    pub losses: i64,
-}
-
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct FriendshipRow {
     pub id: Uuid,

@@ -48,7 +48,7 @@ pub use crate::gql::domains::seasons::types::{
 };
 
 // Social types
-pub use crate::gql::domains::social::types::{Friend, MutualFlame, Rivalry, YearInPoker};
+pub use crate::gql::domains::social::types::{Friend, MutualFlame, YearInPoker};
 
 // Predictions (Prediction-Points economy) types
 pub use crate::gql::domains::predictions::types::{PredictionBalance, PredictionEntry};

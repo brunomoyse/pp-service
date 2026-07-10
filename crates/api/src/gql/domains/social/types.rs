@@ -9,32 +9,6 @@ use crate::state::AppState;
 /// if more than this many days pass without a joint check-in night.
 const FLAME_ALIVE_DAYS: i64 = 8;
 
-/// Head-to-head record against a single opponent. Your "nemesis" is simply the
-/// rivalry with the most losses.
-#[derive(SimpleObject, Clone, Debug)]
-pub struct Rivalry {
-    pub opponent_id: ID,
-    pub opponent_name: String,
-    /// Tournaments both players finished.
-    pub meetings: i32,
-    /// Tournaments you finished above this opponent.
-    pub wins: i32,
-    /// Tournaments this opponent finished above you.
-    pub losses: i32,
-}
-
-impl From<infra::models::RivalryRow> for Rivalry {
-    fn from(r: infra::models::RivalryRow) -> Self {
-        Self {
-            opponent_id: r.opponent_id.into(),
-            opponent_name: r.opponent_name,
-            meetings: r.meetings as i32,
-            wins: r.wins as i32,
-            losses: r.losses as i32,
-        }
-    }
-}
-
 /// The mutual flame between the current user and a friend — alive only while
 /// they keep checking in on the same nights.
 #[derive(SimpleObject, Clone, Debug)]
