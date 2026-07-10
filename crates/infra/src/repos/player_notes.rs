@@ -23,6 +23,7 @@ pub struct FieldNoteRow {
     pub pn_id: Option<Uuid>,
     pub pn_body: Option<String>,
     pub pn_style: Option<String>,
+    pub pn_color: Option<String>,
     pub pn_created_at: Option<DateTime<Utc>>,
     pub pn_updated_at: Option<DateTime<Utc>>,
 }
@@ -44,12 +45,13 @@ pub struct TableSeatNoteRow {
     pub pn_id: Option<Uuid>,
     pub pn_body: Option<String>,
     pub pn_style: Option<String>,
+    pub pn_color: Option<String>,
     pub pn_created_at: Option<DateTime<Utc>>,
     pub pn_updated_at: Option<DateTime<Utc>>,
 }
 
 const NOTE_COLS: &str =
-    "id, author_app_user_id, subject_club_player_id, body, style, created_at, updated_at";
+    "id, author_app_user_id, subject_club_player_id, body, style, color, created_at, updated_at";
 
 /// The author's note on a specific subject, if one exists.
 pub async fn get_for_subject<'e>(
@@ -106,25 +108,27 @@ pub async fn count_subjects_for_author<'e>(
         .await
 }
 
-/// Create or update the author's note on a subject (body + style).
+/// Create or update the author's note on a subject (body + style + color).
 pub async fn upsert<'e>(
     executor: impl PgExecutor<'e>,
     author_app_user_id: Uuid,
     subject_club_player_id: Uuid,
     body: &str,
     style: Option<&str>,
+    color: Option<&str>,
 ) -> SqlxResult<PlayerNoteRow> {
     sqlx::query_as::<_, PlayerNoteRow>(&format!(
-        "INSERT INTO player_note (author_app_user_id, subject_club_player_id, body, style) \
-         VALUES ($1, $2, $3, $4) \
+        "INSERT INTO player_note (author_app_user_id, subject_club_player_id, body, style, color) \
+         VALUES ($1, $2, $3, $4, $5) \
          ON CONFLICT (author_app_user_id, subject_club_player_id) DO UPDATE SET \
-            body = EXCLUDED.body, style = EXCLUDED.style, updated_at = NOW() \
+            body = EXCLUDED.body, style = EXCLUDED.style, color = EXCLUDED.color, updated_at = NOW() \
          RETURNING {NOTE_COLS}"
     ))
     .bind(author_app_user_id)
     .bind(subject_club_player_id)
     .bind(body)
     .bind(style)
+    .bind(color)
     .fetch_one(executor)
     .await
 }
@@ -237,7 +241,7 @@ pub async fn field_with_notes<'e>(
             rp.id AS rp_id, rp.club_id AS rp_club_id, rp.display_name AS rp_display_name, \
             rp.app_user_id AS rp_app_user_id, rp.created_at AS rp_created_at, \
             rp.updated_at AS rp_updated_at, \
-            pn.id AS pn_id, pn.body AS pn_body, pn.style AS pn_style, \
+            pn.id AS pn_id, pn.body AS pn_body, pn.style AS pn_style, pn.color AS pn_color, \
             pn.created_at AS pn_created_at, pn.updated_at AS pn_updated_at \
          FROM tournament_registrations reg \
          JOIN club_player rp ON rp.id = reg.club_player_id \
@@ -270,7 +274,7 @@ pub async fn table_with_notes<'e>(
             rp.updated_at AS rp_updated_at, \
             tsa.seat_number AS seat_number, tsa.stack_size AS stack_size, \
             ct.table_number AS table_number, \
-            pn.id AS pn_id, pn.body AS pn_body, pn.style AS pn_style, \
+            pn.id AS pn_id, pn.body AS pn_body, pn.style AS pn_style, pn.color AS pn_color, \
             pn.created_at AS pn_created_at, pn.updated_at AS pn_updated_at \
          FROM table_seat_assignments tsa \
          JOIN club_player rp ON rp.id = tsa.club_player_id \

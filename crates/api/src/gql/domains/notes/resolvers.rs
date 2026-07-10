@@ -85,6 +85,7 @@ impl NotesQuery {
                         subject_club_player_id: r.rp_id,
                         body: r.pn_body.unwrap_or_default(),
                         style: r.pn_style,
+                        color: r.pn_color,
                         created_at: r.pn_created_at.unwrap_or(r.rp_created_at),
                         updated_at: r.pn_updated_at.unwrap_or(r.rp_updated_at),
                     })
@@ -141,6 +142,7 @@ impl NotesQuery {
                     subject_club_player_id: r.rp_id,
                     body: r.pn_body.unwrap_or_default(),
                     style: r.pn_style,
+                    color: r.pn_color,
                     created_at: r.pn_created_at.unwrap_or(r.rp_created_at),
                     updated_at: r.pn_updated_at.unwrap_or(r.rp_updated_at),
                 })
@@ -183,6 +185,7 @@ impl NotesMutation {
             subject,
             input.body.as_deref(),
             input.style,
+            input.color,
         )
         .await?;
         Ok(PlayerNote::from(row))

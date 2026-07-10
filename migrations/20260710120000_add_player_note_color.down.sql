@@ -1,0 +1,1 @@
+ALTER TABLE player_note DROP COLUMN IF EXISTS color;

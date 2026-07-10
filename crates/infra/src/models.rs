@@ -446,6 +446,7 @@ pub struct PlayerNoteRow {
     pub subject_club_player_id: Uuid,
     pub body: String,
     pub style: Option<String>,
+    pub color: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

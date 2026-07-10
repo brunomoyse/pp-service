@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use super::types::{NoteTagKind, PlayerStyle};
+use super::types::{NoteColor, NoteTagKind, PlayerStyle};
 use crate::gql::error::GqlError;
 use infra::models::{PlayerNoteRow, PlayerNoteTagRow, ShowdownObservationRow};
 use infra::repos::player_notes;
@@ -12,10 +12,12 @@ pub async fn upsert_note(
     subject: Uuid,
     body: Option<&str>,
     style: Option<PlayerStyle>,
+    color: Option<NoteColor>,
 ) -> Result<PlayerNoteRow, GqlError> {
     let body = body.unwrap_or("");
     let style_db = style.map(|s| s.as_db());
-    Ok(player_notes::upsert(db, author, subject, body, style_db).await?)
+    let color_db = color.map(|c| c.as_db());
+    Ok(player_notes::upsert(db, author, subject, body, style_db, color_db).await?)
 }
 
 pub async fn add_tag(

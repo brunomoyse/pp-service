@@ -34,6 +34,43 @@ impl PlayerStyle {
     }
 }
 
+/// HUD-style color tag the author assigns to a player (a quick visual bucket,
+/// independent of the style quadrant).
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
+pub enum NoteColor {
+    Red,
+    Orange,
+    Yellow,
+    Green,
+    Blue,
+    Purple,
+}
+
+impl NoteColor {
+    pub fn as_db(self) -> &'static str {
+        match self {
+            NoteColor::Red => "red",
+            NoteColor::Orange => "orange",
+            NoteColor::Yellow => "yellow",
+            NoteColor::Green => "green",
+            NoteColor::Blue => "blue",
+            NoteColor::Purple => "purple",
+        }
+    }
+
+    pub fn from_db(s: &str) -> Option<Self> {
+        match s {
+            "red" => Some(NoteColor::Red),
+            "orange" => Some(NoteColor::Orange),
+            "yellow" => Some(NoteColor::Yellow),
+            "green" => Some(NoteColor::Green),
+            "blue" => Some(NoteColor::Blue),
+            "purple" => Some(NoteColor::Purple),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
 pub enum NoteTagKind {
     Tag,
@@ -101,6 +138,7 @@ pub struct PlayerNote {
     pub subject_club_player_id: ID,
     pub body: String,
     pub style: Option<PlayerStyle>,
+    pub color: Option<NoteColor>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -112,6 +150,7 @@ impl From<infra::models::PlayerNoteRow> for PlayerNote {
             subject_club_player_id: r.subject_club_player_id.into(),
             body: r.body,
             style: r.style.as_deref().and_then(PlayerStyle::from_db),
+            color: r.color.as_deref().and_then(NoteColor::from_db),
             created_at: r.created_at,
             updated_at: r.updated_at,
         }
@@ -162,6 +201,7 @@ pub struct UpsertPlayerNoteInput {
     pub subject_club_player_id: ID,
     pub body: Option<String>,
     pub style: Option<PlayerStyle>,
+    pub color: Option<NoteColor>,
 }
 
 #[derive(InputObject)]
