@@ -1,7 +1,9 @@
-use async_graphql::{ComplexObject, Context, InputObject, SimpleObject, ID};
+use async_graphql::{ComplexObject, Context, Enum, InputObject, SimpleObject, ID};
 
 use crate::gql::common::types::Role;
+use crate::gql::domains::achievements::types::PlayerAchievement;
 use crate::gql::domains::clubs::types::Club;
+use crate::gql::domains::results::types::{PlayerStatistics, UserTournamentResult};
 use crate::gql::error::ResultExt;
 
 #[derive(SimpleObject, Clone, serde::Serialize, serde::Deserialize)]
@@ -111,4 +113,36 @@ pub struct UpdateNotificationPreferencesInput {
     pub seating_updates: Option<bool>,
     pub achievements: Option<bool>,
     pub announcements: Option<bool>,
+}
+
+/// The viewer's friendship relationship to the profile they're viewing — drives
+/// the profile's add-friend action.
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
+pub enum ProfileFriendship {
+    /// The profile is the viewer's own.
+    Myself,
+    /// No friendship or pending request exists.
+    None,
+    /// The viewer sent a request that's awaiting the other player.
+    RequestSent,
+    /// The other player sent the viewer a request.
+    RequestReceived,
+    /// They are accepted friends.
+    Friends,
+}
+
+/// A public player profile — identity, lifetime stats, unlocked achievements and
+/// recent finishes — reachable from the leaderboard. `friendship` lets the viewer
+/// act on the relationship straight from the profile.
+#[derive(SimpleObject)]
+pub struct PlayerProfile {
+    pub id: ID,
+    /// Display handle (username, falling back to first name).
+    pub name: String,
+    pub statistics: PlayerStatistics,
+    pub recent_results: Vec<UserTournamentResult>,
+    pub achievements: Vec<PlayerAchievement>,
+    pub friendship: ProfileFriendship,
+    /// The friendship row id when one exists, for accept/cancel actions.
+    pub friendship_id: Option<ID>,
 }

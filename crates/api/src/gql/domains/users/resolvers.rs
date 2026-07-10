@@ -1,17 +1,23 @@
+use async_graphql::dataloader::DataLoader;
 use async_graphql::{Context, Object, Result, ID};
+use std::collections::HashMap;
 use uuid::Uuid;
 
+use crate::auth::jwt::Claims;
+use crate::gql::domains::achievements::types::PlayerAchievement;
+use crate::gql::domains::results::types::{PlayerStatistics, UserTournamentResult};
 use crate::gql::error::ResultExt;
+use crate::gql::loaders::TournamentLoader;
 use crate::gql::types::{PaginatedResponse, PaginationInput, Role, User};
 use crate::state::AppState;
 use infra::repos::{
-    users,
+    achievements, friendships, tournament_results, users,
     users::{CreateUserData, UpdateUserData, UserFilter},
 };
 
 use super::types::{
-    CreatePlayerInput, NotificationPreferences, UpdateNotificationPreferencesInput,
-    UpdatePlayerInput,
+    CreatePlayerInput, NotificationPreferences, PlayerProfile, ProfileFriendship,
+    UpdateNotificationPreferencesInput, UpdatePlayerInput,
 };
 
 #[derive(Default)]
@@ -52,6 +58,94 @@ impl UserQuery {
             page_size,
             offset,
             has_next_page,
+        })
+    }
+
+    /// A player's public profile: identity, lifetime stats, unlocked
+    /// achievements and recent finishes — reachable from the leaderboard.
+    /// Requires authentication and reports the viewer's friendship relationship
+    /// so the profile can offer an add-friend action.
+    async fn player_profile(&self, ctx: &Context<'_>, user_id: ID) -> Result<PlayerProfile> {
+        let state = ctx.data::<AppState>()?;
+        let claims = ctx.data::<Claims>()?;
+        let me = Uuid::parse_str(&claims.sub).gql_err("Invalid user ID")?;
+        let target = Uuid::parse_str(user_id.as_str()).gql_err("Invalid user ID")?;
+
+        let user = users::get_by_id(&state.db, target)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Player not found"))?;
+        let name = user
+            .username
+            .clone()
+            .unwrap_or_else(|| user.first_name.clone());
+
+        // Lifetime stats.
+        let stats = tournament_results::get_user_statistics(&state.db, target, None).await?;
+        let statistics = PlayerStatistics {
+            total_itm: stats.total_itm,
+            total_tournaments: stats.total_tournaments,
+            total_winnings: stats.total_winnings,
+            total_buy_ins: stats.total_buy_ins,
+            itm_percentage: stats.itm_percentage,
+            roi_percentage: stats.roi_percentage,
+        };
+
+        // Recent finishes, with their tournaments batch-loaded.
+        let rows = tournament_results::list_user_recent(&state.db, target, 10).await?;
+        let tournament_ids: Vec<Uuid> = rows.iter().map(|r| r.tournament_id).collect();
+        let loader = ctx.data::<DataLoader<TournamentLoader>>()?;
+        let tournaments: HashMap<Uuid, _> = loader
+            .load_many(tournament_ids)
+            .await
+            .gql_err("Data loading failed")?;
+        let recent_results = rows
+            .into_iter()
+            .filter_map(|row| {
+                tournaments
+                    .get(&row.tournament_id)
+                    .map(|t| UserTournamentResult {
+                        result: row.into(),
+                        tournament: t.clone().into(),
+                    })
+            })
+            .collect();
+
+        // Unlocked achievements only — a public profile shows earned badges.
+        let achievements: Vec<PlayerAchievement> = achievements::list_for_player(&state.db, target)
+            .await?
+            .into_iter()
+            .map(PlayerAchievement::from)
+            .filter(|a| !a.is_locked)
+            .collect();
+
+        // The viewer's relationship to this player, for the add-friend action.
+        let (friendship, friendship_id) = if me == target {
+            (ProfileFriendship::Myself, None)
+        } else {
+            match friendships::get_between(&state.db, me, target).await? {
+                None => (ProfileFriendship::None, None),
+                Some(f) if f.status == "accepted" => {
+                    (ProfileFriendship::Friends, Some(f.id.into()))
+                }
+                Some(f) => {
+                    let rel = if f.requester_id == me {
+                        ProfileFriendship::RequestSent
+                    } else {
+                        ProfileFriendship::RequestReceived
+                    };
+                    (rel, Some(f.id.into()))
+                }
+            }
+        };
+
+        Ok(PlayerProfile {
+            id: target.into(),
+            name,
+            statistics,
+            recent_results,
+            achievements,
+            friendship,
+            friendship_id,
         })
     }
 
