@@ -53,6 +53,168 @@ async fn test_register_for_tournament() {
     assert_eq!(registration["userId"], user_id.to_string());
 }
 
+/// The player app sends its own `userId` in the input. That must still be a
+/// self-registration, not a manager-registering-someone-else call — sending it
+/// used to trip `require_club_manager` and fail every registration from the
+/// app, which got the Android build rejected under Play's Broken Functionality
+/// policy (version code 2, 2026-07-31).
+#[tokio::test]
+async fn test_register_for_tournament_with_own_user_id() {
+    let app_state = setup_test_db().await;
+    let schema = build_schema(app_state.clone());
+
+    let (user_id, claims) = create_test_user(&app_state, "selfreg@test.com", "player").await;
+    let club_id = create_test_club(&app_state, "Self Registration Club").await;
+    let tournament_id =
+        create_test_tournament(&app_state, club_id, "Self Registration Tournament").await;
+
+    sqlx::query("UPDATE tournaments SET live_status = 'registration_open'::tournament_live_status WHERE id = $1")
+        .bind(tournament_id)
+        .execute(&app_state.db)
+        .await
+        .expect("Failed to open registration");
+
+    let query = r#"
+        mutation RegisterForTournament($input: RegisterForTournamentInput!) {
+            registerForTournament(input: $input) {
+                id
+                tournamentId
+                userId
+                status
+            }
+        }
+    "#;
+
+    // Exactly the payload the player app sends.
+    let variables = Variables::from_json(json!({
+        "input": {
+            "tournamentId": tournament_id.to_string(),
+            "userId": user_id.to_string()
+        }
+    }));
+
+    let response = execute_graphql(&schema, query, Some(variables), Some(claims)).await;
+
+    assert!(
+        response.errors.is_empty(),
+        "A player passing their own userId should self-register: {:?}",
+        response.errors
+    );
+
+    let data = response.data.into_json().unwrap();
+    let registration = &data["registerForTournament"];
+
+    assert_eq!(registration["tournamentId"], tournament_id.to_string());
+    assert_eq!(registration["userId"], user_id.to_string());
+    assert_eq!(registration["status"], "REGISTERED");
+}
+
+/// The flip side of the guard: registering *somebody else* is still
+/// manager-only, so a plain player can't sign another account up.
+#[tokio::test]
+async fn test_register_other_user_requires_club_manager() {
+    let app_state = setup_test_db().await;
+    let schema = build_schema(app_state.clone());
+
+    let (_actor_id, actor_claims) =
+        create_test_user(&app_state, "regactor@test.com", "player").await;
+    let (victim_id, _victim_claims) =
+        create_test_user(&app_state, "regvictim@test.com", "player").await;
+    let club_id = create_test_club(&app_state, "Other User Registration Club").await;
+    let tournament_id =
+        create_test_tournament(&app_state, club_id, "Other User Registration Tournament").await;
+
+    sqlx::query("UPDATE tournaments SET live_status = 'registration_open'::tournament_live_status WHERE id = $1")
+        .bind(tournament_id)
+        .execute(&app_state.db)
+        .await
+        .expect("Failed to open registration");
+
+    let query = r#"
+        mutation RegisterForTournament($input: RegisterForTournamentInput!) {
+            registerForTournament(input: $input) {
+                id
+            }
+        }
+    "#;
+
+    let variables = Variables::from_json(json!({
+        "input": {
+            "tournamentId": tournament_id.to_string(),
+            "userId": victim_id.to_string()
+        }
+    }));
+
+    let response = execute_graphql(&schema, query, Some(variables), Some(actor_claims)).await;
+
+    assert!(
+        !response.errors.is_empty(),
+        "A player must not be able to register another user"
+    );
+
+    let registered: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM tournament_registrations WHERE tournament_id = $1 AND user_id = $2",
+    )
+    .bind(tournament_id)
+    .bind(victim_id)
+    .fetch_one(&app_state.db)
+    .await
+    .expect("Failed to count registrations");
+    assert_eq!(registered, 0, "No registration should have been created");
+}
+
+/// A club manager registering another player on their behalf keeps working.
+#[tokio::test]
+async fn test_manager_registers_other_user() {
+    let app_state = setup_test_db().await;
+    let schema = build_schema(app_state.clone());
+
+    let (manager_id, manager_claims) =
+        create_test_user(&app_state, "regmanager@test.com", "manager").await;
+    let (player_id, _player_claims) =
+        create_test_user(&app_state, "regmanaged@test.com", "player").await;
+    let club_id = create_test_club(&app_state, "Manager Registration Club").await;
+    create_club_manager(&app_state, manager_id, club_id).await;
+    let tournament_id =
+        create_test_tournament(&app_state, club_id, "Manager Registration Tournament").await;
+
+    sqlx::query("UPDATE tournaments SET live_status = 'registration_open'::tournament_live_status WHERE id = $1")
+        .bind(tournament_id)
+        .execute(&app_state.db)
+        .await
+        .expect("Failed to open registration");
+
+    let query = r#"
+        mutation RegisterForTournament($input: RegisterForTournamentInput!) {
+            registerForTournament(input: $input) {
+                id
+                userId
+            }
+        }
+    "#;
+
+    let variables = Variables::from_json(json!({
+        "input": {
+            "tournamentId": tournament_id.to_string(),
+            "userId": player_id.to_string()
+        }
+    }));
+
+    let response = execute_graphql(&schema, query, Some(variables), Some(manager_claims)).await;
+
+    assert!(
+        response.errors.is_empty(),
+        "A club manager should be able to register another player: {:?}",
+        response.errors
+    );
+
+    let data = response.data.into_json().unwrap();
+    assert_eq!(
+        data["registerForTournament"]["userId"],
+        player_id.to_string()
+    );
+}
+
 #[tokio::test]
 async fn test_create_tournament_with_rake() {
     let app_state = setup_test_db().await;

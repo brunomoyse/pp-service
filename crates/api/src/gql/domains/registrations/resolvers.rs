@@ -149,16 +149,33 @@ impl RegistrationMutation {
         let tournament_id =
             Uuid::parse_str(input.tournament_id.as_str()).gql_err("Invalid tournament ID")?;
 
-        // Check permissions: if registering another user, require club manager
-        let is_manager_registration = input.user_id.is_some();
-        let authenticated_user = if is_manager_registration {
+        // Resolve the caller before deciding which path this is. An explicit
+        // `user_id` that points back at the caller is still a self-registration
+        // — the player app always sends its own id — so only registering
+        // *somebody else* requires club-manager rights. Mirrors the same guard
+        // in `cancel_registration`.
+        let authenticated_user = require_manager_if(ctx, false, "user_id")
+            .await?
+            .ok_or_else(|| {
+                async_graphql::Error::new("You must be logged in to perform this action")
+            })?;
+        let authenticated_user_id =
+            Uuid::parse_str(authenticated_user.id.as_str()).gql_err("Invalid user ID")?;
+
+        // Determine which user to register
+        let user_id = match input.user_id.as_ref() {
+            Some(target_user_id) => {
+                Uuid::parse_str(target_user_id.as_str()).gql_err("Invalid target user ID")?
+            }
+            None => authenticated_user_id,
+        };
+
+        let is_manager_registration = user_id != authenticated_user_id;
+        if is_manager_registration {
             let club_id = get_club_id_for_tournament(&state.db, tournament_id).await?;
             use crate::auth::permissions::require_club_manager;
-            Some(require_club_manager(ctx, club_id).await?)
-        } else {
-            require_manager_if(ctx, false, "user_id").await?
+            require_club_manager(ctx, club_id).await?;
         }
-        .ok_or_else(|| async_graphql::Error::new("You must be logged in to perform this action"))?;
 
         // Players can't self-register into a free ("Home Game") club's
         // tournament — those clubs are private and off the player app. The host
@@ -168,14 +185,6 @@ impl RegistrationMutation {
                 "This tournament isn't available in the app",
             ));
         }
-
-        // Determine which user to register
-        let user_id = match input.user_id {
-            Some(target_user_id) => {
-                Uuid::parse_str(target_user_id.as_str()).gql_err("Invalid target user ID")?
-            }
-            None => Uuid::parse_str(authenticated_user.id.as_str()).gql_err("Invalid user ID")?,
-        };
 
         // Use a transaction with row-level locking to prevent race conditions
         let mut tx = state.db.begin().await?;
