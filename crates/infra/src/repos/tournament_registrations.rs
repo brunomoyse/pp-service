@@ -40,6 +40,33 @@ pub async fn create<'e>(
     Ok(row)
 }
 
+/// Bring a cancelled / no-show registration back to life instead of inserting a
+/// second row. A cancellation only flips `status`, so the (tournament, player)
+/// unique index survives it — signing up again has to reuse the existing row.
+/// Clears the stale registration time so the waitlist orders by the new signup.
+pub async fn reactivate<'e>(
+    executor: impl PgExecutor<'e>,
+    id: Uuid,
+    status: Option<String>,
+) -> Result<TournamentRegistrationRow> {
+    let row = sqlx::query_as::<_, TournamentRegistrationRow>(&format!(
+        r#"
+        UPDATE tournament_registrations
+        SET status = COALESCE($2, 'registered'),
+            registration_time = NOW(),
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING {COLS}
+        "#
+    ))
+    .bind(id)
+    .bind(status)
+    .fetch_one(executor)
+    .await?;
+
+    Ok(row)
+}
+
 /// Seed a final-day registration for a Day-2 qualifier: status `checked_in`
 /// with the carried-over `starting_stack`. Idempotent on
 /// (tournament_id, club_player_id): re-running updates the stack (best stack

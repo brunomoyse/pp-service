@@ -163,6 +163,135 @@ async fn test_register_other_user_requires_club_manager() {
     assert_eq!(registered, 0, "No registration should have been created");
 }
 
+/// Cancelling leaves the registration row in place (status `cancelled`), so a
+/// second signup used to trip the (tournament, player) unique index and fail
+/// with a raw constraint error — another Register button that does nothing.
+#[tokio::test]
+async fn test_register_again_after_cancelling() {
+    let app_state = setup_test_db().await;
+    let schema = build_schema(app_state.clone());
+
+    let (user_id, claims) = create_test_user(&app_state, "recycle@test.com", "player").await;
+    let club_id = create_test_club(&app_state, "Re-registration Club").await;
+    let tournament_id =
+        create_test_tournament(&app_state, club_id, "Re-registration Tournament").await;
+
+    sqlx::query("UPDATE tournaments SET live_status = 'registration_open'::tournament_live_status WHERE id = $1")
+        .bind(tournament_id)
+        .execute(&app_state.db)
+        .await
+        .expect("Failed to open registration");
+
+    let register = r#"
+        mutation RegisterForTournament($input: RegisterForTournamentInput!) {
+            registerForTournament(input: $input) { id status }
+        }
+    "#;
+    let cancel = r#"
+        mutation CancelRegistration($input: CancelRegistrationInput!) {
+            cancelRegistration(input: $input) { registration { status } }
+        }
+    "#;
+    let register_vars = Variables::from_json(json!({
+        "input": { "tournamentId": tournament_id.to_string() }
+    }));
+    let cancel_vars = Variables::from_json(json!({
+        "input": { "tournamentId": tournament_id.to_string(), "userId": user_id.to_string() }
+    }));
+
+    let first = execute_graphql(
+        &schema,
+        register,
+        Some(register_vars.clone()),
+        Some(claims.clone()),
+    )
+    .await;
+    assert!(
+        first.errors.is_empty(),
+        "First registration: {:?}",
+        first.errors
+    );
+
+    let cancelled = execute_graphql(&schema, cancel, Some(cancel_vars), Some(claims.clone())).await;
+    assert!(
+        cancelled.errors.is_empty(),
+        "Cancel: {:?}",
+        cancelled.errors
+    );
+
+    let second = execute_graphql(&schema, register, Some(register_vars), Some(claims)).await;
+    assert!(
+        second.errors.is_empty(),
+        "Registering again after cancelling should succeed: {:?}",
+        second.errors
+    );
+
+    let data = second.data.into_json().unwrap();
+    assert_eq!(data["registerForTournament"]["status"], "REGISTERED");
+
+    // Revived in place — a second row would break the unique index and split
+    // the player's history across two registrations.
+    let rows: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM tournament_registrations WHERE tournament_id = $1 AND user_id = $2",
+    )
+    .bind(tournament_id)
+    .bind(user_id)
+    .fetch_one(&app_state.db)
+    .await
+    .expect("Failed to count registrations");
+    assert_eq!(rows, 1, "Cancellation should be revived, not duplicated");
+}
+
+/// Registering twice without cancelling in between is a plain conflict, and
+/// must say so rather than leaking the database's unique-constraint message.
+#[tokio::test]
+async fn test_register_twice_reports_already_registered() {
+    let app_state = setup_test_db().await;
+    let schema = build_schema(app_state.clone());
+
+    let (_user_id, claims) = create_test_user(&app_state, "double@test.com", "player").await;
+    let club_id = create_test_club(&app_state, "Double Registration Club").await;
+    let tournament_id =
+        create_test_tournament(&app_state, club_id, "Double Registration Tournament").await;
+
+    sqlx::query("UPDATE tournaments SET live_status = 'registration_open'::tournament_live_status WHERE id = $1")
+        .bind(tournament_id)
+        .execute(&app_state.db)
+        .await
+        .expect("Failed to open registration");
+
+    let register = r#"
+        mutation RegisterForTournament($input: RegisterForTournamentInput!) {
+            registerForTournament(input: $input) { id }
+        }
+    "#;
+    let vars = Variables::from_json(json!({
+        "input": { "tournamentId": tournament_id.to_string() }
+    }));
+
+    let first = execute_graphql(&schema, register, Some(vars.clone()), Some(claims.clone())).await;
+    assert!(
+        first.errors.is_empty(),
+        "First registration: {:?}",
+        first.errors
+    );
+
+    let second = execute_graphql(&schema, register, Some(vars), Some(claims)).await;
+    let message = second
+        .errors
+        .first()
+        .map(|e| e.message.clone())
+        .unwrap_or_default();
+    assert!(
+        message.contains("already registered"),
+        "Expected a plain 'already registered' message, got: {message:?}"
+    );
+    assert!(
+        !message.contains("constraint"),
+        "Database internals must not reach the client: {message:?}"
+    );
+}
+
 /// A club manager registering another player on their behalf keeps working.
 #[tokio::test]
 async fn test_manager_registers_other_user() {

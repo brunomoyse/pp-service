@@ -1,6 +1,9 @@
 -- Tournaments, tournament clocks, and tournament structures
 
--- 7 tournaments per club (21 total): 3 completed, 1 live, 3 upcoming
+-- 7 tournaments per club (21 total): 3 completed, 1 live, 3 upcoming.
+-- Of the upcoming ones the nearest is `registration_open` (the e2e registers
+-- into it) and the other two stay `not_started` (the e2e asserts the Register
+-- CTA is disabled there). Without an open one the register flow can never pass.
 INSERT INTO tournaments (id, club_id, name, description, start_time, end_time, buy_in_cents, seat_cap, live_status) VALUES
     -- Poker One (Charleroi)
     -- 3 Completed
@@ -10,7 +13,7 @@ INSERT INTO tournaments (id, club_id, name, description, start_time, end_time, b
     -- 1 Live
     ('10004444-4444-4444-4444-444444444444', '66666666-6666-6666-6666-666666666666', 'Thursday Live Event', 'Currently running', NOW() - INTERVAL '2 hours', null, 3500, 35, 'in_progress'),
     -- 3 Upcoming
-    ('10005555-5555-5555-5555-555555555555', '66666666-6666-6666-6666-666666666666', 'Friday Fortune', 'Weekend starter', NOW() + INTERVAL '2 days', null, 4500, 45, 'not_started'),
+    ('10005555-5555-5555-5555-555555555555', '66666666-6666-6666-6666-666666666666', 'Friday Fortune', 'Weekend starter', NOW() + INTERVAL '2 days', null, 4500, 45, 'registration_open'),
     ('10006666-6666-6666-6666-666666666666', '66666666-6666-6666-6666-666666666666', 'Saturday Slam', 'Big weekend event', NOW() + INTERVAL '5 days', null, 5000, 60, 'not_started'),
     ('10007777-7777-7777-7777-777777777777', '66666666-6666-6666-6666-666666666666', 'Sunday Special', 'Weekly finale', NOW() + INTERVAL '8 days', null, 2000, 40, 'not_started'),
 
@@ -22,7 +25,7 @@ INSERT INTO tournaments (id, club_id, name, description, start_time, end_time, b
     -- 1 Live
     ('20014444-4444-4444-4444-444444444444', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'Thursday Live Action', 'Currently playing', NOW() - INTERVAL '1 hour', null, 4500, 25, 'in_progress'),
     -- 3 Upcoming
-    ('20015555-5555-5555-5555-555555555555', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'Friday Night Fever', 'Popular weekly', NOW() + INTERVAL '3 days', null, 5000, 45, 'not_started'),
+    ('20015555-5555-5555-5555-555555555555', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'Friday Night Fever', 'Popular weekly', NOW() + INTERVAL '3 days', null, 5000, 45, 'registration_open'),
     ('20016666-6666-6666-6666-666666666666', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'Saturday Superstack', 'Deep stacks', NOW() + INTERVAL '6 days', null, 3500, 60, 'not_started'),
     ('20017777-7777-7777-7777-777777777777', 'cccccccc-cccc-cccc-cccc-cccccccccccc', 'Sunday Series', 'Series event', NOW() + INTERVAL '9 days', null, 2000, 40, 'not_started'),
 
@@ -34,7 +37,7 @@ INSERT INTO tournaments (id, club_id, name, description, start_time, end_time, b
     -- 1 Live
     ('30024444-4444-4444-4444-444444444444', 'dddddddd-dddd-dddd-dddd-dddddddddddd', 'Thursday Thunder', 'High energy live', NOW() - INTERVAL '3 hours', null, 4000, 30, 'in_progress'),
     -- 3 Upcoming
-    ('30025555-5555-5555-5555-555555555555', 'dddddddd-dddd-dddd-dddd-dddddddddddd', 'Friday Fiesta', 'Party atmosphere', NOW() + INTERVAL '1 day', null, 3750, 50, 'not_started'),
+    ('30025555-5555-5555-5555-555555555555', 'dddddddd-dddd-dddd-dddd-dddddddddddd', 'Friday Fiesta', 'Party atmosphere', NOW() + INTERVAL '1 day', null, 3750, 50, 'registration_open'),
     ('30026666-6666-6666-6666-666666666666', 'dddddddd-dddd-dddd-dddd-dddddddddddd', 'Saturday Showdown', 'Weekend highlight', NOW() + INTERVAL '4 days', null, 5000, 70, 'not_started'),
     ('30027777-7777-7777-7777-777777777777', 'dddddddd-dddd-dddd-dddd-dddddddddddd', 'Sunday Summit', 'Weekly climax', NOW() + INTERVAL '7 days', null, 2500, 45, 'not_started');
 

@@ -228,15 +228,35 @@ impl RegistrationMutation {
             None // defaults to 'registered'
         };
 
-        let create_data = CreateTournamentRegistration {
-            tournament_id,
-            user_id: Some(user_id),
-            club_player_id: None,
-            notes: input.notes.clone(),
-            status,
-        };
+        // Cancelling only flips `status`, so the row (and the
+        // (tournament, player) unique index with it) outlives it. Signing up
+        // again therefore has to revive that row — a plain INSERT trips the
+        // constraint and the app can only report a generic failure, leaving the
+        // player with a Register button that does nothing.
+        let existing =
+            tournament_registrations::get_by_tournament_and_user(&mut *tx, tournament_id, user_id)
+                .await?;
 
-        let row = tournament_registrations::create(&mut *tx, create_data).await?;
+        let row = match existing {
+            Some(reg) if reg.status == "cancelled" || reg.status == "no_show" => {
+                tournament_registrations::reactivate(&mut *tx, reg.id, status).await?
+            }
+            Some(_) => {
+                return Err(async_graphql::Error::new(
+                    "You are already registered for this tournament",
+                ));
+            }
+            None => {
+                let create_data = CreateTournamentRegistration {
+                    tournament_id,
+                    user_id: Some(user_id),
+                    club_player_id: None,
+                    notes: input.notes.clone(),
+                    status,
+                };
+                tournament_registrations::create(&mut *tx, create_data).await?
+            }
+        };
 
         tx.commit().await?;
 
