@@ -1,8 +1,9 @@
 use async_graphql::{Context, Object, Result, ID};
 use uuid::Uuid;
 
-use crate::auth::jwt::Claims;
-use crate::gql::error::{auth_error, ResultExt};
+use crate::auth::permissions::viewer_manages_club;
+use crate::gql::common::helpers::tournament_hidden_from_viewer;
+use crate::gql::error::ResultExt;
 use crate::state::AppState;
 use infra::repos::{
     tournament_entries, tournament_entries::CreateTournamentEntry, tournament_payouts, tournaments,
@@ -42,30 +43,42 @@ impl EntryQuery {
     }
 
     /// Get entry statistics for a tournament. Aggregate tournament state
-    /// (player counts, chips); requires an authenticated user.
+    /// (player counts, chips in play) is **public**: the full-screen TV display
+    /// runs all evening on a club television with no session, and guests
+    /// browsing the player app see the same live numbers as everyone in the
+    /// room. The money fields stay manager-only (see `TournamentEntryStats`).
     async fn tournament_entry_stats(
         &self,
         ctx: &Context<'_>,
         tournament_id: ID,
     ) -> Result<TournamentEntryStats> {
-        let _claims = ctx.data::<Claims>().map_err(|_| auth_error())?;
-
         let state = ctx.data::<AppState>()?;
         let tournament_id =
             Uuid::parse_str(tournament_id.as_str()).gql_err("Invalid tournament ID")?;
+
+        // Free ("Home Game") clubs are private host tools: their tournaments
+        // stay invisible to the public, exactly as for `tournament` itself.
+        if tournament_hidden_from_viewer(ctx, tournament_id).await? {
+            return Err(async_graphql::Error::new("Tournament not found"));
+        }
+
+        let tournament = tournaments::get_by_id(&state.db, tournament_id)
+            .await?
+            .ok_or_else(|| async_graphql::Error::new("Tournament not found"))?;
+        let is_manager = viewer_manages_club(ctx, tournament.club_id).await;
 
         let stats = tournament_entries::get_stats(&state.db, tournament_id).await?;
 
         Ok(TournamentEntryStats {
             tournament_id: tournament_id.into(),
             total_entries: stats.total_entries as i32,
-            total_amount_cents: stats.total_amount_cents as i32,
+            total_amount_cents: is_manager.then_some(stats.total_amount_cents as i32),
             unique_players: stats.unique_players as i32,
             initial_count: stats.initial_count as i32,
             rebuy_count: stats.rebuy_count as i32,
             re_entry_count: stats.re_entry_count as i32,
             addon_count: stats.addon_count as i32,
-            total_rake_cents: stats.total_rake_cents as i32,
+            total_rake_cents: is_manager.then_some(stats.total_rake_cents as i32),
             total_chips: stats.total_chips,
             players_remaining: stats.players_remaining as i32,
         })

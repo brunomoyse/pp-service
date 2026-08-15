@@ -115,17 +115,26 @@ impl From<infra::models::TournamentEntryRow> for TournamentEntry {
     }
 }
 
+/// Aggregate entry state for a tournament.
+///
+/// The counts are public: anyone standing in the room can see how many players
+/// are left and how many rebuys were sold, and the TV display runs without a
+/// session. The two money fields are club-manager-only — and they are gated
+/// **together** on purpose, because the prize pool is public, so exposing
+/// `total_amount_cents` alone would leak the rake by subtraction.
 #[derive(SimpleObject, Clone)]
 pub struct TournamentEntryStats {
     pub tournament_id: ID,
     pub total_entries: i32,
-    pub total_amount_cents: i32,
+    /// Manager-only; `None` for every other viewer.
+    pub total_amount_cents: Option<i32>,
     pub unique_players: i32,
     pub initial_count: i32,
     pub rebuy_count: i32,
     pub re_entry_count: i32,
     pub addon_count: i32,
-    pub total_rake_cents: i32,
+    /// Manager-only; `None` for every other viewer.
+    pub total_rake_cents: Option<i32>,
     pub total_chips: i64,
     pub players_remaining: i32,
 }

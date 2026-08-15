@@ -2,6 +2,9 @@
 //! logged-in caller, and the financial `tournamentEntries` query is manager-only.
 //! These are one-line `ctx.data::<Claims>()` / `require_club_manager` checks that
 //! are easy to drop in a refactor — so we assert the *rejection*, not just success.
+//!
+//! One deliberate exception: `tournamentEntryStats` is public (the TV display
+//! has no session) and gates only its money fields. See `tournament_entries`.
 
 use crate::common::*;
 use api::gql::build_schema;
@@ -46,13 +49,11 @@ async fn unauthenticated_live_reads_are_rejected() {
     let tid = uuid::Uuid::new_v4().to_string();
     let table_id = uuid::Uuid::new_v4().to_string();
 
-    assert_login_required(
-        &schema,
-        "tournamentEntryStats",
-        r#"query($id: ID!){ tournamentEntryStats(tournamentId: $id){ totalEntries } }"#,
-        json!({ "id": tid }),
-    )
-    .await;
+    // `tournamentEntryStats` used to be on this list. It is now deliberately
+    // public — the TV display runs unauthenticated on a club television all
+    // evening — with the two money fields gated per-field instead. That gate is
+    // covered by `tournament_entries::test_entry_stats_*`; do not re-add a
+    // blanket login requirement here without fixing the TV display first.
 
     assert_login_required(
         &schema,

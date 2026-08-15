@@ -750,3 +750,184 @@ async fn test_duplicate_initial_entry_rejected() {
         r3.errors
     );
 }
+
+// ── Public entry stats (TV display / guest browsing) ──────────────────
+//
+// The full-screen TV display at `/tournament/:id/display` runs all evening on
+// a club television with no session, and guests browsing the player app see a
+// live tournament. Both read `tournamentEntryStats`, so the counts must be
+// reachable without a token — while the two money fields stay manager-only.
+
+/// The exact selection set the TV display sends, plus the two money fields so
+/// each test can assert what the viewer is entitled to see.
+const PUBLIC_STATS_QUERY: &str = r#"
+    query GetStats($tournamentId: ID!) {
+        tournamentEntryStats(tournamentId: $tournamentId) {
+            totalEntries
+            uniquePlayers
+            rebuyCount
+            reEntryCount
+            addonCount
+            totalChips
+            playersRemaining
+            totalAmountCents
+            totalRakeCents
+        }
+    }
+"#;
+
+/// Seed a paid club with one manager and a single 5000-cent buy-in.
+/// Returns (app_state, tournament_id, manager_claims, club_id); the caller
+/// builds its own schema so this doesn't have to name the schema type.
+async fn seed_stats_fixture(
+    label: &str,
+) -> (api::AppState, uuid::Uuid, api::auth::Claims, uuid::Uuid) {
+    let app_state = setup_test_db().await;
+    let schema = build_schema(app_state.clone());
+
+    let (manager_id, manager_claims) =
+        create_test_user(&app_state, &format!("{label}_mgr@test.com"), "manager").await;
+    let club_id = create_test_club(&app_state, &format!("{label} Club")).await;
+    create_club_manager(&app_state, manager_id, club_id).await;
+
+    let tournament_id =
+        create_test_tournament(&app_state, club_id, &format!("{label} Tournament")).await;
+    let (player_id, _) =
+        create_test_user(&app_state, &format!("{label}_p1@test.com"), "player").await;
+
+    let mutation = r#"
+        mutation AddEntry($input: AddTournamentEntryInput!) {
+            addTournamentEntry(input: $input) { id }
+        }
+    "#;
+    let variables = Variables::from_json(json!({
+        "input": {
+            "tournamentId": tournament_id.to_string(),
+            "userId": player_id.to_string(),
+            "entryType": "INITIAL",
+            "amountCents": 5000
+        }
+    }));
+    execute_graphql(
+        &schema,
+        mutation,
+        Some(variables),
+        Some(manager_claims.clone()),
+    )
+    .await;
+
+    (app_state, tournament_id, manager_claims, club_id)
+}
+
+#[tokio::test]
+async fn test_entry_stats_readable_without_a_session() {
+    let (app_state, tournament_id, _, _) = seed_stats_fixture("pub_stats").await;
+    let schema = build_schema(app_state);
+
+    let variables = Variables::from_json(json!({ "tournamentId": tournament_id.to_string() }));
+    // `None` claims == the TV in the club, or a logged-out visitor.
+    let response = execute_graphql(&schema, PUBLIC_STATS_QUERY, Some(variables), None).await;
+
+    assert!(
+        response.errors.is_empty(),
+        "entry stats must be public - the TV display has no session: {:?}",
+        response.errors
+    );
+
+    let data = response.data.into_json().unwrap();
+    let stats = &data["tournamentEntryStats"];
+
+    // Counts: visible to anyone standing in the room.
+    assert_eq!(stats["totalEntries"], 1);
+    assert_eq!(stats["uniquePlayers"], 1);
+    assert_eq!(stats["rebuyCount"], 0);
+
+    // Money: never to the public. The prize pool is public, so leaking
+    // totalAmountCents would expose the club's rake by subtraction.
+    assert!(
+        stats["totalAmountCents"].is_null(),
+        "totalAmountCents must be hidden from an anonymous viewer, got {:?}",
+        stats["totalAmountCents"]
+    );
+    assert!(
+        stats["totalRakeCents"].is_null(),
+        "totalRakeCents must be hidden from an anonymous viewer, got {:?}",
+        stats["totalRakeCents"]
+    );
+}
+
+#[tokio::test]
+async fn test_entry_stats_hides_money_from_a_plain_player() {
+    let (app_state, tournament_id, _, _) = seed_stats_fixture("player_stats").await;
+    let schema = build_schema(app_state.clone());
+    let (_, player_claims) =
+        create_test_user(&app_state, "stats_onlooker@test.com", "player").await;
+
+    let variables = Variables::from_json(json!({ "tournamentId": tournament_id.to_string() }));
+    let response = execute_graphql(
+        &schema,
+        PUBLIC_STATS_QUERY,
+        Some(variables),
+        Some(player_claims),
+    )
+    .await;
+
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
+    let data = response.data.into_json().unwrap();
+    let stats = &data["tournamentEntryStats"];
+
+    assert_eq!(stats["totalEntries"], 1);
+    assert!(
+        stats["totalAmountCents"].is_null() && stats["totalRakeCents"].is_null(),
+        "an authenticated non-manager is still not entitled to the money fields"
+    );
+}
+
+#[tokio::test]
+async fn test_entry_stats_money_visible_to_club_manager() {
+    let (app_state, tournament_id, manager_claims, _) = seed_stats_fixture("mgr_stats").await;
+    let schema = build_schema(app_state);
+
+    let variables = Variables::from_json(json!({ "tournamentId": tournament_id.to_string() }));
+    let response = execute_graphql(
+        &schema,
+        PUBLIC_STATS_QUERY,
+        Some(variables),
+        Some(manager_claims),
+    )
+    .await;
+
+    assert!(response.errors.is_empty(), "{:?}", response.errors);
+    let data = response.data.into_json().unwrap();
+    let stats = &data["tournamentEntryStats"];
+
+    assert_eq!(
+        stats["totalAmountCents"], 5000,
+        "the club's own manager still sees the money"
+    );
+    assert!(
+        !stats["totalRakeCents"].is_null(),
+        "the club's own manager still sees the rake"
+    );
+}
+
+#[tokio::test]
+async fn test_entry_stats_hidden_for_free_club_tournament() {
+    let (app_state, tournament_id, _, club_id) = seed_stats_fixture("free_stats").await;
+    let schema = build_schema(app_state.clone());
+
+    // Free ("Home Game") clubs are private host tools.
+    sqlx::query("UPDATE clubs SET plan = 'free' WHERE id = $1")
+        .bind(club_id)
+        .execute(&app_state.db)
+        .await
+        .expect("failed to move the club to the free plan");
+
+    let variables = Variables::from_json(json!({ "tournamentId": tournament_id.to_string() }));
+    let response = execute_graphql(&schema, PUBLIC_STATS_QUERY, Some(variables), None).await;
+
+    assert!(
+        !response.errors.is_empty(),
+        "a free club's tournament must stay invisible to the public, even its counts"
+    );
+}
