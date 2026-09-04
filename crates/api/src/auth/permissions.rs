@@ -95,6 +95,42 @@ pub async fn require_club_manager(ctx: &Context<'_>, club_id: Uuid) -> Result<Us
     Ok(user)
 }
 
+/// Check that the authenticated user is an *owner* of a specific club.
+///
+/// Guards the four operations a plain manager must not reach: inviting a
+/// manager, revoking one, changing someone's role, and redeeming a plan code.
+/// Everything else stays on `require_club_manager`. Admins bypass, exactly as
+/// they do for every other club guard.
+pub async fn require_club_owner(ctx: &Context<'_>, club_id: Uuid) -> Result<User> {
+    let user = require_role(ctx, Role::Manager).await?;
+
+    if user.role == Role::Admin {
+        return Ok(user);
+    }
+
+    let state = ctx.data::<AppState>()?;
+
+    let user_id = Uuid::parse_str(user.id.as_str())
+        .map_err(|e| Error::new(format!("Invalid user ID: {}", e)))?;
+
+    let role = infra::repos::club_managers::role_for_user(&state.db, user_id, club_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to check club role: {}", e);
+            Error::new("Failed to verify club permissions")
+        })?;
+
+    match role.as_deref() {
+        Some("owner") => Ok(user),
+        Some(_) => Err(Error::new(
+            "Access denied: only an owner of this club can do that",
+        )),
+        None => Err(Error::new(
+            "Access denied: you are not authorized to manage this club",
+        )),
+    }
+}
+
 /// Check if the authenticated user is an admin (global access)
 pub async fn require_admin(ctx: &Context<'_>) -> Result<User> {
     require_role(ctx, Role::Admin).await

@@ -268,6 +268,8 @@ pub struct ClubManagerRow {
     pub id: Uuid,
     pub club_id: Uuid,
     pub user_id: Uuid,
+    /// "owner" or "manager"; see the ClubRole enum in the api crate.
+    pub role: String,
     pub assigned_at: DateTime<Utc>,
     pub assigned_by: Option<Uuid>,
     pub is_active: bool,

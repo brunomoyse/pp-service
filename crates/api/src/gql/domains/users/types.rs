@@ -2,7 +2,7 @@ use async_graphql::{ComplexObject, Context, Enum, InputObject, SimpleObject, ID}
 
 use crate::gql::common::types::Role;
 use crate::gql::domains::achievements::types::PlayerAchievement;
-use crate::gql::domains::clubs::types::Club;
+use crate::gql::domains::clubs::types::{Club, ClubRole};
 use crate::gql::domains::results::types::{PlayerStatistics, UserTournamentResult};
 use crate::gql::error::ResultExt;
 
@@ -55,6 +55,33 @@ impl User {
         } else {
             Ok(None)
         }
+    }
+
+    /// This user's authority on the club `managedClub` returns: `OWNER` if they
+    /// also manage the team and the plan, `MANAGER` otherwise, null if they
+    /// manage no club.
+    ///
+    /// Resolved from the user's own id rather than the request's claims, so it
+    /// is populated on the login and onboarding payloads too, not only on `me`.
+    /// The apps use it to hide controls the server would refuse anyway.
+    async fn club_role(&self, ctx: &Context<'_>) -> async_graphql::Result<Option<ClubRole>> {
+        use crate::state::AppState;
+
+        let state = ctx.data::<AppState>()?;
+        let user_id = uuid::Uuid::parse_str(self.id.as_str()).gql_err("Invalid user ID")?;
+
+        let Some(club_info) = infra::repos::club_managers::get_manager_clubs(&state.db, user_id)
+            .await?
+            .into_iter()
+            .next()
+        else {
+            return Ok(None);
+        };
+
+        let role =
+            infra::repos::club_managers::role_for_user(&state.db, user_id, club_info.club_id)
+                .await?;
+        Ok(role.as_deref().map(ClubRole::from_db))
     }
 }
 

@@ -108,8 +108,8 @@ emit(
     f"({q(CLUB_ANTWERP)}, 'Antwerp Card Room', 'Antwerpen', 'BE', 'Lange Koepoortstraat 47', '2000', 'club');"  # 'free' clubs are hidden from player discovery
 )
 emit(
-    "INSERT INTO club_managers (club_id, user_id) VALUES\n"
-    f"({q(CLUB_LIEGE)}, {q(MANAGER)}), ({q(CLUB_ANTWERP)}, {q(MANAGER)});"
+    "INSERT INTO club_managers (club_id, user_id, role) VALUES\n"
+    f"({q(CLUB_LIEGE)}, {q(MANAGER)}, 'owner'), ({q(CLUB_ANTWERP)}, {q(MANAGER)}, 'owner');"
 )
 emit(
     "INSERT INTO club_tables (id, club_id, table_number, max_seats, is_default) VALUES\n"

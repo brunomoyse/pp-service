@@ -178,7 +178,8 @@ pub async fn onboard_club(state: &AppState, input: OnboardClubInput) -> Result<O
     .await
     .gql_err("Database operation failed")?;
 
-    sqlx::query("INSERT INTO club_managers (club_id, user_id) VALUES ($1, $2)")
+    // The founder is the club's first owner: they alone can build out the team.
+    sqlx::query("INSERT INTO club_managers (club_id, user_id, role) VALUES ($1, $2, 'owner')")
         .bind(club_row.id)
         .bind(user_row.id)
         .execute(&mut *tx)

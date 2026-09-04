@@ -3,6 +3,37 @@ use chrono::{DateTime, Utc};
 
 use crate::gql::types::User;
 
+/// A manager's authority within one club. `Owner` additionally manages the team
+/// (invite, revoke, set role) and the club's plan; `Manager` runs everything
+/// operational and sees the team without being able to change it.
+///
+/// A club may have several owners but never zero, so the last one cannot be
+/// demoted or removed.
+#[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
+pub enum ClubRole {
+    Owner,
+    Manager,
+}
+
+impl ClubRole {
+    /// The value stored in `club_managers.role`.
+    pub fn as_db(self) -> &'static str {
+        match self {
+            ClubRole::Owner => "owner",
+            ClubRole::Manager => "manager",
+        }
+    }
+
+    /// Parse the stored `club_managers.role` value; anything unknown is treated
+    /// as the lesser role rather than silently granting authority.
+    pub fn from_db(s: &str) -> Self {
+        match s {
+            "owner" => ClubRole::Owner,
+            _ => ClubRole::Manager,
+        }
+    }
+}
+
 /// Billing tier a club is on. Only `Free` is feature-gated (single table, one
 /// active tournament, no recurring); `Club`/`Casino` are unlimited.
 #[derive(Enum, Copy, Clone, Eq, PartialEq, Debug)]
@@ -227,6 +258,8 @@ pub struct ClubManager {
     pub email: String,
     pub first_name: String,
     pub last_name: Option<String>,
+    /// Authority on this club. Only owners may change the team.
+    pub role: ClubRole,
     pub assigned_at: DateTime<Utc>,
 }
 
@@ -238,6 +271,7 @@ impl From<infra::repos::club_managers::ClubManagerWithUser> for ClubManager {
             email: r.email,
             first_name: r.first_name,
             last_name: r.last_name,
+            role: ClubRole::from_db(&r.role),
             assigned_at: r.assigned_at,
         }
     }
@@ -251,6 +285,9 @@ pub struct InviteClubManagerInput {
     pub last_name: Option<String>,
     /// Locale for the invitation email; defaults to the inviter's club locale ("en").
     pub locale: Option<String>,
+    /// Authority to grant. Defaults to `Manager`; pass `Owner` to invite a
+    /// co-owner who can also manage the team and the plan.
+    pub role: Option<ClubRole>,
 }
 
 #[derive(SimpleObject)]

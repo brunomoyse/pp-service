@@ -35,8 +35,8 @@ INSERT INTO users (id, email, username, first_name, last_name, role, locale, pas
 INSERT INTO clubs (id, name, city, country, address, postal_code, plan) VALUES
 ('4114f430-9557-5c65-b29c-038a84013882', 'Soumagne Poker Club', 'Soumagne', 'BE', 'Rue du Centre 12', '4630', 'club'),
 ('5ec5689d-a433-5706-a9ae-31c85c144b23', 'Antwerp Card Room', 'Antwerpen', 'BE', 'Lange Koepoortstraat 47', '2000', 'club');
-INSERT INTO club_managers (club_id, user_id) VALUES
-('4114f430-9557-5c65-b29c-038a84013882', 'f647df8a-5e87-5d63-af45-659fe8a0c16f'), ('5ec5689d-a433-5706-a9ae-31c85c144b23', 'f647df8a-5e87-5d63-af45-659fe8a0c16f');
+INSERT INTO club_managers (club_id, user_id, role) VALUES
+('4114f430-9557-5c65-b29c-038a84013882', 'f647df8a-5e87-5d63-af45-659fe8a0c16f', 'owner'), ('5ec5689d-a433-5706-a9ae-31c85c144b23', 'f647df8a-5e87-5d63-af45-659fe8a0c16f', 'owner');
 INSERT INTO club_tables (id, club_id, table_number, max_seats, is_default) VALUES
 ('82cb9dba-45ae-5af8-9910-d8da5c2b0b95', '4114f430-9557-5c65-b29c-038a84013882', 1, 9, true),
 ('4dd46548-2415-5a73-9541-7d121580637f', '4114f430-9557-5c65-b29c-038a84013882', 2, 9, true),

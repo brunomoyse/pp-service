@@ -86,9 +86,9 @@ SELECT ('b' || substr(u.id::text, 2))::uuid,
        u.id
 FROM users u;
 
--- Bruno is a club manager.
-INSERT INTO club_managers (club_id, user_id) VALUES
-  ('11111111-1111-1111-1111-111111111111', 'a0000000-0000-0000-0000-000000000000');
+-- Bruno owns the club.
+INSERT INTO club_managers (club_id, user_id, role) VALUES
+  ('11111111-1111-1111-1111-111111111111', 'a0000000-0000-0000-0000-000000000000', 'owner');
 
 -- ---------------------------------------------------------------------------
 -- 4. Account-less roster players (31) — real club members without an app account

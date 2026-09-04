@@ -4,11 +4,11 @@ use uuid::Uuid;
 
 use super::service;
 use super::types::{
-    ClubManager, ClubPlan, CreateClubTableInput, CreateRedemptionCodeInput, InviteClubManagerInput,
-    InviteClubManagerResponse, RedemptionCode, UpdateClubTableInput,
+    ClubManager, ClubPlan, ClubRole, CreateClubTableInput, CreateRedemptionCodeInput,
+    InviteClubManagerInput, InviteClubManagerResponse, RedemptionCode, UpdateClubTableInput,
 };
 use crate::auth::permissions::{
-    is_free_plan, require_admin, require_club_manager, viewer_is_admin,
+    is_free_plan, require_admin, require_club_manager, require_club_owner, viewer_is_admin,
 };
 use crate::gql::error::ResultExt;
 use crate::gql::types::{Club, ClubTable, CompanyLookup, OnboardClubInput, OnboardClubPayload};
@@ -175,7 +175,7 @@ impl ClubMutation {
         use rand::RngExt;
 
         let club_uuid = Uuid::parse_str(input.club_id.as_str()).gql_err("Invalid club ID")?;
-        let inviter = require_club_manager(ctx, club_uuid).await?;
+        let inviter = require_club_owner(ctx, club_uuid).await?;
         let state = ctx.data::<AppState>()?;
 
         let email = input.email.trim().to_lowercase();
@@ -224,9 +224,16 @@ impl ClubMutation {
             }
         };
 
-        club_managers::create_or_reactivate(&state.db, club_uuid, user.id, inviter_uuid(&inviter)?)
-            .await
-            .gql_err("Failed to assign club manager")?;
+        let role = input.role.unwrap_or(ClubRole::Manager);
+        club_managers::create_or_reactivate(
+            &state.db,
+            club_uuid,
+            user.id,
+            inviter_uuid(&inviter)?,
+            role.as_db(),
+        )
+        .await
+        .gql_err("Failed to assign club manager")?;
 
         // New accounts get a 72h set-password token (same table/flow as resets).
         let mut set_password_token = None;
@@ -276,8 +283,8 @@ impl ClubMutation {
         })
     }
 
-    /// Deactivate a manager assignment. Managers of the club only; the last
-    /// active manager of a club cannot be removed.
+    /// Deactivate a manager assignment. Owners of the club only. Neither the
+    /// last active manager nor the last owner can be removed.
     async fn revoke_club_manager(&self, ctx: &Context<'_>, id: ID) -> Result<bool> {
         let assignment_uuid = Uuid::parse_str(id.as_str()).gql_err("Invalid assignment ID")?;
         let state = ctx.data::<AppState>()?;
@@ -286,7 +293,7 @@ impl ClubMutation {
             .await
             .gql_err("Database operation failed")?
             .ok_or_else(|| async_graphql::Error::new("Assignment not found"))?;
-        require_club_manager(ctx, row.club_id).await?;
+        require_club_owner(ctx, row.club_id).await?;
 
         let active = club_managers::count_active_by_club(&state.db, row.club_id)
             .await
@@ -297,7 +304,65 @@ impl ClubMutation {
             ));
         }
 
+        // Removing the only owner would leave the club with managers but nobody
+        // able to run the team or the plan again.
+        if row.is_active && ClubRole::from_db(&row.role) == ClubRole::Owner {
+            let owners = club_managers::count_active_owners_by_club(&state.db, row.club_id)
+                .await
+                .gql_err("Database operation failed")?;
+            if owners <= 1 {
+                return Err(async_graphql::Error::new(
+                    "Cannot remove the last owner of a club",
+                ));
+            }
+        }
+
         club_managers::deactivate(&state.db, assignment_uuid)
+            .await
+            .gql_err("Database operation failed")?;
+        Ok(true)
+    }
+
+    /// Promote a manager to owner, or demote an owner back to manager. Owners
+    /// of the club only, and the last owner cannot be demoted.
+    async fn set_club_manager_role(
+        &self,
+        ctx: &Context<'_>,
+        id: ID,
+        role: ClubRole,
+    ) -> Result<bool> {
+        let assignment_uuid = Uuid::parse_str(id.as_str()).gql_err("Invalid assignment ID")?;
+        let state = ctx.data::<AppState>()?;
+
+        let row = club_managers::get_by_id(&state.db, assignment_uuid)
+            .await
+            .gql_err("Database operation failed")?
+            .ok_or_else(|| async_graphql::Error::new("Assignment not found"))?;
+        require_club_owner(ctx, row.club_id).await?;
+
+        if !row.is_active {
+            return Err(async_graphql::Error::new(
+                "That person is no longer on the team",
+            ));
+        }
+
+        let current = ClubRole::from_db(&row.role);
+        if current == role {
+            return Ok(true);
+        }
+
+        if current == ClubRole::Owner {
+            let owners = club_managers::count_active_owners_by_club(&state.db, row.club_id)
+                .await
+                .gql_err("Database operation failed")?;
+            if owners <= 1 {
+                return Err(async_graphql::Error::new(
+                    "Cannot demote the last owner of a club",
+                ));
+            }
+        }
+
+        club_managers::set_role(&state.db, assignment_uuid, role.as_db())
             .await
             .gql_err("Database operation failed")?;
         Ok(true)
@@ -469,7 +534,7 @@ impl ClubMutation {
     ) -> Result<Club> {
         let state = ctx.data::<AppState>()?;
         let club_id = Uuid::parse_str(club_id.as_str()).gql_err("Invalid club ID")?;
-        let user = require_club_manager(ctx, club_id).await?;
+        let user = require_club_owner(ctx, club_id).await?;
         let user_id = Uuid::parse_str(user.id.as_str()).gql_err("Invalid user ID")?;
 
         let normalized = normalize_code(&code);

@@ -165,7 +165,8 @@ async fn test_invite_and_revoke_club_manager() {
     );
 
     // Team list shows both managers.
-    let list_query = format!(r#"query {{ clubManagers(clubId: "{club_id}") {{ id email }} }}"#);
+    let list_query =
+        format!(r#"query {{ clubManagers(clubId: "{club_id}") {{ id email role }} }}"#);
     let list = execute_graphql(&schema, &list_query, None, Some(manager_claims.clone())).await;
     assert!(
         list.errors.is_empty(),
@@ -179,6 +180,13 @@ async fn test_invite_and_revoke_club_manager() {
         .iter()
         .find(|m| m["email"] == "coadmin@example.com")
         .expect("invited manager listed");
+    // An invite grants the lesser role unless one is asked for explicitly.
+    assert_eq!(invited_assignment["role"], "MANAGER");
+    let owner_assignment = managers
+        .iter()
+        .find(|m| m["email"] == "invite_owner@test.com")
+        .expect("owner listed");
+    assert_eq!(owner_assignment["role"], "OWNER");
 
     // Revoke the invited co-manager.
     let revoke = format!(
@@ -205,5 +213,121 @@ async fn test_invite_and_revoke_club_manager() {
     assert!(
         !last_result.errors.is_empty(),
         "removing the last manager must fail"
+    );
+}
+
+/// Owner vs manager: a plain co-manager sees the team but cannot change it, and
+/// a club can never be left without an owner.
+#[tokio::test]
+async fn test_club_manager_role_hierarchy() {
+    let app_state = setup_test_db().await;
+    let schema = build_schema(app_state.clone());
+    let stamp = chrono::Utc::now().timestamp_micros();
+
+    let owner_email = format!("roles_owner_{stamp}@test.com");
+    let (owner_id, owner_claims) = create_test_user(&app_state, &owner_email, "manager").await;
+    let club_id = create_test_club(&app_state, "Roles Test Club").await;
+    create_club_manager(&app_state, owner_id, club_id).await;
+
+    let co_email = format!("roles_co_{stamp}@test.com");
+    let (co_id, co_claims) = create_test_user(&app_state, &co_email, "manager").await;
+    create_club_co_manager(&app_state, co_id, club_id).await;
+
+    let list_query =
+        format!(r#"query {{ clubManagers(clubId: "{club_id}") {{ id email role }} }}"#);
+    let assignment_id = |resp: &serde_json::Value, email: &str| -> String {
+        resp["clubManagers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["email"] == email)
+            .unwrap_or_else(|| panic!("{email} should be listed"))["id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+
+    // Each side sees their own authority on `me`, which is what the apps gate on.
+    let me_query = "query { me { clubRole } }";
+    let owner_me = execute_graphql(&schema, me_query, None, Some(owner_claims.clone())).await;
+    assert_eq!(
+        owner_me.data.into_json().unwrap()["me"]["clubRole"],
+        "OWNER"
+    );
+    let co_me = execute_graphql(&schema, me_query, None, Some(co_claims.clone())).await;
+    assert_eq!(co_me.data.into_json().unwrap()["me"]["clubRole"], "MANAGER");
+
+    // A co-manager may read the team...
+    let list = execute_graphql(&schema, &list_query, None, Some(co_claims.clone())).await;
+    assert!(
+        list.errors.is_empty(),
+        "co-manager should see the team: {:?}",
+        list.errors
+    );
+    let list_data = list.data.into_json().unwrap();
+    let owner_assignment = assignment_id(&list_data, &owner_email);
+    let co_assignment = assignment_id(&list_data, &co_email);
+
+    // ...but may not change it, nor the plan.
+    let invite = format!(
+        r#"mutation {{ inviteClubManager(input: {{ clubId: "{club_id}", email: "roles_new_{stamp}@example.com" }}) {{ createdAccount emailSent }} }}"#
+    );
+    let promote_co =
+        format!(r#"mutation {{ setClubManagerRole(id: "{co_assignment}", role: OWNER) }}"#);
+    let revoke_owner = format!(r#"mutation {{ revokeClubManager(id: "{owner_assignment}") }}"#);
+    let redeem =
+        format!(r#"mutation {{ redeemCode(clubId: "{club_id}", code: "NOPE") {{ id }} }}"#);
+
+    for (label, mutation) in [
+        ("invite", &invite),
+        ("set role", &promote_co),
+        ("revoke", &revoke_owner),
+        ("redeem code", &redeem),
+    ] {
+        let denied = execute_graphql(&schema, mutation, None, Some(co_claims.clone())).await;
+        assert!(
+            !denied.errors.is_empty(),
+            "a co-manager must not be able to {label}"
+        );
+    }
+
+    // The owner promotes them, and now they can invite.
+    let promoted = execute_graphql(&schema, &promote_co, None, Some(owner_claims.clone())).await;
+    assert!(
+        promoted.errors.is_empty(),
+        "owner should be able to promote: {:?}",
+        promoted.errors
+    );
+    let now_allowed = execute_graphql(&schema, &invite, None, Some(co_claims.clone())).await;
+    assert!(
+        now_allowed.errors.is_empty(),
+        "a promoted owner should be able to invite: {:?}",
+        now_allowed.errors
+    );
+
+    // With two owners, stepping one down is fine.
+    let demote_owner =
+        format!(r#"mutation {{ setClubManagerRole(id: "{owner_assignment}", role: MANAGER) }}"#);
+    let demoted = execute_graphql(&schema, &demote_owner, None, Some(co_claims.clone())).await;
+    assert!(
+        demoted.errors.is_empty(),
+        "demoting one of two owners should succeed: {:?}",
+        demoted.errors
+    );
+
+    // The club is now down to a single owner, who can be neither demoted nor removed.
+    let demote_last =
+        format!(r#"mutation {{ setClubManagerRole(id: "{co_assignment}", role: MANAGER) }}"#);
+    let refused = execute_graphql(&schema, &demote_last, None, Some(co_claims.clone())).await;
+    assert!(
+        !refused.errors.is_empty(),
+        "the last owner must not be demotable"
+    );
+
+    let revoke_last_owner = format!(r#"mutation {{ revokeClubManager(id: "{co_assignment}") }}"#);
+    let refused = execute_graphql(&schema, &revoke_last_owner, None, Some(co_claims)).await;
+    assert!(
+        !refused.errors.is_empty(),
+        "the last owner must not be removable"
     );
 }

@@ -20,5 +20,5 @@ INSERT INTO users (id, email, username, first_name, last_name, phone, role, is_a
     ('e0e0e0e0-e0e0-e0e0-e0e0-e0e0e0e0e0e0', 'sebastien@email.com', 'LE BANQUIER', 'Sébastien', 'Hetzel', '+32478678901', 'player', true, null);
 
 -- Assign managers to clubs
-INSERT INTO club_managers (id, club_id, user_id, assigned_by, notes) VALUES
-    (gen_random_uuid(), '66666666-6666-6666-6666-666666666666', 'ffffffff-ffff-ffff-ffff-ffffffffffff', null, 'Manager of Poker One');
+INSERT INTO club_managers (id, club_id, user_id, assigned_by, role, notes) VALUES
+    (gen_random_uuid(), '66666666-6666-6666-6666-666666666666', 'ffffffff-ffff-ffff-ffff-ffffffffffff', null, 'owner', 'Owner of Poker One');

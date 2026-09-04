@@ -224,13 +224,34 @@ pub async fn create_test_tournament(app_state: &AppState, club_id: Uuid, title: 
     tournament_id
 }
 
-/// Create club manager relationship
+/// Create a club *owner* assignment. This is the default fixture because most
+/// tests stand in for the person who created the club and need full authority.
 #[allow(dead_code)]
 pub async fn create_club_manager(app_state: &AppState, manager_id: Uuid, club_id: Uuid) {
+    create_club_manager_with_role(app_state, manager_id, club_id, "owner").await;
+}
+
+/// Create a plain manager assignment: everything operational, but no authority
+/// over the team or the plan. Use this to test what an owner can do that a
+/// co-manager cannot.
+#[allow(dead_code)]
+pub async fn create_club_co_manager(app_state: &AppState, manager_id: Uuid, club_id: Uuid) {
+    create_club_manager_with_role(app_state, manager_id, club_id, "manager").await;
+}
+
+#[allow(dead_code)]
+async fn create_club_manager_with_role(
+    app_state: &AppState,
+    manager_id: Uuid,
+    club_id: Uuid,
+    role: &str,
+) {
     sqlx::query!(
-        "INSERT INTO club_managers (user_id, club_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        "INSERT INTO club_managers (user_id, club_id, role) VALUES ($1, $2, $3)
+         ON CONFLICT DO NOTHING",
         manager_id,
-        club_id
+        club_id,
+        role
     )
     .execute(&app_state.db)
     .await
