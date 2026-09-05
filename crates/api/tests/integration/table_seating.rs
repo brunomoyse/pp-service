@@ -610,8 +610,8 @@ async fn test_get_seat_assignments() {
     let tournament_id = create_test_tournament(&app_state, club_id, "Query Test Tournament").await;
 
     let query = r#"
-        query GetSeatAssignments($clubTableId: ID!) {
-            tableSeatAssignments(clubTableId: $clubTableId) {
+        query GetSeatAssignments($tournamentId: ID!, $clubTableId: ID!) {
+            tableSeatAssignments(tournamentId: $tournamentId, clubTableId: $clubTableId) {
                 assignment {
                     id
                     seatNumber
@@ -653,6 +653,7 @@ async fn test_get_seat_assignments() {
     .expect("Failed to create test table");
 
     let variables = Variables::from_json(json!({
+        "tournamentId": tournament_id.to_string(),
         "clubTableId": club_table_id.to_string()
     }));
 
@@ -723,8 +724,8 @@ async fn test_seat_assignment_filtering() {
 
     // Test filtering by table ID
     let query = r#"
-        query GetSeatAssignments($clubTableId: ID!) {
-            tableSeatAssignments(clubTableId: $clubTableId) {
+        query GetSeatAssignments($tournamentId: ID!, $clubTableId: ID!) {
+            tableSeatAssignments(tournamentId: $tournamentId, clubTableId: $clubTableId) {
                 assignment {
                     id
                     seatNumber
@@ -739,6 +740,7 @@ async fn test_seat_assignment_filtering() {
     "#;
 
     let variables = Variables::from_json(json!({
+        "tournamentId": tournament_id.to_string(),
         "clubTableId": club_table_id.to_string()
     }));
 
@@ -761,4 +763,110 @@ async fn test_seat_assignment_filtering() {
         );
         assert_eq!(assignments[0]["player"]["id"], player_id.to_string());
     }
+}
+
+/// A club's tables are reused by every event it runs, and a finished
+/// tournament's seat assignments stay `is_current`. Anything keyed on the
+/// physical table alone therefore reads back players from other tournaments:
+/// the seating chart listed them, and the seat lookup behind the per-seat
+/// action modal returned the wrong one entirely (clicking Damien's row opened
+/// Rico's, from an event weeks earlier). Seat state is per tournament.
+#[tokio::test]
+async fn test_seat_state_is_scoped_to_the_tournament() {
+    let app_state = setup_test_db().await;
+    let schema = build_schema(app_state.clone());
+    let stamp = chrono::Utc::now().timestamp_micros();
+
+    let (manager_id, manager_claims) = create_test_user(
+        &app_state,
+        &format!("seat_scope_mgr_{stamp}@test.com"),
+        "manager",
+    )
+    .await;
+    let (past_player_id, _) = create_test_user(
+        &app_state,
+        &format!("seat_scope_past_{stamp}@test.com"),
+        "player",
+    )
+    .await;
+    let (now_player_id, _) = create_test_user(
+        &app_state,
+        &format!("seat_scope_now_{stamp}@test.com"),
+        "player",
+    )
+    .await;
+
+    let club_id = create_test_club(&app_state, "Seat Scope Club").await;
+    create_club_manager(&app_state, manager_id, club_id).await;
+    let table_id = create_test_club_table(&app_state, club_id, 1, 9).await;
+
+    // Last month's event, still holding its seats.
+    let past = create_test_tournament(&app_state, club_id, "Last Month").await;
+    assign_table_to_tournament(&app_state, past, table_id).await;
+    sqlx::query!(
+        "INSERT INTO table_seat_assignments (tournament_id, club_table_id, user_id, seat_number, stack_size) VALUES ($1, $2, $3, $4, $5)",
+        past,
+        table_id,
+        past_player_id,
+        1,
+        15000
+    )
+    .execute(&app_state.db)
+    .await
+    .expect("seat the past player");
+
+    // Tonight's event on the same physical table.
+    let tonight = create_test_tournament(&app_state, club_id, "Tonight").await;
+    assign_table_to_tournament(&app_state, tonight, table_id).await;
+
+    // Seat 1 is free tonight, whoever sat there last month.
+    let assign = r#"
+        mutation Seat($input: AssignPlayerToSeatInput!) {
+            assignPlayerToSeat(input: $input) { seatNumber userId }
+        }
+    "#;
+    let response = execute_graphql(
+        &schema,
+        assign,
+        Some(Variables::from_json(json!({
+            "input": {
+                "tournamentId": tonight.to_string(),
+                "clubTableId": table_id.to_string(),
+                "userId": now_player_id.to_string(),
+                "seatNumber": 1
+            }
+        }))),
+        Some(manager_claims.clone()),
+    )
+    .await;
+    assert!(
+        response.errors.is_empty(),
+        "a seat held only by another tournament must be free: {:?}",
+        response.errors
+    );
+
+    // And tonight's chart shows tonight's player, alone.
+    let chart = format!(
+        r#"query {{ tournamentSeatingChart(tournamentId: "{tonight}") {{
+            tables {{ seats {{ assignment {{ seatNumber userId }} }} }}
+        }} }}"#
+    );
+    let response = execute_graphql(&schema, &chart, None, Some(manager_claims)).await;
+    assert!(
+        response.errors.is_empty(),
+        "chart query failed: {:?}",
+        response.errors
+    );
+    let data = response.data.into_json().unwrap();
+    let seats = data["tournamentSeatingChart"]["tables"][0]["seats"]
+        .as_array()
+        .expect("tonight has a table")
+        .clone();
+    assert_eq!(seats.len(), 1, "only tonight's seat belongs on the chart");
+    assert_eq!(seats[0]["assignment"]["seatNumber"], 1);
+    assert_eq!(
+        seats[0]["assignment"]["userId"],
+        now_player_id.to_string(),
+        "the chart must not show the player from another tournament"
+    );
 }

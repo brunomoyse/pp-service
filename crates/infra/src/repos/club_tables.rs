@@ -144,9 +144,14 @@ pub struct TableConflict {
 /// Tables of a club that a non-finished tournament currently holds. Mirrors the
 /// rule `active_table_conflicts` enforces on assignment, so what the UI offers
 /// and what the server accepts cannot drift apart.
+///
+/// `exclude_tournament_id` leaves out one tournament's own holdings, which is
+/// what the assign-tables picker wants: a table this tournament already has is
+/// not a conflict for it.
 pub async fn assigned_table_ids_for_club<'e>(
     executor: impl PgExecutor<'e>,
     club_id: Uuid,
+    exclude_tournament_id: Option<Uuid>,
 ) -> SqlxResult<Vec<Uuid>> {
     sqlx::query_scalar::<_, Uuid>(
         r#"
@@ -157,9 +162,11 @@ pub async fn assigned_table_ids_for_club<'e>(
         WHERE ct.club_id = $1
             AND tta.is_active = true
             AND t.live_status <> 'finished'
+            AND ($2::uuid IS NULL OR tta.tournament_id <> $2)
         "#,
     )
     .bind(club_id)
+    .bind(exclude_tournament_id)
     .fetch_all(executor)
     .await
 }

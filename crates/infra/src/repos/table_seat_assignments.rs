@@ -91,18 +91,6 @@ pub async fn get_current_for_user<'e>(
     .await
 }
 
-pub async fn list_current_for_table<'e>(
-    executor: impl PgExecutor<'e>,
-    club_table_id: Uuid,
-) -> SqlxResult<Vec<TableSeatAssignmentRow>> {
-    sqlx::query_as::<_, TableSeatAssignmentRow>(&format!(
-        "SELECT {COLS} FROM table_seat_assignments WHERE club_table_id = $1 AND is_current = true ORDER BY seat_number ASC"
-    ))
-    .bind(club_table_id)
-    .fetch_all(executor)
-    .await
-}
-
 pub async fn list_current_for_tournament<'e>(
     executor: impl PgExecutor<'e>,
     tournament_id: Uuid,
@@ -129,8 +117,16 @@ pub async fn list_current_for_tournament_table<'e>(
     .await
 }
 
+/// Who is sitting at this table *in this tournament*, with roster and (when the
+/// seat belongs to a registered account) user details.
+///
+/// A physical table is reused by every tournament the club ever runs, and a
+/// finished tournament's assignments stay `is_current`, so anything keyed on
+/// `club_table_id` alone reads back years of ghosts: the seating chart listed
+/// players from other events, and a seat lookup could return the wrong one.
 pub async fn list_current_with_players_for_table<'e>(
     executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
     club_table_id: Uuid,
 ) -> SqlxResult<Vec<SeatAssignmentWithPlayer>> {
     #[derive(sqlx::FromRow)]
@@ -176,10 +172,11 @@ pub async fn list_current_with_players_for_table<'e>(
         FROM table_seat_assignments tsa
         JOIN club_player rp ON tsa.club_player_id = rp.id
         LEFT JOIN users u ON tsa.user_id = u.id
-        WHERE tsa.club_table_id = $1 AND tsa.is_current = true
+        WHERE tsa.tournament_id = $1 AND tsa.club_table_id = $2 AND tsa.is_current = true
         ORDER BY tsa.seat_number ASC
         "#,
     )
+    .bind(tournament_id)
     .bind(club_table_id)
     .fetch_all(executor)
     .await?;
@@ -366,20 +363,6 @@ async fn create_seat_in_tx<'e>(
     .await
 }
 
-pub async fn count_players_at_table<'e>(
-    executor: impl PgExecutor<'e>,
-    club_table_id: Uuid,
-) -> SqlxResult<i64> {
-    let result: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM table_seat_assignments WHERE club_table_id = $1 AND is_current = true",
-    )
-    .bind(club_table_id)
-    .fetch_one(executor)
-    .await?;
-
-    Ok(result.0)
-}
-
 /// Roster players registered (and not busted/cancelled) for the tournament who
 /// do not currently hold a seat.
 pub async fn list_unassigned_players<'e>(
@@ -404,14 +387,18 @@ pub async fn list_unassigned_players<'e>(
     .await
 }
 
+/// Seats are free per tournament, not per table for all time: a chair a player
+/// took at last month's event must not block tonight's.
 pub async fn is_seat_available<'e>(
     executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
     club_table_id: Uuid,
     seat_number: i32,
 ) -> SqlxResult<bool> {
     let result: (i64,) = sqlx::query_as(
-        "SELECT COUNT(*) FROM table_seat_assignments WHERE club_table_id = $1 AND seat_number = $2 AND is_current = true"
+        "SELECT COUNT(*) FROM table_seat_assignments WHERE tournament_id = $1 AND club_table_id = $2 AND seat_number = $3 AND is_current = true"
     )
+    .bind(tournament_id)
     .bind(club_table_id)
     .bind(seat_number)
     .fetch_one(executor)
@@ -420,18 +407,22 @@ pub async fn is_seat_available<'e>(
     Ok(result.0 == 0)
 }
 
+/// Seats taken at this table in this tournament. Auto-seating picks the lowest
+/// free seat from this, so an unscoped answer silently skips chairs.
 pub async fn get_occupied_seats<'e>(
     executor: impl PgExecutor<'e>,
+    tournament_id: Uuid,
     club_table_id: Uuid,
 ) -> SqlxResult<Vec<i32>> {
     let rows: Vec<(i32,)> = sqlx::query_as(
         r#"
         SELECT seat_number
         FROM table_seat_assignments
-        WHERE club_table_id = $1 AND is_current = true
+        WHERE tournament_id = $1 AND club_table_id = $2 AND is_current = true
         ORDER BY seat_number
         "#,
     )
+    .bind(tournament_id)
     .bind(club_table_id)
     .fetch_all(executor)
     .await?;

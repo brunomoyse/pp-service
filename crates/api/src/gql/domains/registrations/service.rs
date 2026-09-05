@@ -144,10 +144,14 @@ pub async fn check_in_player(
 
                     if let Some(table) = target_table {
                         let occupied_seats: std::collections::HashSet<i32> =
-                            table_seat_assignments::get_occupied_seats(&mut *tx, table.id)
-                                .await?
-                                .into_iter()
-                                .collect();
+                            table_seat_assignments::get_occupied_seats(
+                                &mut *tx,
+                                params.tournament_id,
+                                table.id,
+                            )
+                            .await?
+                            .into_iter()
+                            .collect();
                         let available_seats: Vec<i32> = (1..=table.max_seats)
                             .filter(|seat| !occupied_seats.contains(seat))
                             .collect();
@@ -514,10 +518,14 @@ pub async fn self_check_in(
             };
 
             let occupied_seats: std::collections::HashSet<i32> =
-                table_seat_assignments::get_occupied_seats(&mut *tx, target_table.id)
-                    .await?
-                    .into_iter()
-                    .collect();
+                table_seat_assignments::get_occupied_seats(
+                    &mut *tx,
+                    params.tournament_id,
+                    target_table.id,
+                )
+                .await?
+                .into_iter()
+                .collect();
             let available_seats: Vec<i32> = (1..=target_table.max_seats)
                 .filter(|seat| !occupied_seats.contains(seat))
                 .collect();

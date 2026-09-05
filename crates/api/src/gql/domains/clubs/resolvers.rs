@@ -77,7 +77,14 @@ impl ClubQuery {
     }
 
     /// Get all tables for a club
-    async fn club_tables(&self, ctx: &Context<'_>, club_id: Uuid) -> Result<Vec<ClubTable>> {
+    /// `exclude_tournament_id` is for the assign-tables picker: pass the
+    /// tournament being edited so its own tables do not read as taken.
+    async fn club_tables(
+        &self,
+        ctx: &Context<'_>,
+        club_id: Uuid,
+        exclude_tournament_id: Option<Uuid>,
+    ) -> Result<Vec<ClubTable>> {
         let state = ctx.data::<AppState>()?;
 
         let table_rows = club_tables::list_by_club(&state.db, club_id).await?;
@@ -88,7 +95,7 @@ impl ClubQuery {
         // free: the assign modal offered it and the server then refused it with
         // "already in use by an active tournament".
         let assigned_table_ids: std::collections::HashSet<uuid::Uuid> =
-            club_tables::assigned_table_ids_for_club(&state.db, club_id)
+            club_tables::assigned_table_ids_for_club(&state.db, club_id, exclude_tournament_id)
                 .await?
                 .into_iter()
                 .collect();

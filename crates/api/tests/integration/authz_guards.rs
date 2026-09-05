@@ -74,8 +74,8 @@ async fn unauthenticated_live_reads_are_rejected() {
     assert_login_required(
         &schema,
         "tableSeatAssignments",
-        r#"query($id: ID!){ tableSeatAssignments(clubTableId: $id){ assignment { id } } }"#,
-        json!({ "id": table_id }),
+        r#"query($t: ID!, $id: ID!){ tableSeatAssignments(tournamentId: $t, clubTableId: $id){ assignment { id } } }"#,
+        json!({ "t": tid, "id": table_id }),
     )
     .await;
 

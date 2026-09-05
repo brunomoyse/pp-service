@@ -159,6 +159,10 @@ async fn test_table_reads_assigned_while_linked_without_seated_players() {
             .unwrap()
     };
     let query = format!(r#"query {{ clubTables(clubId: "{club_id}") {{ id isAssigned }} }}"#);
+    // What the assign-tables picker asks: who holds this table apart from me?
+    let query_excluding_holder = format!(
+        r#"query {{ clubTables(clubId: "{club_id}", excludeTournamentId: "{tournament_id}") {{ id isAssigned }} }}"#
+    );
 
     let before = execute_graphql(&schema, &query, None, Some(manager_claims.clone())).await;
     assert!(!is_assigned(before), "an unlinked table is free");
@@ -170,6 +174,37 @@ async fn test_table_reads_assigned_while_linked_without_seated_players() {
     assert!(
         is_assigned(linked),
         "a linked table must read as assigned even with nobody seated"
+    );
+
+    // A tournament does not conflict with itself: its own tables stay pickable,
+    // matching the exclusion `active_table_conflicts` applies on assignment.
+    let own = execute_graphql(
+        &schema,
+        &query_excluding_holder,
+        None,
+        Some(manager_claims.clone()),
+    )
+    .await;
+    assert!(
+        !is_assigned(own),
+        "a tournament must not see its own table as taken"
+    );
+
+    // But another tournament still does.
+    let other_id = create_test_tournament(&app_state, club_id, "Other").await;
+    let query_excluding_other = format!(
+        r#"query {{ clubTables(clubId: "{club_id}", excludeTournamentId: "{other_id}") {{ id isAssigned }} }}"#
+    );
+    let other = execute_graphql(
+        &schema,
+        &query_excluding_other,
+        None,
+        Some(manager_claims.clone()),
+    )
+    .await;
+    assert!(
+        is_assigned(other),
+        "excluding a different tournament must not free the table"
     );
 
     sqlx::query("UPDATE tournaments SET live_status = 'finished' WHERE id = $1")

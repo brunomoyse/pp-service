@@ -64,6 +64,7 @@ impl SeatingQuery {
             let assignments_with_players =
                 table_seat_assignments::list_current_with_players_for_table(
                     &state.db,
+                    tournament_id,
                     table_row.id,
                 )
                 .await?;
@@ -131,18 +132,24 @@ impl SeatingQuery {
             .collect())
     }
 
-    /// Get current seat assignments for a specific table
+    /// Seat assignments for a table within one tournament. The tournament is
+    /// required: a club's tables are reused event after event, so a table on its
+    /// own does not identify who is sitting there now.
     async fn table_seat_assignments(
         &self,
         ctx: &Context<'_>,
+        tournament_id: Uuid,
         club_table_id: Uuid,
     ) -> Result<Vec<SeatWithPlayer>> {
         let _claims = ctx.data::<Claims>().map_err(|_| auth_error())?;
         let state = ctx.data::<AppState>()?;
 
-        let assignments_with_players =
-            table_seat_assignments::list_current_with_players_for_table(&state.db, club_table_id)
-                .await?;
+        let assignments_with_players = table_seat_assignments::list_current_with_players_for_table(
+            &state.db,
+            tournament_id,
+            club_table_id,
+        )
+        .await?;
 
         Ok(assignments_with_players
             .into_iter()
@@ -571,9 +578,13 @@ impl SeatingMutation {
             .gql_err("Failed to begin transaction")?;
 
         // Check if seat is available (inside transaction for consistency)
-        let is_available =
-            table_seat_assignments::is_seat_available(&mut *tx, club_table_id, input.seat_number)
-                .await?;
+        let is_available = table_seat_assignments::is_seat_available(
+            &mut *tx,
+            tournament_id,
+            club_table_id,
+            input.seat_number,
+        )
+        .await?;
         if !is_available {
             return Err(async_graphql::Error::new("Seat is already occupied"));
         }
@@ -780,6 +791,7 @@ impl SeatingMutation {
         // Check if new seat is available
         let is_available = table_seat_assignments::is_seat_available(
             &state.db,
+            tournament_id,
             new_club_table_id,
             input.new_seat_number,
         )
