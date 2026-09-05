@@ -122,3 +122,65 @@ async fn test_club_tables_system() {
 
     println!("✅ Table assignment test passed!");
 }
+
+/// A table linked to a live tournament reads as assigned even with nobody
+/// seated at it, and frees up once that tournament finishes.
+///
+/// Regression: `isAssigned` was derived from seat assignments while the
+/// assignment guard checks table assignments, so the Link Tables modal offered
+/// tables the server then refused as "already in use by an active tournament".
+#[tokio::test]
+async fn test_table_reads_assigned_while_linked_without_seated_players() {
+    use api::gql::build_schema;
+
+    let app_state = setup_test_db().await;
+    let schema = build_schema(app_state.clone());
+    let stamp = chrono::Utc::now().timestamp_micros();
+
+    let (manager_id, manager_claims) = create_test_user(
+        &app_state,
+        &format!("tbl_assign_{stamp}@test.com"),
+        "manager",
+    )
+    .await;
+    let club_id = create_test_club(&app_state, "Table Assign Club").await;
+    create_club_manager(&app_state, manager_id, club_id).await;
+    let table_id = create_test_club_table(&app_state, club_id, 1, 9).await;
+    let tournament_id = create_test_tournament(&app_state, club_id, "Holder").await;
+
+    let is_assigned = |resp: async_graphql::Response| -> bool {
+        resp.data.into_json().unwrap()["clubTables"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["id"] == table_id.to_string())
+            .expect("table listed")["isAssigned"]
+            .as_bool()
+            .unwrap()
+    };
+    let query = format!(r#"query {{ clubTables(clubId: "{club_id}") {{ id isAssigned }} }}"#);
+
+    let before = execute_graphql(&schema, &query, None, Some(manager_claims.clone())).await;
+    assert!(!is_assigned(before), "an unlinked table is free");
+
+    assign_table_to_tournament(&app_state, tournament_id, table_id).await;
+
+    // No seat assignments exist, yet the table is spoken for.
+    let linked = execute_graphql(&schema, &query, None, Some(manager_claims.clone())).await;
+    assert!(
+        is_assigned(linked),
+        "a linked table must read as assigned even with nobody seated"
+    );
+
+    sqlx::query("UPDATE tournaments SET live_status = 'finished' WHERE id = $1")
+        .bind(tournament_id)
+        .execute(&app_state.db)
+        .await
+        .unwrap();
+
+    let finished = execute_graphql(&schema, &query, None, Some(manager_claims)).await;
+    assert!(
+        !is_assigned(finished),
+        "finishing the tournament hands the table back"
+    );
+}

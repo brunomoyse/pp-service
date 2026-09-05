@@ -14,9 +14,7 @@ use crate::gql::error::ResultExt;
 use crate::gql::types::{Club, ClubTable, CompanyLookup, OnboardClubInput, OnboardClubPayload};
 use crate::services::vies;
 use crate::state::AppState;
-use infra::repos::{
-    club_managers, club_tables, clubs, redemption_codes, table_seat_assignments, tournaments, users,
-};
+use infra::repos::{club_managers, club_tables, clubs, redemption_codes, users};
 
 #[derive(Default)]
 pub struct ClubQuery;
@@ -84,43 +82,16 @@ impl ClubQuery {
 
         let table_rows = club_tables::list_by_club(&state.db, club_id).await?;
 
-        // Get active tournaments for this club to determine table assignments
-        let active_tournaments = tournaments::list(
-            &state.db,
-            tournaments::TournamentFilter {
-                club_id: Some(club_id),
-                from: None,
-                to: None,
-                status: None,
-                // Internal table-assignment lookup for a club the caller is
-                // already viewing; no player-facing free filter needed.
-                exclude_free_clubs: false,
-            },
-            None,
-        )
-        .await?;
-
-        // Collect assigned table IDs from active tournaments
-        let mut assigned_table_ids = std::collections::HashSet::new();
-
-        for tournament in active_tournaments {
-            // Skip finished tournaments
-            if matches!(
-                tournament.live_status,
-                tournaments::TournamentLiveStatus::Finished
-            ) {
-                continue;
-            }
-
-            // Get seat assignments for this tournament
-            let assignments =
-                table_seat_assignments::list_current_for_tournament(&state.db, tournament.id)
-                    .await?;
-
-            for assignment in assignments {
-                assigned_table_ids.insert(assignment.club_table_id);
-            }
-        }
+        // A table is taken when a live tournament *holds* it, not when someone
+        // happens to be sitting at it. This used to walk seat assignments, so a
+        // table linked to another running tournament but not yet seated looked
+        // free: the assign modal offered it and the server then refused it with
+        // "already in use by an active tournament".
+        let assigned_table_ids: std::collections::HashSet<uuid::Uuid> =
+            club_tables::assigned_table_ids_for_club(&state.db, club_id)
+                .await?
+                .into_iter()
+                .collect();
 
         Ok(table_rows
             .into_iter()

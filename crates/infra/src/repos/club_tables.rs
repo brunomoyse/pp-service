@@ -141,6 +141,29 @@ pub struct TableConflict {
 /// non-finished tournament — i.e. cannot be booked here without double-booking
 /// a physical table. `exclude_tournament_id` is the tournament we're assigning
 /// to (so its own assignments don't count as conflicts).
+/// Tables of a club that a non-finished tournament currently holds. Mirrors the
+/// rule `active_table_conflicts` enforces on assignment, so what the UI offers
+/// and what the server accepts cannot drift apart.
+pub async fn assigned_table_ids_for_club<'e>(
+    executor: impl PgExecutor<'e>,
+    club_id: Uuid,
+) -> SqlxResult<Vec<Uuid>> {
+    sqlx::query_scalar::<_, Uuid>(
+        r#"
+        SELECT DISTINCT tta.club_table_id
+        FROM tournament_table_assignments tta
+        JOIN club_tables ct ON ct.id = tta.club_table_id
+        JOIN tournaments t ON t.id = tta.tournament_id
+        WHERE ct.club_id = $1
+            AND tta.is_active = true
+            AND t.live_status <> 'finished'
+        "#,
+    )
+    .bind(club_id)
+    .fetch_all(executor)
+    .await
+}
+
 pub async fn active_table_conflicts<'e>(
     executor: impl PgExecutor<'e>,
     club_table_ids: &[Uuid],
